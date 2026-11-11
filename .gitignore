@@ -1,0 +1,19 @@
+# Songsheets live in cloud storage, not in git
+Chinese Songsheets/
+English Songsheets/
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+
+.DS_Store
+Thumbs.db
+
+documentation/DEPLOY.md
+
+# Team member list with passwords (local only)
+resources/ 
+
+# Google service-account key for the Drive sync (never commit)
+worker/secrets/
+*service-account*.json

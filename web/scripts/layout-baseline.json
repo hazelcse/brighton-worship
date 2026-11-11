@@ -1,0 +1,113 @@
+{
+  "_about": "The owner's recorded layout measurements (see LAYOUT.md). check-layout.mjs reports when any of these snippets is no longer in its file. Update this only when the owner agrees to a new measurement.",
+  "checks": [
+    {
+      "name": "Page / nav width value",
+      "file": "web/src/app/globals.css",
+      "snippet": "--container-page: 62rem;",
+      "means": "max-w-page = 992px (62rem), shared by the nav bar and the page content area"
+    },
+    {
+      "name": "Page content area (every signed-in page)",
+      "file": "web/src/app/(app)/layout.tsx",
+      "snippet": "<main className=\"mx-auto w-full max-w-page flex-1 px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]\">",
+      "means": "max 992px wide (roster editor, marked data-wide-page: max (window + 992px) / 2, edges halfway between the nav edges and the window edges); 16px side padding on phones, 24px from 640px up; 24px top and bottom"
+    },
+    {
+      "name": "Nav bar contents",
+      "file": "web/src/components/app-nav.tsx",
+      "snippet": "<nav className=\"mx-auto flex h-14 max-w-page items-center gap-2 px-4 sm:px-6\" aria-label=\"Main\">",
+      "means": "56px tall; contents max 992px wide; 16px / 24px side padding; 8px between items"
+    },
+    {
+      "name": "Nav bar while loading",
+      "file": "web/src/components/app-nav.tsx",
+      "snippet": "<div className=\"mx-auto flex h-14 max-w-page items-center px-4 sm:px-6\">",
+      "means": "same size as the nav bar: 56px tall, max 992px, 16px / 24px padding"
+    },
+    {
+      "name": "Mobile sidebar",
+      "file": "web/src/components/app-nav.tsx",
+      "snippet": "w-72 max-w-[85vw]",
+      "means": "288px wide, never more than 85% of the screen"
+    },
+    {
+      "name": "Roster landing page: whole page",
+      "file": "web/src/app/(app)/roster/page.tsx",
+      "snippet": "<div className=\"flex min-h-[calc(100dvh-8.5rem)] flex-col gap-4\">",
+      "means": "fills the screen height minus 136px; 16px between sections"
+    },
+    {
+      "name": "Roster landing page: quarter cards row",
+      "file": "web/src/app/(app)/roster/page.tsx",
+      "snippet": "${upcoming ? \"sm:max-w-3xl\" : \"sm:max-w-xl\"}",
+      "means": "from 640px up: max 768px when next quarter's card shows, otherwise max 576px"
+    },
+    {
+      "name": "Roster landing page: this quarter's card",
+      "file": "web/src/app/(app)/roster/page.tsx",
+      "snippet": "rounded-xl bg-ink px-4 py-3 text-ink-foreground transition hover:bg-ink/90 sm:max-w-xl",
+      "means": "max 576px wide from 640px up; 16px / 12px padding"
+    },
+    {
+      "name": "Roster landing page: next quarter's card",
+      "file": "web/src/app/(app)/roster/page.tsx",
+      "snippet": "sm:w-56 sm:flex-none",
+      "means": "224px wide from 640px up"
+    },
+    {
+      "name": "Song bank: toolbar stays on one row",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "flex flex-wrap items-center gap-2 md:flex-nowrap",
+      "means": "from 768px up, search, filter, !, Missing, Drive sync, Updates and + all sit on one row (PAGE-LAYOUTS.md)"
+    },
+    {
+      "name": "Song bank: search box",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "relative min-w-0 flex-1 md:min-w-40",
+      "means": "takes the space left on the row, never under 160px from 768px; shares the first row with the icon-only Filters button on phones"
+    },
+    {
+      "name": "Song bank: filter button",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "className=\"shrink-0 md:w-36\"",
+      "means": "144px wide from 768px; icon and arrow only on phones"
+    },
+    {
+      "name": "Song bank: needs review is a ! button",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "hidden h-10 w-10 shrink-0 place-items-center md:grid rounded-lg border border-border bg-surface text-base font-bold text-rose-600",
+      "means": "40px square showing just !, count in the tooltip; hidden on phones"
+    },
+    {
+      "name": "Song bank: missing from Drive button",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg",
+      "means": "never wraps or shrinks"
+    },
+    {
+      "name": "Song bank: right-hand buttons",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "ml-auto flex shrink-0 items-center gap-2",
+      "means": "Drive sync, Updates and + pinned to the right, never wrap"
+    },
+    {
+      "name": "Song bank: card grid",
+      "file": "web/src/components/songs/song-gallery.tsx",
+      "snippet": "grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+      "means": "same as the Team page: 4 cards per row from 1280px, 3 from 1024px, 2 from 420px"
+    },
+    {
+      "name": "Song bank: card grid while loading",
+      "file": "web/src/app/(app)/songs/page.tsx",
+      "snippet": "grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+      "means": "same grid as the loaded cards"
+    },
+    {
+      "name": "Song bank: Drive sync time hidden under 1024px",
+      "file": "web/src/components/songs/drive-sync-button.tsx",
+      "snippet": "hidden whitespace-nowrap text-xs text-muted lg:inline",
+      "means": "\"Synced 5 minutes ago\" only from 1024px up, so the toolbar fits on one row"
+    }
+  ]
+}

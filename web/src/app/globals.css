@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f5f2;
+  --surface: #ffffff;
+  --foreground: #1c1917;
+  --muted: #78716c;
+  --border: #e7e5e4;
+  --accent: #b45309;
+  --accent-foreground: #ffffff;
+  --ink: #14110f;
+  --ink-foreground: #f5efe6;
+  --danger: #b91c1c;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-display);
+  /* The nav bar and page content width (max-w-page): 992px. See LAYOUT.md. */
+  --container-page: 62rem;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* A slim scrollbar with no arrow buttons (e.g. the tracking table). */
+.scroll-quiet::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-quiet::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.scroll-quiet::-webkit-scrollbar-track,
+.scroll-quiet::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scroll-quiet::-webkit-scrollbar-thumb {
+  background: var(--border);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+}
+.scroll-quiet::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
+/* Firefox has no arrow buttons; just keep it slim. */
+@supports not selector(::-webkit-scrollbar) {
+  .scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+}
+
+/* Schedule: the days a cover or swap needs (the service and its rehearsal) flash a few times. */
+@keyframes day-flash {
+  50% {
+    filter: brightness(0.85);
+    box-shadow: inset 0 0 0 3px rgb(251 146 60);
+  }
+}
+
+/* Drag a song over another section: the bar fills while it waits to move there. */
+@keyframes hold {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(2px);
+}
+
+/* Thin slider: 4px track, small round handle (rule weights). */
+.range-thin {
+  appearance: none;
+  height: 1rem;
+  background: transparent;
+  cursor: pointer;
+}
+.range-thin::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.range-thin::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.range-thin::-moz-range-progress {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--accent);
+}
+.range-thin::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--surface, #fff);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.range-thin::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--surface, #fff);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.range-thin:focus-visible {
+  outline: none;
+}
+.range-thin:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.range-thin:disabled {
+  cursor: default;
+}
