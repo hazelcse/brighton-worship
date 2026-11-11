@@ -9,7 +9,7 @@ Widths are in CSS pixels at normal (100%) browser zoom. "From 640px up" means wi
 
 | What | Measurement | Classes | Set in |
 |---|---|---|---|
-| Page content area (every signed-in page) | Max **992px** wide, centred. Side padding **16px** on phones, **24px** from 640px up. **24px** top and bottom. **Exception:** the roster editor (`/roster/[id]/generated`, marked `data-wide-page`) is wider: max **(window width + 992px) ÷ 2**, so its edges sit halfway between the nav's edges and the window's edges (e.g. 1216px in a 1440px window) | `mx-auto w-full max-w-page px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]` | `web/src/app/(app)/layout.tsx` |
+| Page content area (every signed-in page) | Max **992px** wide, centred. Side padding **16px** on phones, **24px** from 640px up. **24px** top and bottom. **Exception:** the roster editor (`/roster/[id]/generated`) and Tracking (`/sessions/tracking`), both marked `data-wide-page`, are wider: max **(window width + 992px) ÷ 2**, so its edges sit halfway between the nav's edges and the window's edges (e.g. 1216px in a 1440px window) | `mx-auto w-full max-w-page px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]` | `web/src/app/(app)/layout.tsx` |
 | Nav bar | Dark background spans the full window. Contents max **992px**, centred, **56px** tall, **16px / 24px** side padding, **8px** between items | `h-14 max-w-page gap-2 px-4 sm:px-6` | `web/src/components/app-nav.tsx` |
 | Nav bar while loading | Same as the nav bar: 56px tall, max 992px | `h-14 max-w-page px-4 sm:px-6` | `web/src/components/app-nav.tsx` |
 | Mobile sidebar | **288px** wide, never more than **85%** of the screen | `w-72 max-w-[85vw]` | `web/src/components/app-nav.tsx` |
@@ -46,6 +46,12 @@ These depend on the root font size staying at the browser default (16px): nothin
   roster column shows at once. Only that page is wider: first the whole window, then (same day)
   narrowed so its edges sit halfway between the nav's edges and the window's: max
   (window + 992px) ÷ 2, with the usual 24px side padding. The nav and every other page stay at 992px.
+- 11 Nov 2026: the owner asked for the Tracking page (`/sessions/tracking`, not Pending) to be as
+  wide as the roster editor, so more table columns show.
+- 11 Nov 2026: fixed every page going wide after visiting one of those two. Next keeps visited pages
+  in the document, hidden, so their `data-wide-page` marker still matched. Wide pages now render
+  `<WidePage />` (`web/src/components/wide-page.tsx`), whose marker is removed while its page is
+  hidden.
 
 How every page is laid out (not just these measurements) is in [PAGE-LAYOUTS.md](PAGE-LAYOUTS.md).
 

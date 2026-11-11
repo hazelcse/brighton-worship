@@ -15,6 +15,8 @@ type Card = {
   title: string;
   artist: string | null;
   lyrics: string;
+  /** Toneless pinyin of a Chinese title ("zhu ni shi wo li liang"), "" otherwise. */
+  titlePinyin: string;
   type: SongType | null;
   language: "en" | "zh";
   bpm: number | null;
@@ -39,6 +41,19 @@ const norm = (s: string) =>
     .toLowerCase()
     .replace(/['’`]/g, "")
     .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * A search as plain pinyin: tone marks and tone numbers dropped, ü / v as u
+ * ("Zhǔ nǐ" / "zhu3 ni3" → "zhu ni", "lv" → "lu").
+ */
+const pinyinQuery = (q: string) =>
+  q
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[0-9]/g, "")
+    .replace(/v/g, "u")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -91,16 +106,35 @@ export function SongGallery({
       new Map(
         songs.map((s) => {
           const lines = s.lyrics.split("\n").filter((l) => l.trim());
-          return [s.id, { title: norm(s.title), artist: norm(s.artist ?? ""), lyrics: norm(lines.join(" ")) }];
+          const py = norm(s.titlePinyin);
+          return [
+            s.id,
+            {
+              title: norm(s.title),
+              artist: norm(s.artist ?? ""),
+              lyrics: norm(lines.join(" ")),
+              // Chinese titles' pinyin, spaced ("zhu ni") and run together ("zhuni") so either typing works.
+              pinyin: py,
+              pinyinTight: py.replace(/ /g, ""),
+            },
+          ];
         }),
       ),
     [songs],
   );
 
   // Songs whose title, artist or lyrics match the search, and which matched on the lyrics only.
+  // With a search, title matches come first, then artist matches, then lyrics-only matches (each
+  // group keeps the usual order).
   const { filtered, lyricHit } = useMemo(() => {
     const q = norm(deferredQuery);
+    const py = pinyinQuery(q);
+    const pyTight = py.replace(/ /g, "");
+    // A Chinese title typed in pinyin counts as a title match.
+    const titleHit = (ix: { title: string; pinyin: string; pinyinTight: string }) =>
+      ix.title.includes(q) || (!!ix.pinyin && !!py && (ix.pinyin.includes(py) || ix.pinyinTight.includes(pyTight)));
     const hits = new Set<string>();
+    const rank = new Map<string, number>();
     const list = songs.filter((s) => {
       if (type && s.type !== type) return false;
       if (language && s.language !== language) return false;
@@ -108,11 +142,14 @@ export function SongGallery({
       if (missingOnly && !s.missingFromDrive) return false;
       if (!q) return true;
       const ix = index.get(s.id)!;
-      if (ix.title.includes(q) || ix.artist.includes(q)) return true;
-      if (!ix.lyrics.includes(q)) return false;
-      hits.add(s.id);
+      const r = titleHit(ix) ? 0 : ix.artist.includes(q) ? 1 : ix.lyrics.includes(q) ? 2 : -1;
+      if (r < 0) return false;
+      if (r === 2) hits.add(s.id);
+      rank.set(s.id, r);
       return true;
     });
+    // Array.prototype.sort is stable, so each group stays in the library's order.
+    if (q) list.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
     return { filtered: list, lyricHit: hits };
   }, [songs, index, deferredQuery, type, language, reviewOnly, missingOnly]);
 

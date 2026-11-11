@@ -99,7 +99,7 @@ Fill in **`web/.env.local`**:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the anon key from step 3 |
 | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key from step 3 |
 | `ROOT_EMAIL`, `ROOT_PASSWORD`, `ROOT_NAME` | the root (owner) account to create |
-| `DEV_EMAIL`, `DEV_PASSWORD`, `DEV_NAME` | optional developer account (root's powers + "View as") |
+| `DEV_EMAIL`, `DEV_PASSWORD`, `DEV_NAME` | optional developer account (root's powers + "View or act as") |
 | `WORKER_URL` | leave as `http://127.0.0.1:8000` |
 | `WORKER_TOKEN` | the token you just made |
 | `DEFAULT_MEMBER_PASSWORD` | the password every imported member starts with |
@@ -381,8 +381,8 @@ OR-Tools CP-SAT. One yes/no variable per person × session × role they can do.
   gender, from the member's gender; unset counts for neither side. Each extra singer of one gender
   is one miss. Unlike the other permanent rules it's listed with the soft rules on the generated
   page, so clicking its badge highlights the singers in unbalanced bands.
-- Developer accounts (profiles.is_developer) have root's powers plus "View as" in the account menu
-  (root or any permission group; a cookie the server only honours for developers). A badge next to
+- Developer accounts (profiles.is_developer) have root's powers plus "View or act as" in the account menu
+  (root, any permission group, or one person, whose identity it then acts with; a cookie the server only honours for developers). A badge next to
   the avatar shows the current view.
 - Hand edits (root, drafts): on the generated page, click a cell (the whole cell, not a
   name) to change, add or remove who fills that part and who also does BL/TB. People already in the
@@ -440,7 +440,7 @@ account menu → **Manage permissions** (root only).
 
 ## Deploying (later)
 
-- Create a Supabase project, run `npx supabase link` then `npx supabase db push`.
+- Create a Supabase project, run `npx supabase link` then `npx supabase db push --remote` (without `--remote` the CLI targets your local database). Full steps: [documentation/DEPLOY.md](documentation/DEPLOY.md).
 - Deploy `web/` to Vercel with the same env vars (service-role key as a secret, never `NEXT_PUBLIC_`).
   Vercel caps each request at 4.5 MB, so the upload dialog sends songsheets one file per request
   and refuses files over 4 MB.
@@ -468,7 +468,7 @@ Rules:
 - Never point staging at the prod Supabase project. Use different `SUPABASE_SERVICE_ROLE_KEY`,
   `WORKER_TOKEN` and `DEFAULT_MEMBER_PASSWORD` in every environment.
 - Apply migrations in order: dev (`npx supabase db reset`), then staging (`npx supabase link` +
-  `db push`), then prod. Prod only gets migrations that already worked on staging.
+  `db push --remote`), then prod. Prod only gets migrations that already worked on staging.
 - Keep the Google service-account key out of dev and staging, so a non-prod sync can't touch the
   real songsheets. Use a test Drive folder there.
 - Don't run `npm run create-dev` in prod unless you want the hidden root-power dev account there.

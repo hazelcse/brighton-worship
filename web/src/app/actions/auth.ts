@@ -63,7 +63,9 @@ export async function changePassword(_prev: ChangePasswordState, formData: FormD
 
 export async function signOut() {
   const supabase = await createClient();
-  await supabase.auth.signOut();
+  // Only this browser. The default ("global") would also end the account's sessions on every
+  // other device, e.g. a phone, or other people sharing a developer account.
+  await supabase.auth.signOut({ scope: "local" });
   (await cookies()).delete(VIEW_AS_COOKIE); // a developer's "view as" ends with the session
   redirect("/");
 }

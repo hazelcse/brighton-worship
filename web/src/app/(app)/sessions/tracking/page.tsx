@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { loadSongBank } from "@/lib/sessions";
 import { countPending, loadRecords } from "@/lib/tracking-data";
 import { TrackingView } from "@/components/tracking/tracking-view";
+import { WidePage } from "@/components/wide-page";
 
 export const metadata: Metadata = { title: "Tracking · Brighton Worship" };
 
@@ -16,11 +17,19 @@ async function Tracking() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Tracking</h1>
-          <p className="text-sm text-muted">Sessions that have happened: who played and what was sung.</p>
-        </div>
+      {/* As wide as the roster editor, so more table columns fit (see LAYOUT.md). */}
+      <WidePage />
+      {/* The header row is drawn by TrackingView, which puts the bin (for ticked rows) beside the +. */}
+      <TrackingView
+        records={records}
+        bank={bank}
+        heading={
+          <div>
+            <h1 className="font-display text-3xl font-semibold">Tracking</h1>
+            <p className="text-sm text-muted">Sessions that have happened: who played and what was sung.</p>
+          </div>
+        }
+        add={
         <Link
           href="/sessions/tracking/pending"
           aria-label={pending ? `Confirm sessions (${pending} pending)` : "Confirm sessions"}
@@ -34,8 +43,8 @@ async function Tracking() {
             </span>
           )}
         </Link>
-      </div>
-      <TrackingView records={records} bank={bank} />
+        }
+      />
     </div>
   );
 }

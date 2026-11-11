@@ -64,8 +64,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={<AppNavSkeleton />}>
         <SignedInNav />
       </Suspense>
-      {/* A page marked data-wide-page (the roster editor) is wider than the nav: its edges sit
-          halfway between the nav's edges and the window's, i.e. max (100vw + 992px) / 2. See LAYOUT.md. */}
+      {/* A page showing <WidePage /> (the roster editor, Tracking) is wider than the nav: its edges sit
+          halfway between the nav's edges and the window's, i.e. max (100vw + 992px) / 2. WidePage drops
+          its data-wide-page marker while its page is hidden, so other pages stay 992px. See LAYOUT.md. */}
       <main className="mx-auto w-full max-w-page flex-1 px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]">
         <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>{children}</Suspense>
       </main>

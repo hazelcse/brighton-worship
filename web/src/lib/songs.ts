@@ -1,4 +1,5 @@
 import "server-only";
+import { pinyin } from "pinyin-pro";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type SongType = "praise" | "worship" | "praise_worship";
@@ -41,6 +42,8 @@ export type SongCard = {
   artist: string | null;
   /** The lyric lines from its songsheet, one per line (for searching). */
   lyrics: string;
+  /** Hanyu pinyin of the title's Chinese characters, without tones ("zhu ni shi wo li liang"); "" when none. */
+  titlePinyin: string;
   type: SongType | null;
   language: Language;
   bpm: number | null;
@@ -76,6 +79,21 @@ export function openIssues(
   return out;
 }
 
+/**
+ * A title's Hanyu pinyin for searching, lower case and without tones, one syllable per word
+ * ("主你是我力量" → "zhu ni shi wo li liang"); ü is written u. Non-Chinese parts are kept.
+ * "" when the title has no Chinese characters.
+ */
+export function titlePinyin(title: string): string {
+  if (!/\p{Script=Han}/u.test(title)) return "";
+  return pinyin(title, { toneType: "none", type: "array", nonZh: "consecutive" })
+    .join(" ")
+    .toLowerCase()
+    .replace(/ü/g, "u")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** All songs for the library gallery. ~hundreds of rows, so the gallery filters on the client. */
 export async function loadSongCards(): Promise<{ songs: SongCard[]; pendingScans: number }> {
   const db = createAdminClient();
@@ -100,6 +118,7 @@ export async function loadSongCards(): Promise<{ songs: SongCard[]; pendingScans
       title: s.title as string,
       artist: (s.artist as string | null) ?? null,
       lyrics: (s.lyrics as string | null) ?? "",
+      titlePinyin: titlePinyin(s.title as string),
       type: s.type as SongType | null,
       language: s.language as Language,
       bpm: s.bpm === null ? null : Number(s.bpm),

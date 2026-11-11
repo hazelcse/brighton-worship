@@ -10,6 +10,7 @@ import { GeneratedActions, LoadsButton } from "@/components/roster/generated-act
 import { RevisionActions, RevisionBadges, RevisionEditing, RevisionRosterTable } from "@/components/roster/revision-controls";
 import { FilteredRosterTable } from "@/components/roster/roster-filter";
 import { HighlightProvider } from "@/components/roster/highlight";
+import { WidePage } from "@/components/wide-page";
 import { LoadsTable, ResultStatus, RulesPanel, WeightsPanel } from "@/components/roster/roster-results";
 
 export const metadata: Metadata = { title: "Generated roster · Brighton Worship" };
@@ -102,8 +103,9 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <RevisionEditing rosterId={roster.id} assignments={assignments} sessions={sessions}>
-    {/* data-wide-page: this page alone is wider than the nav (see the layout and LAYOUT.md). */}
-    <div data-wide-page className="space-y-5">
+    <div className="space-y-5">
+      {/* Wider than the nav, so every roster column fits (see LAYOUT.md). */}
+      <WidePage />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           {revision ? (

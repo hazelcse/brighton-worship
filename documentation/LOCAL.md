@@ -85,7 +85,7 @@ Made by copying `web/.env.example`.
 | `ROOT_EMAIL` | Email of the owner ("root") account | You choose. It doesn't need to be real; nothing is emailed |
 | `ROOT_PASSWORD` | Password for the root account | You choose |
 | `ROOT_NAME` | Display name for the root account | You choose |
-| `DEV_EMAIL`, `DEV_PASSWORD`, `DEV_NAME` | Optional developer account: root's powers plus a "View as" switch for seeing the app as other roles | You choose, or leave blank to skip |
+| `DEV_EMAIL`, `DEV_PASSWORD`, `DEV_NAME` | Optional developer account: root's powers plus a "View or act as" switch for seeing the app as other roles or acting as one person | You choose, or leave blank to skip |
 | `WORKER_URL` | Where the website finds the worker | Leave as `http://127.0.0.1:8000` |
 | `WORKER_TOKEN` | A shared password between the website and the worker | A random string you generate (step 4.6). Must match `worker/.env` |
 | `DEFAULT_MEMBER_PASSWORD` | The password every imported team member starts with (they must change it on first login) | You choose |

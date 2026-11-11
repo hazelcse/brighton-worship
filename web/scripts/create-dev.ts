@@ -4,7 +4,7 @@
  *   npm run create-dev
  *
  * Reads DEV_EMAIL, DEV_PASSWORD and DEV_NAME (default "Dev") from .env.local.
- * A developer has root's powers plus "View as" (root, a permission group, or one person,
+ * A developer has root's powers plus "View or act as" (root, a permission group, or one person,
  * read-only). It isn't a team member: only root sees it on the Team page, it has no member
  * number, and it's never rostered. Safe to run more than once.
  */

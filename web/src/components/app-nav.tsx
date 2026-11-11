@@ -307,7 +307,11 @@ export function AppNav({ user: given }: { user: NavUser }) {
             </button>
             {user.isDeveloper && (
               <span
-                title={user.viewAs ? `Viewing as ${user.viewAs}` : "Developer: full access"}
+                title={
+                  user.viewAs
+                    ? `${user.viewAsKey?.startsWith("person:") ? "Acting as" : "Viewing as"} ${user.viewAs}`
+                    : "Developer: full access"
+                }
                 className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${user.viewAs ? "border-violet-400 bg-violet-500/15 text-violet-200" : "border-accent/70 bg-accent/10 text-orange-200"}`}
               >
                 {user.viewAs ?? "Dev"}

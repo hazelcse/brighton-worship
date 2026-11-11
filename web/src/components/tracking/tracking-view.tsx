@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { formatDate } from "@/lib/roster";
 import { BAND_COLUMNS, MAX_SONGS, MINISTRY_TEXT, linkLabel, serviceType, songSlots, type BandKey, type SessionRecord } from "@/lib/tracking";
-import { updateRecord } from "@/app/(app)/sessions/tracking/actions";
+import { deleteRecords, updateRecord } from "@/app/(app)/sessions/tracking/actions";
 import { RecordForm } from "@/components/tracking/record-form";
 import type { BankSong } from "@/components/sessions/song-bank-panel";
 
@@ -298,6 +298,8 @@ function FilterDropdown({ records, filters, setFilters }: { records: SessionReco
 
 const th = "whitespace-nowrap border-b border-border bg-background px-3 py-2 text-left text-xs font-semibold";
 const td = "whitespace-nowrap border-b border-border px-3 py-1.5 align-top";
+/** The checkbox column: 40px, so the sticky Date column sits right after it (`left-10`). */
+const tick = "w-10 min-w-10 max-w-10";
 
 /** Columns root can show or hide (Date always shows). Song fields apply to all five songs. */
 const SONG_FIELDS = [
@@ -444,9 +446,36 @@ function ColumnPicker({ hidden, setHidden }: { hidden: ColKey[]; setHidden: (h: 
 const SHORTENED = new Set<BandKey>(["wl", "vox"]);
 const SHOWN_NAMES = 2;
 
-/** `total`: sessions before filtering, for the row count. */
-function TableView({ records, total, hidden }: { records: SessionRecord[]; total: number; hidden: ColKey[] }) {
+/** Sessions root can delete: confirmed ones, not "no session" rows (those come from roster setup). */
+const deletable = (r: SessionRecord) => r.cancelReason === undefined;
+
+/**
+ * `total`: sessions before filtering, for the row count. `selected`: ticked rows (checkbox column
+ * on the left, like an inbox); the header box ticks or clears every deletable row shown.
+ */
+function TableView({
+  records,
+  total,
+  hidden,
+  selected,
+  setSelected,
+}: {
+  records: SessionRecord[];
+  total: number;
+  hidden: ColKey[];
+  selected: Set<string>;
+  setSelected: (s: Set<string>) => void;
+}) {
   const on = (k: ColKey) => !hidden.includes(k);
+  const tickable = records.filter(deletable);
+  const ticked = tickable.filter((r) => selected.has(r.id)).length;
+  const allTicked = tickable.length > 0 && ticked === tickable.length;
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
   const band = BAND_COLUMNS.filter((c) => on(c.key));
   // WL and Vox columns opened to show every name (clicking a cell opens or closes its column).
   const [opened, setOpened] = useState<BandKey[]>([]);
@@ -463,7 +492,20 @@ function TableView({ records, total, hidden }: { records: SessionRecord[]; total
       <table className="min-w-full border-separate border-spacing-0 bg-surface text-xs">
         <thead className="sticky top-0 z-10">
           <tr>
-            <th className={`${th} sticky left-0 z-10`}>Date</th>
+            <th className={`${th} ${tick} sticky left-0 z-10`}>
+              <input
+                type="checkbox"
+                aria-label={allTicked ? "Untick all sessions" : "Tick all sessions"}
+                checked={allTicked}
+                disabled={!tickable.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = ticked > 0 && !allTicked;
+                }}
+                onChange={() => setSelected(allTicked ? new Set() : new Set(tickable.map((r) => r.id)))}
+                className="h-4 w-4 cursor-pointer align-middle accent-[var(--color-accent)]"
+              />
+            </th>
+            <th className={`${th} sticky left-10 z-10`}>Date</th>
             {on("service") && <th className={th}>Service</th>}
             {band.map((c) => (
               <th key={c.key} className={th}>
@@ -488,9 +530,21 @@ function TableView({ records, total, hidden }: { records: SessionRecord[]; total
           {records.map((r) => {
             // Sunday services: main set in Songs 1–4, closing song in Song 5.
             const slots = songSlots(r.songs);
+            const isTicked = selected.has(r.id);
             return (
-              <tr key={r.id} className="hover:bg-background/60">
-                <td className={`${td} sticky left-0 bg-surface font-medium`}>
+              <tr key={r.id} className={isTicked ? "bg-accent/5" : "hover:bg-background/60"}>
+                <td className={`${td} ${tick} sticky left-0 bg-surface`}>
+                  {deletable(r) && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Tick ${r.serviceName} on ${formatDate(r.date)}`}
+                      checked={isTicked}
+                      onChange={() => toggle(r.id)}
+                      className="h-4 w-4 cursor-pointer align-middle accent-[var(--color-accent)]"
+                    />
+                  )}
+                </td>
+                <td className={`${td} sticky left-10 bg-surface font-medium`}>
                   {formatDate(r.date, {
                     day: "numeric",
                     month: "short",
@@ -586,6 +640,67 @@ function PencilIcon() {
   );
 }
 
+function BinIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+/** "Are you sure you want to delete 3 sessions?" with Cancel / Delete. */
+function ConfirmDelete({ ids, onClose, onDeleted }: { ids: string[]; onClose: () => void; onDeleted: (ids: string[]) => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  const n = ids.length;
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby="delete-sessions-title"
+      onClose={onClose}
+      onClick={(e) => e.target === ref.current && !pending && ref.current?.close()}
+      className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-surface p-0 text-foreground shadow-2xl"
+    >
+      <div className="space-y-4 p-5">
+        <h2 id="delete-sessions-title" className="text-base font-semibold">
+          Are you sure you want to delete {n} session{n === 1 ? "" : "s"}?
+        </h2>
+        <p className="text-sm text-muted">They&apos;re removed from tracking. Sessions from a roster go back to Pending.</p>
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => ref.current?.close()}
+            className="h-10 rounded-lg border border-border bg-surface px-4 text-sm font-medium hover:bg-background disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                const res = await deleteRecords(ids);
+                if (!res.ok) return setError(res.message);
+                onDeleted(ids);
+                ref.current?.close();
+              })
+            }
+            className="h-10 rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {pending ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
 /** A session's details: band, songs, links and comments. */
 export function RecordDetails({ r }: { r: Pick<SessionRecord, "band" | "songs" | "links" | "comments"> }) {
   const band = BAND_COLUMNS.filter((c) => r.band[c.key]?.length);
@@ -675,7 +790,7 @@ function NoSessionItem({ r }: { r: SessionRecord }) {
   );
 }
 
-function ListItem({ r, bank }: { r: SessionRecord; bank: BankSong[] }) {
+function ListItem({ r, bank, onDelete }: { r: SessionRecord; bank: BankSong[]; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   return (
@@ -710,9 +825,18 @@ function ListItem({ r, bank }: { r: SessionRecord; bank: BankSong[] }) {
             setEditing((e) => !e);
             setOpen(true);
           }}
-          className="mr-2 rounded-lg p-2 text-muted hover:bg-background hover:text-foreground aria-pressed:text-accent"
+          className="rounded-lg p-2 text-muted hover:bg-background hover:text-foreground aria-pressed:text-accent"
         >
           <PencilIcon />
+        </button>
+        <button
+          type="button"
+          aria-label={`Delete ${r.serviceName} on ${formatDate(r.date)}`}
+          title="Delete"
+          onClick={onDelete}
+          className="mr-2 rounded-lg p-2 text-muted hover:bg-red-50 hover:text-danger"
+        >
+          <BinIcon />
         </button>
       </div>
       {open && (
@@ -745,11 +869,28 @@ function ListItem({ r, bank }: { r: SessionRecord; bank: BankSong[] }) {
 
 const VIEW_KEY = "tracking-view";
 
-export function TrackingView({ records, bank }: { records: SessionRecord[]; bank: BankSong[] }) {
+/**
+ * The page: header row (`heading` left; bin for ticked rows, then `add` (the +) right), toolbar,
+ * then the table or list.
+ */
+export function TrackingView({
+  records,
+  bank,
+  heading,
+  add,
+}: {
+  records: SessionRecord[];
+  bank: BankSong[];
+  heading: React.ReactNode;
+  add: React.ReactNode;
+}) {
   const [view, setView] = useState<"table" | "list">("table");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [query, setQuery] = useState("");
   const [hidden, setHidden] = useHiddenColumns();
+  // Ticked table rows, and the sessions waiting on the "Are you sure…?" popup.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
 
   // Remember the last view on this device.
   useEffect(() => {
@@ -768,8 +909,39 @@ export function TrackingView({ records, bank }: { records: SessionRecord[]; bank
 
   const q = query.trim().toLowerCase();
   const shown = useMemo(() => records.filter((r) => matches(r, filters, q)), [records, filters, q]);
+  // Only ticked rows still showing count (a filter or search can hide ticked rows).
+  const ticked = view === "table" ? shown.filter((r) => deletable(r) && selected.has(r.id)).map((r) => r.id) : [];
 
   return (
+    <>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      {heading}
+      <div className="flex items-center gap-2">
+        {ticked.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setToDelete(ticked)}
+            aria-label={`Delete ${ticked.length} ticked session${ticked.length === 1 ? "" : "s"}`}
+            title={`Delete ${ticked.length} session${ticked.length === 1 ? "" : "s"}`}
+            className="grid h-10 w-10 place-items-center rounded-lg border border-red-300 text-danger hover:bg-red-50"
+          >
+            <BinIcon size={18} />
+          </button>
+        )}
+        {add}
+      </div>
+    </div>
+    {toDelete && (
+      <ConfirmDelete
+        ids={toDelete}
+        onClose={() => setToDelete(null)}
+        onDeleted={(ids) => {
+          const next = new Set(selected);
+          for (const id of ids) next.delete(id);
+          setSelected(next);
+        }}
+      />
+    )}
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <FilterDropdown records={records} filters={filters} setFilters={setFilters} />
@@ -823,12 +995,15 @@ export function TrackingView({ records, bank }: { records: SessionRecord[]; bank
       ) : shown.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">No sessions match.</p>
       ) : view === "table" ? (
-        <TableView records={shown} total={records.length} hidden={hidden} />
+        <TableView records={shown} total={records.length} hidden={hidden} selected={selected} setSelected={setSelected} />
       ) : (
         <ul className="space-y-2">
-          {shown.map((r) => (r.cancelReason !== undefined ? <NoSessionItem key={r.id} r={r} /> : <ListItem key={r.id} r={r} bank={bank} />))}
+          {shown.map((r) =>
+            r.cancelReason !== undefined ? <NoSessionItem key={r.id} r={r} /> : <ListItem key={r.id} r={r} bank={bank} onDelete={() => setToDelete([r.id])} />,
+          )}
         </ul>
       )}
     </div>
+    </>
   );
 }

@@ -45,6 +45,26 @@ export async function confirmSession(rosterSessionId: string, input: RecordInput
   }
 }
 
+/**
+ * Root deletes tracked sessions. A deleted session that came from a roster goes back to Pending,
+ * so it can be confirmed again. "No session" rows come from roster setup and aren't deleted here.
+ */
+export async function deleteRecords(ids: string[]): Promise<TrackingResult> {
+  try {
+    await requireRoot();
+    const wanted = [...new Set(ids)].filter((id) => typeof id === "string" && !id.startsWith("no-session-"));
+    if (!wanted.length) throw new Error("Nothing to delete.");
+    const db = createAdminClient();
+    const { data, error } = await db.from("session_records").delete().in("id", wanted).select("id");
+    if (error) throw new Error(error.message);
+    refresh();
+    const n = data?.length ?? 0;
+    return { ok: true, message: `Deleted ${n} session${n === 1 ? "" : "s"}.` };
+  } catch (e) {
+    return { ok: false, message: message(e) };
+  }
+}
+
 /** Root corrects a tracked session. */
 export async function updateRecord(id: string, input: RecordInput): Promise<TrackingResult> {
   try {

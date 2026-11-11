@@ -103,8 +103,8 @@ to the roster".
 2. **Rules**: "+ Add rule", three collapsible bordered groups.
 3. **Generate**: a section card, two columns from 640px, then the generate controls.
 
-**`/roster/[id]/generated`** (the roster editor): **wider than the nav**: the only page past the
-992px cap (`data-wide-page`): max (window + 992px) ÷ 2, so its edges sit halfway between the
+**`/roster/[id]/generated`** (the roster editor): **wider than the nav**: with Tracking, the only
+pages past the 992px cap (`data-wide-page`): max (window + 992px) ÷ 2, so its edges sit halfway between the
 nav's edges and the window's, giving the roster columns more room on desktop. Header stacks below 1024px: title ("Generated roster"
 or the quarter) left; right: Loads (orange pill), back to planning, Reset, Save draft, Publish
 (all `h-10`). Body: roster table; from **1280px** a 256px side column (warnings, result, rules,
@@ -124,11 +124,16 @@ minimised). Left: back link, date line, title + badges, a row of 36px icon butto
 alerts, band (collapsible), then the plan editor (item cards, 2 → 4 field columns). Below 1024px
 the song bank is a floating "Song bank" pill that opens full screen.
 
-**`/sessions/tracking`** (root): full width. Title "Tracking", dark **+** with a pending count
-badge. Toolbar (wraps): Filters, search (fills the row, min 192px), Columns, Table/List switch.
-Table view: bordered box, max 65% of the window tall, scrolls both ways, sticky header and date
-column; sessions marked as no session show their reason across the row. List view: collapsible
-rows (date 112px → 144px at sm), details in two columns from 768px.
+**`/sessions/tracking`** (root): **wider than the nav**, the same width as the roster editor
+(`data-wide-page`: max (window + 992px) ÷ 2), so more table columns show. Title "Tracking", dark **+** with a pending count
+badge; while table rows are ticked, a red-outlined 40px **bin** sits just left of the + (opens
+"Are you sure you want to delete N sessions?"). Toolbar (wraps): Filters, search (fills the row,
+min 192px), Columns, Table/List switch.
+Table view: bordered box, max 65% of the window tall, scrolls both ways, sticky header; a sticky
+40px checkbox column (header box ticks all shown rows) then the sticky date column; ticked rows
+tint orange; sessions marked as no session have no checkbox and show their reason across the
+row. List view: collapsible rows (date 112px → 144px at sm), details in two columns from 768px;
+each row ends with a pencil then a bin (same popup, for that one session).
 
 **`/sessions/tracking/pending`** (root): full width. Back link, title "Pending sessions", intro.
 Accordion list of sessions; each opens the record form (band 1 → 2 → 4 columns, song rows in four
@@ -153,6 +158,10 @@ columns from 640px, two link fields).
     with an orange dot top-right when there are new updates; the rest wrap onto a second row,
     which starts with the song count ("12 of 368 songs", Clear filters) on the left. The
     separate count line below is hidden on phones (except to show "Scanning…").
+- Search results: songs matching on the title first, then on the artist, then lyrics-only
+  matches; each group keeps the usual order. Chinese titles also match their Hanyu pinyin
+  (spaced or run together, tones optional: "zhu ni", "zhuni", "zhǔ nǐ"; ü as u or v), worked out
+  on the server with `pinyin-pro`; a pinyin match counts as a title match.
 - Count line ("12 of 368 songs", Clear filters; "Scanning…" on the right). From 768px only; on
   phones the count moves into the toolbar's second row.
 - **Cards**: the same grid as Team, 4 per row on desktop (see Gallery cards). Each card: title,
