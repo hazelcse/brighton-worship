@@ -11,7 +11,7 @@
       "name": "Page content area (every signed-in page)",
       "file": "web/src/app/(app)/layout.tsx",
       "snippet": "<main className=\"mx-auto w-full max-w-page flex-1 px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]\">",
-      "means": "max 992px wide (roster editor and Tracking, marked data-wide-page: max (window + 992px) / 2, edges halfway between the nav edges and the window edges); 16px side padding on phones, 24px from 640px up; 24px top and bottom"
+      "means": "max 992px wide (roster editor, Tracking and the session workbench, which render <WidePage />: max (window + 992px) / 2, edges halfway between the nav edges and the window edges); 16px side padding on phones, 24px from 640px up; 24px top and bottom"
     },
     {
       "name": "Nav bar contents",

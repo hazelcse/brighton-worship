@@ -118,7 +118,8 @@ cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, s
 **`/sessions/build`**: narrow **768px**. Back link, title, subtitle, amber notice; per quarter a
 small uppercase heading and a list of session rows (date block, name, stage badge).
 
-**`/sessions/[id]` (workbench)**: full width, two columns from 1024px: the plan on the left and a
+**`/sessions/[id]` (workbench / session builder)**: **wider than the nav**, the same width as the
+roster editor (`<WidePage />`: max (window + 992px) ÷ 2). Two columns from 1024px: the plan on the left and a
 sticky **song bank** panel on the right (384px at lg, 448px at xl; collapses to a 44px strip when
 minimised). Left: back link, date line, title + badges, a row of 36px icon buttons and "Publish",
 alerts, band (collapsible), then the plan editor (item cards, 2 → 4 field columns). Below 1024px

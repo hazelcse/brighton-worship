@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { loadSongBank, loadWorkbench, sessionAccess } from "@/lib/sessions";
 import { Workbench } from "@/components/sessions/workbench";
 import { MarkSessionsSeen } from "@/components/sessions/mark-sessions-seen";
+import { WidePage } from "@/components/wide-page";
 
 export const metadata: Metadata = { title: "Session workbench · Brighton Worship" };
 
@@ -23,6 +24,8 @@ async function WorkbenchView({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <>
+      {/* As wide as the roster editor, so the plan and the song bank both get more room (see LAYOUT.md). */}
+      <WidePage />
       {loaded.workbench.status === "published" && <MarkSessionsSeen />}
       <Workbench initial={loaded.workbench} canEdit={access.canEdit} bank={bank} canBrowse={canBrowse} />
     </>
