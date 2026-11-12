@@ -25,6 +25,112 @@ import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessi
 
 const btn = "inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium disabled:opacity-60";
 
+/*
+ * The song bank's width on desktop, dragged from the gap between it and the plan. Only the split
+ * changes: the page's own width doesn't. Kept per browser; none saved means the defaults
+ * (384px, 448px from 1280px). Limits: the bank 320px to half the row, and the plan keeps 560px.
+ */
+const BANK_KEY = "sessions.songBankWidth";
+const BANK_MIN = 320;
+const PLAN_MIN = 560;
+const GAP = 16;
+const bankListeners = new Set<() => void>();
+function readBankWidth(): number | null {
+  try {
+    const v = Number(localStorage.getItem(BANK_KEY));
+    return v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveBankWidth(width: number | null) {
+  try {
+    if (width) localStorage.setItem(BANK_KEY, String(Math.round(width)));
+    else localStorage.removeItem(BANK_KEY);
+  } catch {
+    /* storage blocked: the width just isn't remembered */
+  }
+  bankListeners.forEach((l) => l());
+}
+function subscribeBankWidth(l: () => void) {
+  bankListeners.add(l);
+  return () => void bankListeners.delete(l);
+}
+/** The --bank column width for a chosen width, still kept within the limits if the window shrinks. */
+function bankColumn(width: number) {
+  return `clamp(${BANK_MIN}px, ${Math.round(width)}px, min(50%, 100% - ${PLAN_MIN + GAP}px))`;
+}
+
+/** The drag handle filling the gap left of the song bank. Arrow keys work too; double-click resets. */
+function BankResizer({ grid, width }: { grid: React.RefObject<HTMLDivElement | null>; width: number | null }) {
+  const [dragging, setDragging] = useState(false);
+  const clamp = (w: number) => {
+    const row = grid.current?.getBoundingClientRect().width ?? 0;
+    return Math.round(Math.max(BANK_MIN, Math.min(w, row / 2, row - PLAN_MIN - GAP)));
+  };
+  const current = () => {
+    const aside = grid.current?.querySelector("aside");
+    return aside?.getBoundingClientRect().width ?? width ?? 384;
+  };
+  const show = (w: number) => grid.current?.style.setProperty("--bank", bankColumn(w));
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize song bank"
+      aria-valuenow={Math.round(width ?? 0) || undefined}
+      tabIndex={0}
+      title="Drag to resize · double-click to reset"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setDragging(true);
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "col-resize";
+      }}
+      onPointerMove={(e) => {
+        if (!dragging || !grid.current) return;
+        // Pointer in the middle of the gap: the bank starts half a gap to its right.
+        show(clamp(grid.current.getBoundingClientRect().right - e.clientX - GAP / 2));
+      }}
+      onPointerUp={(e) => {
+        if (!dragging) return;
+        setDragging(false);
+        document.body.style.userSelect = "";
+        document.body.style.cursor = "";
+        saveBankWidth(current());
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }}
+      onLostPointerCapture={() => {
+        if (!dragging) return;
+        setDragging(false);
+        document.body.style.userSelect = "";
+        document.body.style.cursor = "";
+        saveBankWidth(current());
+      }}
+      onDoubleClick={() => {
+        grid.current?.style.removeProperty("--bank");
+        saveBankWidth(null);
+      }}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 64 : 16;
+        const by = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : 0;
+        if (!by) return;
+        e.preventDefault();
+        saveBankWidth(clamp(current() + by));
+      }}
+      className="group absolute -left-4 top-0 flex h-full w-4 cursor-col-resize touch-none justify-center outline-none"
+    >
+      <span
+        aria-hidden
+        className={`h-full w-1 rounded-full transition-colors group-hover:bg-border group-focus-visible:bg-accent ${dragging ? "bg-accent" : ""}`}
+      />
+    </div>
+  );
+}
+
 /** Take an item out and put it at this position in this section. */
 function placeAt(plan: PlanSection[], id: string, sectionId: string, index: number): PlanSection[] {
   const item = plan.flatMap((s) => s.items).find((i) => i.id === id);
@@ -277,6 +383,8 @@ export function Workbench({
   // Song bank panel
   const [minimised, setMinimised] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const bankWidth = useSyncExternalStore(subscribeBankWidth, readBankWidth, () => null);
   const [query, setQuery] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, BankSongDetail | null | undefined>>({});
@@ -641,7 +749,12 @@ export function Workbench({
   );
 
   return (
-    <div className={`grid gap-4 ${minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]"}`}>
+    <div
+      ref={gridRef}
+      // --bank: the song bank column; defaults by window size, or the width dragged (BankResizer).
+      style={bankWidth && !minimised ? ({ "--bank": bankColumn(bankWidth) } as React.CSSProperties) : undefined}
+      className={`grid gap-4 ${minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_var(--bank)] lg:[--bank:24rem] xl:[--bank:28rem]"}`}
+    >
       {/* The session being built */}
       <div className="min-w-0 space-y-4">
         <Link href={canEdit ? "/sessions/build" : "/sessions"} className="block w-fit text-sm text-muted hover:text-foreground">
@@ -835,7 +948,10 @@ export function Workbench({
               <span className="[writing-mode:vertical-rl]">Song bank</span>
             </button>
           ) : (
-            panel
+            <>
+              <BankResizer grid={gridRef} width={bankWidth} />
+              {panel}
+            </>
           )}
         </div>
       </aside>

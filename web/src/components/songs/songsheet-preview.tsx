@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCloseOnLeave } from "@/lib/use-close-on-leave";
+import { NO_CROP, marginsOf, sheetCrops, type Margins } from "@/lib/sheet-crop";
 
 
 type Meta = { pages: number } | { error: string } | null;
@@ -31,7 +32,28 @@ function usePreviewPages(versionId: string | null, known: number | null): Meta {
   return meta;
 }
 
+/** A page image as loaded: its size and white margins (null: blank or unreadable). */
+type Loaded = { width: number; height: number; margins: Margins | null };
+
 function Pages({ versionId, meta, title, onOpen }: { versionId: string; meta: Meta; title: string; onOpen?: () => void }) {
+  const [loaded, setLoaded] = useState<(Loaded | undefined)[]>([]);
+  const [forId, setForId] = useState(versionId);
+  if (forId !== versionId) {
+    setForId(versionId);
+    setLoaded([]);
+  }
+  const pages = meta && "pages" in meta ? meta.pages : 0;
+  const all = Array.from({ length: pages }, (_, i) => loaded[i]);
+  // Every page waits for the others: the sheet's pages share one zoom (see sheet-crop.ts).
+  const crops = pages > 0 && all.every(Boolean) ? sheetCrops(all.map((p) => p!.margins)) : null;
+  const done = (i: number, page: Loaded) =>
+    setLoaded((prev) => {
+      const next = [...prev];
+      next[i] = page;
+      return next;
+    });
+  const measure = (i: number, el: HTMLImageElement) => done(i, { width: el.naturalWidth, height: el.naturalHeight, margins: marginsOf(el) });
+
   if (!meta) {
     return (
       <div className="flex aspect-[8.5/11] w-full items-center justify-center rounded-lg bg-background text-sm text-muted" role="status">
@@ -45,17 +67,31 @@ function Pages({ versionId, meta, title, onOpen }: { versionId: string; meta: Me
   return (
     <div className="space-y-3">
       {Array.from({ length: meta.pages }, (_, i) => {
+        const size = loaded[i] ?? { width: 1105, height: 1430 };
+        const crop = crops?.[i] ?? NO_CROP;
         const img = (
-          // Plain <img>: these are private, already-sized PNGs served by our own API.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`/api/songsheets/${versionId}/preview/${i + 1}`}
-            alt={`${title} songsheet, page ${i + 1} of ${meta.pages}`}
-            width={1105}
-            height={1430}
-            loading={i === 0 ? "eager" : "lazy"}
-            className="h-auto w-full rounded-lg border border-border bg-white shadow-sm"
-          />
+          <div
+            className="relative overflow-hidden rounded-lg border border-border bg-white shadow-sm"
+            style={{ aspectRatio: `${size.width * crop.w} / ${size.height * crop.h}` }}
+          >
+            {/* Plain <img>: these are private, already-sized PNGs served by our own API. Hidden
+                until every page is measured, so the zoom doesn't jump in after it shows. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/songsheets/${versionId}/preview/${i + 1}`}
+              alt={`${title} songsheet, page ${i + 1} of ${meta.pages}`}
+              width={size.width}
+              height={size.height}
+              // The ref catches an image that loaded (e.g. from cache) before React was listening.
+              ref={(el) => {
+                if (el?.complete && el.naturalWidth && !loaded[i]) measure(i, el);
+              }}
+              onLoad={(e) => measure(i, e.currentTarget)}
+              onError={() => done(i, { width: 1105, height: 1430, margins: null })}
+              className={`absolute h-auto max-w-none ${crops ? "" : "invisible"}`}
+              style={{ width: `${100 / crop.w}%`, left: `${(-crop.x / crop.w) * 100}%`, top: `${(-crop.y / crop.h) * 100}%` }}
+            />
+          </div>
         );
         return onOpen ? (
           <button
@@ -161,7 +197,7 @@ export function SongsheetPreview({
   const [open, setOpen] = useState(openFullSize);
   const meta = usePreviewPages(versionId, previewPages);
   return (
-    <section aria-labelledby="preview-title" className="space-y-3 rounded-xl border border-border bg-surface p-4 sm:p-5">
+    <section aria-labelledby="preview-title" className="space-y-3 rounded-xl border border-border bg-surface p-2 sm:p-2.5">
       <div className="flex items-center justify-between gap-2">
         <h2 id="preview-title" className="text-lg font-semibold">
           Preview

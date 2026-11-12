@@ -174,14 +174,14 @@ export function SongBankPanel({
                   <p className="whitespace-pre-line text-sm">{detail.notes}</p>
                 </div>
               )}
-              <Link href={`/songs/${detail.id}`} target="_blank" className="inline-block text-sm text-accent underline-offset-2 hover:underline">
-                Open song page ↗
-              </Link>
               {detail.versionId ? (
                 <SongsheetPreview versionId={detail.versionId} previewPages={detail.previewPages} title={detail.title} />
               ) : (
                 <p className="text-sm text-muted">No songsheet yet.</p>
               )}
+              <Link href={`/songs/${detail.id}`} target="_blank" className="inline-block text-sm text-accent underline-offset-2 hover:underline">
+                Open song page ↗
+              </Link>
             </>
           )}
         </div>

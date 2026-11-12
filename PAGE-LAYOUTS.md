@@ -120,10 +120,14 @@ small uppercase heading and a list of session rows (date block, name, stage badg
 
 **`/sessions/[id]` (workbench / session builder)**: **wider than the nav**, the same width as the
 roster editor (`<WidePage />`: max (window + 992px) ÷ 2). Two columns from 1024px: the plan on the left and a
-sticky **song bank** panel on the right (384px at lg, 448px at xl; collapses to a 44px strip when
-minimised). Left: back link, date line, title + badges, a row of 36px icon buttons and "Publish",
+sticky **song bank** panel on the right (384px at lg, 448px at xl by default; collapses to a 44px strip when
+minimised). The 16px gap between them is a drag handle (line shows on hover; arrow keys move it
+16px, Shift 64px; double-click resets): it moves the split only, never the page width. The bank
+stays 320px to half the row and the plan keeps at least 560px; the chosen width is remembered per
+browser (`localStorage` `sessions.songBankWidth`). Left: back link, date line, title + badges, a row of 36px icon buttons and "Publish",
 alerts, band (collapsible), then the plan editor (item cards, 2 → 4 field columns). Below 1024px
-the song bank is a floating "Song bank" pill that opens full screen.
+the song bank is a floating "Song bank" pill that opens full screen. A song opened in the panel
+shows its details, then the songsheet preview card, then the "Open song page ↗" link.
 
 **`/sessions/tracking`** (root): **wider than the nav**, the same width as the roster editor
 (`data-wide-page`: max (window + 992px) ÷ 2), so more table columns show. Title "Tracking", dark **+** with a pending count
@@ -177,6 +181,13 @@ columns from 640px, two link fields).
 beside it; artist; fact pills. Optional "Missing from Drive" and issues boxes. Then two columns
 from 1024px (3 : 2): **Details** card on the left; songsheet preview, links, versions and delete
 on the right (the right column comes first on phones).
+
+**Songsheet views** (the Preview card here and in the session song bank, its Full size popup, the
+song cards' eye popup, and the session PDF popup): each page is shown zoomed in on its white
+margins — each side margin halved, top and bottom trimmed by the same share so the page keeps its
+shape. Margins are measured per page from its pixels (`web/src/lib/sheet-crop.ts`), never cut
+into ink, and all pages of a sheet share one zoom. The Preview card's padding is `p-2 sm:p-2.5`
+(half a section card's).
 
 **`/songs/transpose`**: narrow **768px**. Back link, title "Transpose songsheet", intro. Step
 cards "1. Songsheet" and "2. New key" (key grid 4 → 6 columns), action row, success box.
