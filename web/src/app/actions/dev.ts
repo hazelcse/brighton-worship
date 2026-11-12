@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { SONGS_TAG } from "@/lib/cache-tags";
 import { cookies } from "next/headers";
 import { VIEW_AS_COOKIE, VIEW_AS_PERSON, getSessionUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -81,6 +82,8 @@ export async function resetAppData(confirm: string): Promise<{ ok: boolean; mess
 
     const { error } = await db.rpc("developer_reset_app_data");
     if (error) throw error;
+    // The song library is gone: drop its cache now, even if a later step fails.
+    updateTag(SONGS_TAG);
 
     // Songsheet files: uploads, previews and transpositions.
     const files = await allFiles(db, "songsheets");

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ATTACHED_ROLES, ROLE_LABEL, SINGING_ROLES, todayYmd } from "@/lib/roster";
 
@@ -878,7 +879,13 @@ export async function countUnseenRosterUpdates(user: { id: string; isRoot: boole
  * changes they're part of, and changes to the bands they're in (the session, and for a swap the
  * session offered in return): not changes to other bands, even ones using their instrument.
  */
-export async function loadUpdates(user: { id: string; isRoot: boolean }): Promise<UpdateItem[]> {
+export function loadUpdates(user: { id: string; isRoot: boolean }): Promise<UpdateItem[]> {
+  return updatesFor(user.id, user.isRoot);
+}
+
+/** Once per request per person: the Roster page and the nav badge both need it. */
+const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<UpdateItem[]> => {
+  const user = { id: userId, isRoot };
   const db = createAdminClient();
   const sessions = await publishedSessions(db);
   if (!sessions.size) return [];
@@ -1044,7 +1051,7 @@ export async function loadUpdates(user: { id: string; isRoot: boolean }): Promis
       resolvedAt: (u.resolved_at as string | null) ?? null,
       href: href(u),
     }));
-}
+});
 
 /**
  * "sessionId|memberId" -> status, for colouring names on this quarter's roster. Anyone who can't

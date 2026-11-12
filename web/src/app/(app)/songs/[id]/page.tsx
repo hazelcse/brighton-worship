@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { NoteLoader } from "@/components/note-loader";
 import { requireUser } from "@/lib/auth";
 import { LANGUAGE_LABEL, SONG_TYPE_LABEL, loadSong, openIssues } from "@/lib/songs";
 import { IssueList } from "@/components/songs/issue-list";
@@ -182,7 +183,7 @@ function ReadOnly({ label, value }: { label: string; value: string | null | unde
 
 export default function SongPage({ params, searchParams }: Params) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading song…</p>}>
+    <Suspense fallback={<NoteLoader label="Loading the song" className="py-24" />}>
       <SongView params={params} searchParams={searchParams} />
     </Suspense>
   );

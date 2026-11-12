@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { requireUser } from "@/lib/auth";
 import { loadSongCards } from "@/lib/songs";
 import { Transposer } from "@/components/songs/transposer";
+import { NoteLoader } from "@/components/note-loader";
 
 export const metadata: Metadata = { title: "Transpose songsheet · Brighton Worship" };
 
@@ -19,7 +20,9 @@ async function TransposeView({ searchParams }: { searchParams: Promise<{ song?: 
   const [{ song }, { songs }] = await Promise.all([searchParams, loadSongCards()]);
   return (
     <Transposer
-      songs={songs.filter((s) => s.keys.length > 0).map((s) => ({ id: s.id, title: s.title, key: s.keys[0] }))}
+      songs={songs
+        .filter((s) => s.keys.length > 0)
+        .map((s) => ({ id: s.id, title: s.title, key: s.keys[0], versionId: s.versionId, hasPreview: Boolean(s.previewPages) }))}
       initialSongId={song ?? null}
       canBrowseLibrary={user.can("songs.view")}
     />
@@ -39,7 +42,7 @@ export default function TransposePage({ searchParams }: { searchParams: Promise<
           chord box is widened if a line needs more room.
         </p>
       </div>
-      <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+      <Suspense fallback={<NoteLoader className="py-16" />}>
         <TransposeView searchParams={searchParams} />
       </Suspense>
     </div>

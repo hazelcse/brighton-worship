@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Permission } from "@/lib/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -36,10 +37,10 @@ export type SongUpdate = {
   unseen: boolean;
 };
 
-async function seenAt(userId: string): Promise<string | null> {
+const seenAt = cache(async (userId: string): Promise<string | null> => {
   const { data } = await createAdminClient().from("profiles").select("song_updates_seen_at").eq("id", userId).maybeSingle();
   return (data?.song_updates_seen_at as string | null) ?? null;
-}
+});
 
 const since = () => new Date(Date.now() - DAYS * 86_400_000).toISOString();
 

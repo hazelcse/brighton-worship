@@ -1,4 +1,7 @@
 import "server-only";
+import { cache } from "react";
+import { cacheLife, cacheTag } from "next/cache";
+import { CACHE_LIFE, SONGS_TAG } from "@/lib/cache-tags";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_LABEL, addDays, todayYmd } from "@/lib/roster";
 import type { ReminderSession } from "@/lib/reminder";
@@ -45,8 +48,12 @@ export type UpcomingPlan = {
   isLeader: boolean;
 };
 
-/** Upcoming sessions of every published roster, keyed by id. */
-async function upcomingPublishedSessions(db: Db): Promise<Map<string, RosterSessionInfo>> {
+/**
+ * Upcoming sessions of every published roster, keyed by id. Run once per request (the nav and the
+ * page both need it); callers only read the map.
+ */
+const upcomingPublishedSessions = cache(async (): Promise<Map<string, RosterSessionInfo>> => {
+  const db = createAdminClient();
   const { data: rosters } = await db.from("rosters").select("id").eq("status", "published");
   const ids = (rosters ?? []).map((r) => r.id);
   if (!ids.length) return new Map();
@@ -58,7 +65,7 @@ async function upcomingPublishedSessions(db: Db): Promise<Map<string, RosterSess
     .gte("date", todayYmd())
     .order("date");
   return new Map((data ?? []).map((s) => [s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind ?? "custom" }]));
-}
+});
 
 /** Sessions the person serves on and has confirmed (accepted), with their role. */
 async function confirmedSessions(db: Db, userId: string): Promise<Map<string, string>> {
@@ -80,13 +87,18 @@ export function lockIsLive(lockedAt: string | null): boolean {
  * Upcoming sessions the person leads worship at and has confirmed, with how far each plan has got.
  * Also how many they lead but haven't confirmed yet (those can't be built until they do).
  */
-export async function loadBuildableSessions(
+export function loadBuildableSessions(
   userId: string,
   { all = false }: { all?: boolean } = {},
 ): Promise<{ sessions: BuildableSession[]; unconfirmed: number }> {
+  return buildableSessions(userId, all);
+}
+
+/** Once per request per person: the Sessions page and the nav's publish reminder both need it. */
+const buildableSessions = cache(async (userId: string, all: boolean): Promise<{ sessions: BuildableSession[]; unconfirmed: number }> => {
   const db = createAdminClient();
   const [sessions, confirmed, { data: mine }] = await Promise.all([
-    upcomingPublishedSessions(db),
+    upcomingPublishedSessions(),
     confirmedSessions(db, userId),
     db.from("roster_assignments").select("session_id").eq("member_id", userId).eq("role", WL),
   ]);
@@ -124,7 +136,7 @@ export async function loadBuildableSessions(
         };
       }),
   };
-}
+});
 
 /** How long before a session its worship leaders are reminded to publish the plan. */
 export const PUBLISH_REMINDER_DAYS = 14;
@@ -144,7 +156,7 @@ export type PublishDueNotice = {
  * Sessions the person leads (and has confirmed) that are within PUBLISH_REMINDER_DAYS and haven't
  * been published yet, soonest first. Shown until the plan is published.
  */
-export async function loadPublishDue(userId: string): Promise<PublishDueNotice[]> {
+export const loadPublishDue = cache(async (userId: string): Promise<PublishDueNotice[]> => {
   const { sessions } = await loadBuildableSessions(userId);
   const cutoff = addDays(todayYmd(), PUBLISH_REMINDER_DAYS);
   return sessions
@@ -157,12 +169,12 @@ export async function loadPublishDue(userId: string): Promise<PublishDueNotice[]
       stage: s.stage,
       href: s.planId ? `/sessions/${s.planId}` : `/sessions/build#session-${s.id}`,
     }));
-}
+});
 
 /** Published plans of upcoming sessions the person serves on and has confirmed. */
 export async function loadUpcomingPlans(userId: string): Promise<UpcomingPlan[]> {
   const db = createAdminClient();
-  const [sessions, confirmed] = await Promise.all([upcomingPublishedSessions(db), confirmedSessions(db, userId)]);
+  const [sessions, confirmed] = await Promise.all([upcomingPublishedSessions(), confirmedSessions(db, userId)]);
   const ids = [...confirmed.keys()].filter((id) => sessions.has(id));
   if (!ids.length) return [];
   const { data: plans } = await db
@@ -388,8 +400,11 @@ export type BankSong = {
   keyDisplay: string | null;
 };
 
-/** Every song in the library, for the song bank list (filtered in the browser). */
+/** Every song in the library, for the song bank list (filtered in the browser). Cached (see lib/cache-tags.ts). */
 export async function loadSongBank(): Promise<BankSong[]> {
+  "use cache: remote";
+  cacheTag(SONGS_TAG);
+  cacheLife(CACHE_LIFE);
   const { data, error } = await createAdminClient()
     .from("songs")
     .select("id, title, artist, type, bpm, language, original_key, song_versions(keys, key_display)")
@@ -448,7 +463,7 @@ export type NextSession = SessionDetail & {
 export async function loadNextSession(userId: string): Promise<NextSession | null> {
   const db = createAdminClient();
   const [sessions, { data: mine }] = await Promise.all([
-    upcomingPublishedSessions(db),
+    upcomingPublishedSessions(),
     db.from("roster_assignments").select("session_id, role").eq("member_id", userId),
   ]);
   const next = (mine ?? [])
@@ -595,10 +610,10 @@ export type PublishedNotice = {
  * Upcoming sessions the person is rostered on whose plan was published since they last looked at
  * Sessions, soonest first. Their own publishing doesn't count.
  */
-export async function loadNewlyPublished(userId: string): Promise<PublishedNotice[]> {
+export const loadNewlyPublished = cache(async (userId: string): Promise<PublishedNotice[]> => {
   const db = createAdminClient();
   const [sessions, { data: mine }, { data: me }, confirmed] = await Promise.all([
-    upcomingPublishedSessions(db),
+    upcomingPublishedSessions(),
     db.from("roster_assignments").select("session_id").eq("member_id", userId),
     db.from("profiles").select("sessions_seen_at").eq("id", userId).maybeSingle(),
     confirmedSessions(db, userId),
@@ -634,4 +649,4 @@ export async function loadNewlyPublished(userId: string): Promise<PublishedNotic
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
-}
+});

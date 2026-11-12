@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCloseOnLeave } from "@/lib/use-close-on-leave";
 import { NO_CROP, marginsOf, sheetCrops, type Margins } from "@/lib/sheet-crop";
+import { NoteLoader } from "@/components/note-loader";
 
 
 type Meta = { pages: number } | { error: string } | null;
@@ -56,8 +57,8 @@ function Pages({ versionId, meta, title, onOpen }: { versionId: string; meta: Me
 
   if (!meta) {
     return (
-      <div className="flex aspect-[8.5/11] w-full items-center justify-center rounded-lg bg-background text-sm text-muted" role="status">
-        Making the preview…
+      <div className="flex aspect-[8.5/11] w-full items-center justify-center rounded-lg bg-background">
+        <NoteLoader label="Making the preview" />
       </div>
     );
   }

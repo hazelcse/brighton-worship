@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { NO_CROP, marginsOf, sheetCrops, type Crop, type Margins } from "@/lib/sheet-crop";
+import { NoteLoader } from "@/components/note-loader";
 
 /**
  * A PDF songsheet in a full-height popup, with "Open in new tab" and a download button at the top
@@ -78,13 +79,18 @@ export function PdfViewerDialog({ src, title, fileName, onClose }: { src: string
             </svg>
           </button>
         </div>
-        {file ? (
-          <PdfPages data={file.blob} title={title} />
-        ) : (
-          <Status>{error ?? "Getting the songsheet ready…"}</Status>
-        )}
+        {file ? <PdfPages data={file.blob} title={title} /> : error ? <Status>{error}</Status> : <Loading />}
       </div>
     </dialog>
+  );
+}
+
+/** NoteLoader is its own status region, so it isn't wrapped in Status. */
+function Loading() {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-background p-6">
+      <NoteLoader label="Getting the songsheet ready" />
+    </div>
   );
 }
 
@@ -149,7 +155,7 @@ function PdfPages({ data, title }: { data: Blob; title: string }) {
   }, [doc]);
 
   if (error) return <Status>{error}</Status>;
-  if (!doc) return <Status>Getting the songsheet ready…</Status>;
+  if (!doc) return <Loading />;
   return (
     <div className="flex-1 overflow-y-auto bg-background p-2 sm:p-4">
       <div ref={box} className="mx-auto space-y-2 sm:space-y-4">

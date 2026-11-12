@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { IssueList } from "@/components/songs/issue-list";
+import { NoteLoader } from "@/components/note-loader";
 import { DownloadIcon, PdfViewerDialog } from "@/components/songs/pdf-viewer-dialog";
 
-type SongOption = { id: string; title: string; key: string };
+/** versionId: the stored songsheet, shown as it is when its own key is picked (hasPreview: its PDF exists). */
+type SongOption = { id: string; title: string; key: string; versionId: string | null; hasPreview: boolean };
 type Analysis = {
   title: string | null;
   key: string | null;
@@ -72,10 +74,10 @@ export function Transposer({
   const [semitones, setSemitones] = useState(0);
   const [busy, setBusy] = useState(false);
   const [busyFormat, setBusyFormat] = useState<"docx" | "pdf" | "view" | null>(null);
-  // "View": the transposed PDF shown in a dialog instead of downloaded.
+  // "View": the transposed PDF (a blob: URL) or the stored songsheet's PDF, shown in a dialog.
   const [viewing, setViewing] = useState<{ url: string; name: string } | null>(null);
   function closeView() {
-    if (viewing) URL.revokeObjectURL(viewing.url);
+    if (viewing?.url.startsWith("blob:")) URL.revokeObjectURL(viewing.url);
     setViewing(null);
   }
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +88,10 @@ export function Transposer({
   const keyKnown = pcOf(fromKey) !== null;
   const useKey = byKey && keyKnown;
   const shift = useKey ? (target && fromKey ? shiftBetween(fromKey, target) : null) : semitones;
+  // A library song in its own key needs no transposing: its stored songsheet is shown as it is.
+  const original = mode === "library" && Boolean(song?.versionId) && useKey && shift === 0;
   const ready =
-    (mode === "library" ? Boolean(song) : Boolean(file && analysis)) && shift !== null && shift !== 0 && !busy;
+    (mode === "library" ? Boolean(song) : Boolean(file && analysis)) && shift !== null && (shift !== 0 || original) && !busy;
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -126,7 +130,37 @@ export function Transposer({
     }
   }
 
+  /** The stored songsheet as it is: viewed, or downloaded as its .docx or PDF. */
+  async function showOriginal(format: "docx" | "pdf" | "view") {
+    if (!song?.versionId) return;
+    setError(null);
+    setResult(null);
+    if (format === "docx") {
+      download(`/api/songsheets/${song.versionId}`);
+      return;
+    }
+    // The PDF is made with the preview; make it first if this sheet hasn't had one yet.
+    if (!song.hasPreview) {
+      setBusy(true);
+      setBusyFormat(format);
+      try {
+        const res = await fetch(`/api/songsheets/${song.versionId}/preview`);
+        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "The songsheet couldn't be loaded.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return;
+      } finally {
+        setBusy(false);
+        setBusyFormat(null);
+      }
+    }
+    const url = `/api/songsheets/${song.versionId}/preview/pdf`;
+    if (format === "pdf") download(url);
+    else setViewing({ url, name: `${song.title}.pdf` });
+  }
+
   async function generate(format: "docx" | "pdf" | "view") {
+    if (original) return showOriginal(format);
     setBusy(true);
     setBusyFormat(format);
     setError(null);
@@ -156,12 +190,7 @@ export function Transposer({
         setResult({ name, report, viewed: true });
         return;
       }
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      download(url, name);
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       setResult({ name, report });
     } catch (e) {
@@ -247,7 +276,7 @@ export function Transposer({
                 onChange={(e) => e.target.files?.[0] && analyze(e.target.files[0])}
               />
             </label>
-            {analyzing && <p className="text-sm text-muted" role="status">Working out the key…</p>}
+            {analyzing && <NoteLoader label="Working out the key" className="py-4" />}
             {analysis && (
               <div className="space-y-2 rounded-lg bg-background px-3 py-2 text-sm">
                 <p>
@@ -320,7 +349,16 @@ export function Transposer({
                   type="button"
                   disabled={!fromKey}
                   aria-pressed={target === k}
-                  onClick={() => { setTarget(k); setResult(null); }}
+                  onClick={() => {
+                    setTarget(k);
+                    setResult(null);
+                    // Its own key: nothing to transpose, so open the stored songsheet straight away.
+                    if (current && mode === "library" && song?.versionId) {
+                      setError(null);
+                      if (song.hasPreview) setViewing({ url: `/api/songsheets/${song.versionId}/preview/pdf`, name: `${song.title}.pdf` });
+                      else void showOriginal("view");
+                    }
+                  }}
                   className={`${btn} ${
                     target === k
                       ? "border-ink bg-ink text-ink-foreground"
@@ -352,6 +390,7 @@ export function Transposer({
         {fromKey && shift !== null && (
           <p className="text-sm text-muted">
             {fromKey} → {useKey ? target : transposeName(fromKey, semitones)} ({describeShift(shift)})
+            {original && ": this is the songsheet as it's stored, nothing is transposed"}
           </p>
         )}
       </section>
@@ -431,6 +470,16 @@ function EyeIcon() {
       <circle cx="12" cy="12" r="3" />
     </svg>
   );
+}
+
+/** Downloads a URL (a blob: URL or one of our API routes). */
+function download(url: string, name?: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name ?? "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function transposeName(from: string, n: number): string {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { requireUser } from "@/lib/auth";
 import { loadSongCards } from "@/lib/songs";
+import { NoteLoader } from "@/components/note-loader";
 import { SongGallery } from "@/components/songs/song-gallery";
 import { DriveSyncButton } from "@/components/songs/drive-sync-button";
 import { workerFetch } from "@/lib/worker";
@@ -61,22 +62,9 @@ async function SongLibrary() {
   );
 }
 
-function GallerySkeleton() {
-  return (
-    <div className="space-y-6" aria-busy>
-      <div className="h-10 w-full max-w-md rounded-lg bg-border/60" />
-      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="h-24 rounded-xl bg-border/50" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function SongsPage() {
   return (
-    <Suspense fallback={<GallerySkeleton />}>
+    <Suspense fallback={<NoteLoader label="Loading the songs" className="py-24" />}>
       <SongLibrary />
     </Suspense>
   );

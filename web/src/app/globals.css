@@ -85,6 +85,60 @@ body {
   }
 }
 
+/* Song pages' loading indicator (components/note-loader.tsx). Hidden for the first 300ms. */
+.note-loader {
+  animation: note-loader-in 0.3s ease-out 0.3s both;
+}
+.note-loader-note {
+  display: inline-block;
+  animation: note-loader-bounce 0.9s ease-in-out infinite;
+}
+/* "Loading" then . → .. → ... : the dots keep their space, so nothing shifts. */
+.note-loader-dots span:nth-child(2) {
+  animation: note-loader-dot-2 1.2s step-end infinite;
+}
+.note-loader-dots span:nth-child(3) {
+  animation: note-loader-dot-3 1.2s step-end infinite;
+}
+@keyframes note-loader-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes note-loader-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.2em);
+  }
+}
+@keyframes note-loader-dot-2 {
+  0% {
+    opacity: 0;
+  }
+  33.33% {
+    opacity: 1;
+  }
+}
+@keyframes note-loader-dot-3 {
+  0% {
+    opacity: 0;
+  }
+  66.67% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .note-loader-note {
+    animation: none;
+  }
+}
+
 dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
   backdrop-filter: blur(2px);

@@ -1,12 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission, requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { workerFetch, type UploadResult } from "@/lib/worker";
 import { cleanSteps, stepNames } from "@/lib/session-plan";
 import { songsheetFileProblem } from "@/lib/songsheet-file";
+import { SONGS_TAG } from "@/lib/cache-tags";
 
 export type SaveState = { ok: boolean; message: string | null };
 
@@ -48,6 +49,7 @@ export async function uploadSongsheet(formData: FormData): Promise<UploadResult>
 /** After a batch of uploads: refresh the song library once. */
 export async function finishUploads(): Promise<void> {
   await requireUser();
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
 }
 
@@ -55,7 +57,10 @@ export async function finishUploads(): Promise<void> {
 export async function scanPendingSongsheets(): Promise<{ processed: number }> {
   await requirePermission("songs.view");
   const r = await workerFetch<{ processed: number; failed: number }>("/process-pending", { method: "POST" }, 300_000);
-  if (r.processed) revalidatePath("/songs", "layout");
+  if (r.processed) {
+    updateTag(SONGS_TAG);
+    revalidatePath("/songs", "layout");
+  }
   return { processed: r.processed };
 }
 
@@ -63,6 +68,7 @@ export async function rescanVersion(songId: string, versionId: string): Promise<
   try {
     await requirePermission("songs.edit");
     const r = await workerFetch<UploadResult>(`/versions/${versionId}/process`, { method: "POST" });
+    updateTag(SONGS_TAG);
     revalidatePath(`/songs/${songId}`);
     return r.status === "failed" ? { ok: false, message: r.error ?? "Scan failed." } : { ok: true, message: "Rescanned." };
   } catch (e) {
@@ -133,6 +139,7 @@ export async function updateSongDetails(songId: string, _prev: SaveState, formDa
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
   return { ok: true, message: "Saved." };
 }
@@ -169,6 +176,7 @@ export async function saveLinks(songId: string, _prev: SaveState, formData: Form
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath(`/songs/${songId}`);
   return { ok: true, message: "Links saved." };
 }
@@ -186,6 +194,7 @@ export async function markReviewed(songId: string): Promise<SaveState> {
     return fail(e);
   }
   // The whole app: the song's issue updates drop out of Updates and the nav badge too.
+  updateTag(SONGS_TAG);
   revalidatePath("/", "layout");
   return { ok: true, message: "Marked as reviewed." };
 }
@@ -236,6 +245,7 @@ export async function confirmKey(
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
   return { ok: true, message: "Key confirmed." };
 }
@@ -265,6 +275,7 @@ export async function resetKey(songId: string, versionId: string): Promise<SaveS
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
   return { ok: true, message: "Using the scanner's key again." };
 }
@@ -301,6 +312,7 @@ export async function deleteSong(songId: string): Promise<SaveState> {
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
   redirect("/songs");
 }
@@ -332,6 +344,7 @@ export async function syncFromDrive(): Promise<{ ok: boolean; message: string | 
       600_000, // a first sync of a big folder scans every sheet
     );
     if (summary.busy) return { ok: true, message: null, busy: true }; // the button just keeps spinning
+    updateTag(SONGS_TAG);
     revalidatePath("/songs");
     return { ok: true, message: null, summary };
   } catch (e) {
@@ -374,6 +387,7 @@ export async function raiseSongIssue(songId: string, message: string): Promise<S
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
   return { ok: true, message: "Thanks: the people who look after the song library have been told." };
 }
@@ -387,6 +401,16 @@ export async function clearMissingFromDrive(songId: string): Promise<SaveState> 
   } catch (e) {
     return fail(e);
   }
+  updateTag(SONGS_TAG);
   revalidatePath("/songs", "layout");
   return { ok: true, message: "Flag cleared." };
+}
+
+/**
+ * A Drive sync the app didn't wait for (the worker's scheduled one, or one already running when
+ * the button was clicked) has finished: drop the cached library so the new songs show.
+ */
+export async function refreshSongLibrary(): Promise<void> {
+  await requirePermission("songs.view");
+  updateTag(SONGS_TAG);
 }

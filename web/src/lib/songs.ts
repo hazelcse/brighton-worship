@@ -1,6 +1,8 @@
 import "server-only";
 import { pinyin } from "pinyin-pro";
+import { cacheLife, cacheTag } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { CACHE_LIFE, SONGS_TAG } from "@/lib/cache-tags";
 
 export type SongType = "praise" | "worship" | "praise_worship";
 export type Language = "en" | "zh";
@@ -96,16 +98,27 @@ export function titlePinyin(title: string): string {
 
 /** All songs for the library gallery. ~hundreds of rows, so the gallery filters on the client. */
 export async function loadSongCards(): Promise<{ songs: SongCard[]; pendingScans: number }> {
-  const db = createAdminClient();
-  const [{ data, error }, { count }] = await Promise.all([
-    db
-      .from("songs")
-      .select(
-        "id, title, artist, lyrics, type, language, bpm, reviewed_at, missing_from_drive_at, song_versions(id, preview_pages, key_display, keys, issues, scanned_at, scan_status, scan_error, key_confirmed_at)",
-      )
-      .order("title"),
-    db.from("song_versions").select("id", { count: "exact", head: true }).in("scan_status", ["pending", "failed"]),
+  // The count stays live: the worker's own Drive sync adds unscanned sheets without clearing the
+  // cache, and the library starts scanning them as soon as it sees any.
+  const [songs, { count }] = await Promise.all([
+    songCards(),
+    createAdminClient().from("song_versions").select("id", { count: "exact", head: true }).in("scan_status", ["pending", "failed"]),
   ]);
+  return { songs, pendingScans: count ?? 0 };
+}
+
+/** Every song as a library card. The same for everyone, so cached (see lib/cache-tags.ts). */
+async function songCards(): Promise<SongCard[]> {
+  "use cache: remote";
+  cacheTag(SONGS_TAG);
+  cacheLife(CACHE_LIFE);
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("songs")
+    .select(
+      "id, title, artist, lyrics, type, language, bpm, reviewed_at, missing_from_drive_at, song_versions(id, preview_pages, key_display, keys, issues, scanned_at, scan_status, scan_error, key_confirmed_at)",
+    )
+    .order("title");
   if (error) throw error;
   const { data: reported } = await db.from("song_issues").select("song_id").is("resolved_at", null);
   const hasReport = new Set((reported ?? []).map((r) => r.song_id as string));
@@ -130,10 +143,14 @@ export async function loadSongCards(): Promise<{ songs: SongCard[]; pendingScans
       previewPages: versions[0]?.preview_pages ?? null,
     };
   });
-  return { songs, pendingScans: count ?? 0 };
+  return songs;
 }
 
+/** One song with its songsheets, links and open reports. Cached (see lib/cache-tags.ts). */
 export async function loadSong(id: string) {
+  "use cache: remote";
+  cacheTag(SONGS_TAG);
+  cacheLife(CACHE_LIFE);
   const db = createAdminClient();
   const [{ data: song }, { data: versions }, { data: links }, { data: reports }] =
     await Promise.all([

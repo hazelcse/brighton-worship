@@ -194,6 +194,14 @@ into ink, and all pages of a sheet share one zoom. The Preview card's padding is
 
 **`/songs/transpose`**: narrow **768px**. Back link, title "Transpose songsheet", intro. Step
 cards "1. Songsheet" and "2. New key" (key grid 4 → 6 columns), action row, success box.
+Picking a library song's own key opens its stored songsheet's PDF straight away (nothing is
+transposed); View / .docx / PDF then give the stored sheet too.
+
+**Loading (song pages and songsheet views)**: `/songs`, `/songs/[id]` and `/songs/transpose`
+while their data loads, the songsheet preview card, the PDF popup and the transposer's "Working
+out the key" show `NoteLoader` (`web/src/components/note-loader.tsx`): three random music symbols
+(text characters, the device's own symbol font) bouncing on the spot over "Loading . .. ...". It
+fades in after 300ms so quick loads show nothing; with reduce motion the notes stay still.
 
 ### Team
 

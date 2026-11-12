@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { syncFromDrive, type DriveSyncSummary } from "@/app/(app)/songs/actions";
+import { refreshSongLibrary, syncFromDrive, type DriveSyncSummary } from "@/app/(app)/songs/actions";
 import { useCloseOnLeave } from "@/lib/use-close-on-leave";
 
 const RESULT_LABEL = {
@@ -37,6 +37,16 @@ export function DriveSyncButton({ lastSyncedAt, everyMinutes, running = false }:
     const t = setInterval(() => router.refresh(), 5000);
     return () => clearInterval(t);
   }, [waiting, running, router]);
+  // A sync finished since this page opened (scheduled, or one we were waiting on): the song list is
+  // cached, so clear it and reload the new songs.
+  const firstSyncedAt = useRef(lastSyncedAt);
+  useEffect(() => {
+    if (lastSyncedAt === firstSyncedAt.current) return;
+    firstSyncedAt.current = lastSyncedAt;
+    refreshSongLibrary()
+      .then(() => router.refresh())
+      .catch(() => {});
+  }, [lastSyncedAt, router]);
   // The refreshed page shows the sync is done (a newer finished time): stop spinning.
   const [seenSyncedAt, setSeenSyncedAt] = useState(lastSyncedAt);
   if (lastSyncedAt !== seenSyncedAt) {
