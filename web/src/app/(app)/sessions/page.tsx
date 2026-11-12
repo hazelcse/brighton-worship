@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { SessionLoader } from "@/components/session-loader";
 import { requireUser } from "@/lib/auth";
 import { formatDate } from "@/lib/roster";
@@ -10,12 +10,24 @@ import { AutoRefresh } from "@/components/auto-refresh";
 
 export const metadata: Metadata = { title: "Sessions · Brighton Worship" };
 
+/** A small status pill after the date: 14px tall, just under the date's line. */
+function Pill({ className, children }: { className: string; children: ReactNode }) {
+  // Nudged up so its middle lines up with the middle of the date's capitals, not the line box.
+  return (
+    <span className={`-translate-y-[0.5px] rounded-full px-1.5 text-[9px] leading-[14px] font-semibold normal-case tracking-normal ring-1 ${className}`}>
+      {children}
+    </span>
+  );
+}
+
 async function SessionsView() {
   const user = await requireUser();
-  const [plans, buildable, fresh] = await Promise.all([loadUpcomingPlans(user.id), loadBuildableSessions(user.id), loadNewlyPublished(user.id)]);
+  const all = buildsAnySession(user);
+  const [plans, buildable, fresh] = await Promise.all([loadUpcomingPlans(user.id, { all }), loadBuildableSessions(user.id), loadNewlyPublished(user.id)]);
   const isNew = new Set(fresh.map((f) => f.planId));
   const isUpdated = new Set(fresh.filter((f) => f.updated).map((f) => f.planId));
-  const leads = buildsAnySession(user) || buildable.sessions.length > 0 || buildable.unconfirmed > 0;
+  const leads = all || buildable.sessions.length > 0 || buildable.unconfirmed > 0;
+  const hasDrafts = plans.some((p) => p.draft || p.revised);
 
   return (
     <div className="space-y-5">
@@ -23,7 +35,10 @@ async function SessionsView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-semibold">Sessions</h1>
-          <p className="text-sm text-muted">Upcoming sessions you&apos;re serving at, once their plan is published.</p>
+          <p className="text-sm text-muted">
+            Upcoming sessions you&apos;re serving at, once their plan is published.
+            {hasDrafts && " Drafts are only visible to their worship leaders."}
+          </p>
         </div>
         {leads && (
           <Link
@@ -46,15 +61,23 @@ async function SessionsView() {
             <li key={p.id}>
               <Link
                 href={`/sessions/${p.id}`}
-                className={`flex h-full flex-col gap-3 rounded-xl border bg-surface p-4 transition hover:border-accent/50 ${isNew.has(p.id) ? "border-accent/60" : "border-border"}`}
+                className={`flex h-full flex-col gap-3 rounded-xl border bg-surface p-4 transition ${
+                  p.draft
+                    ? "border-dashed border-amber-400 hover:border-amber-500"
+                    : `hover:border-accent/50 ${isNew.has(p.id) ? "border-accent/60" : "border-border"}`
+                }`}
               >
                 <div>
-                  <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
-                    {formatDate(p.date, { weekday: "short", day: "numeric", month: "short" })}
-                    {isNew.has(p.id) && <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-accent-foreground">{isUpdated.has(p.id) ? "Updated" : "Just published"}</span>}
+                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted">
+                    <span className="mr-0.5">{formatDate(p.date, { weekday: "short", day: "numeric", month: "short" })}</span>
+                    {p.revised && <Pill className="bg-emerald-50 text-emerald-800 ring-emerald-300">Published</Pill>}
+                    {(p.draft || p.revised) && <Pill className="bg-amber-50 text-amber-800 ring-amber-300">Draft</Pill>}
+                    {!p.draft && !p.revised && isNew.has(p.id) && (
+                      <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-accent-foreground">{isUpdated.has(p.id) ? "Updated" : "Just published"}</span>
+                    )}
                   </p>
                   <p className="font-semibold">{p.name}</p>
-                  <p className="text-xs text-muted">You: {p.role}</p>
+                  {p.role && <p className="text-xs text-muted">You: {p.role}</p>}
                 </div>
                 {p.songs.length > 0 ? (
                   <ol className="space-y-1 text-sm">

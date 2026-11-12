@@ -44,8 +44,13 @@ export type UpcomingPlan = {
   date: string;
   name: string;
   songs: { title: string; key: string | null }[];
-  role: string;
+  /** null: the viewer isn't on it (the developer looking at someone else's draft). */
+  role: string | null;
   isLeader: boolean;
+  /** Not published yet: only its worship leaders (and the developer) see it here. */
+  draft: boolean;
+  /** Published, with changes its worship leaders saved but haven't published (only they see this). */
+  revised: boolean;
 };
 
 /**
@@ -171,28 +176,47 @@ export const loadPublishDue = cache(async (userId: string): Promise<PublishDueNo
     }));
 });
 
-/** Published plans of upcoming sessions the person serves on and has confirmed. */
-export async function loadUpcomingPlans(userId: string): Promise<UpcomingPlan[]> {
+/**
+ * Published plans of upcoming sessions the person serves on and has confirmed, plus the drafts of
+ * the ones they lead worship at (`draft: true`). `all` (the developer): every upcoming draft too.
+ */
+export async function loadUpcomingPlans(userId: string, { all = false }: { all?: boolean } = {}): Promise<UpcomingPlan[]> {
   const db = createAdminClient();
   const [sessions, confirmed] = await Promise.all([upcomingPublishedSessions(), confirmedSessions(db, userId)]);
-  const ids = [...confirmed.keys()].filter((id) => sessions.has(id));
+  const ids = all ? [...sessions.keys()] : [...confirmed.keys()].filter((id) => sessions.has(id));
   if (!ids.length) return [];
-  const { data: plans } = await db
+  const { data: rows } = await db
     .from("worship_sessions")
-    .select("id, roster_session_id, worship_session_sections(position, worship_session_items(position, kind, title, key, transpose_to))")
+    .select(
+      "id, roster_session_id, status, draft_updated_at, worship_session_sections(position, worship_session_items(position, kind, title, key, transpose_to))",
+    )
     .in("roster_session_id", ids)
-    .eq("status", "published");
+    .in("status", ["published", "draft"]);
+  // Leads it (or is the developer): sees its draft, and unpublished changes to its published plan.
+  const builds = (id: string) => all || confirmed.get(id) === WL;
+  const plans = (rows ?? []).filter((p) => (p.status === "published" ? confirmed.has(p.roster_session_id!) : builds(p.roster_session_id!)));
   type Sec = { position: number; worship_session_items: { position: number; kind: string; title: string; key: string | null; transpose_to: string | null }[] };
-  return (plans ?? [])
+  return plans
     .map((p) => {
       const s = sessions.get(p.roster_session_id!)!;
-      const role = confirmed.get(s.id)!;
+      const role = confirmed.get(s.id) ?? null;
       const songs = ((p.worship_session_sections ?? []) as Sec[])
         .sort((a, b) => a.position - b.position)
         .flatMap((sec) => [...sec.worship_session_items].sort((a, b) => a.position - b.position))
         .filter((i) => i.kind === "song" && i.title)
         .map((i) => ({ title: i.title, key: keyLabel(i.key, i.transpose_to) }));
-      return { id: p.id, date: s.date, name: s.name, songs, role: ROLE_LABEL[role] ?? role, isLeader: role === WL };
+      const draft = p.status === "draft";
+      const revised = !draft && builds(s.id) && Boolean(p.draft_updated_at);
+      return {
+        id: p.id,
+        date: s.date,
+        name: s.name,
+        songs,
+        role: role ? (ROLE_LABEL[role] ?? role) : null,
+        isLeader: role === WL,
+        draft,
+        revised,
+      };
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }

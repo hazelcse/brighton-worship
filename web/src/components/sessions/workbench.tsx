@@ -781,8 +781,8 @@ export function Workbench({
       {!editing && <AutoRefresh />}
       {/* The session being built */}
       <div className="min-w-0 space-y-4">
-        <Link href={canEdit ? "/sessions/build" : "/sessions"} className="block w-fit text-sm text-muted hover:text-foreground">
-          ← {canEdit ? "Build session" : "Sessions"}
+        <Link href="/sessions" className="block w-fit text-sm text-muted hover:text-foreground">
+          ← Sessions
         </Link>
 
         {/* Phones: date, rehearsal, title, badges and buttons each get a line of their own. */}

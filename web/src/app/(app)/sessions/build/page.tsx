@@ -35,11 +35,7 @@ function Row({ s }: { s: BuildableSession }) {
     </>
   );
   const cls = "flex w-full items-center gap-4 rounded-xl border border-border bg-surface px-4 py-3 text-left transition hover:border-accent/50";
-  return s.planId ? (
-    <Link href={`/sessions/${s.planId}`} className={cls}>
-      {body}
-    </Link>
-  ) : (
+  return (
     <StartSessionButton rosterSessionId={s.id} className={cls}>
       {body}
     </StartSessionButton>
@@ -49,7 +45,10 @@ function Row({ s }: { s: BuildableSession }) {
 async function BuildView() {
   const user = await requireUser();
   const all = buildsAnySession(user);
-  const { sessions, unconfirmed } = await loadBuildableSessions(user.id, { all });
+  const loaded = await loadBuildableSessions(user.id, { all });
+  // Plans already started (drafts and published) live on /sessions; this page is for starting new ones.
+  const sessions = loaded.sessions.filter((s) => s.stage === "not_started");
+  const { unconfirmed } = loaded;
 
   const quarters = new Map<string, BuildableSession[]>();
   for (const s of sessions) {
@@ -65,7 +64,9 @@ async function BuildView() {
       <div>
         <h1 className="font-display text-3xl font-semibold">Build session</h1>
         <p className="text-sm text-muted">
-          {all ? "Every upcoming session (developer access). Pick one to plan it." : "The sessions you're leading worship at. Pick one to plan it."}
+          {all
+            ? "Every upcoming session not started yet (developer access). Pick one to plan it."
+            : "The sessions you're leading worship at that haven't been started. Pick one to plan it. Drafts are on Sessions."}
         </p>
       </div>
 
@@ -81,7 +82,11 @@ async function BuildView() {
 
       {sessions.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
-          {all ? "No upcoming sessions on a published roster." : "You don't have any confirmed sessions to lead coming up."}
+          {loaded.sessions.length > 0
+            ? "Every session coming up has been started. Find the drafts on Sessions."
+            : all
+              ? "No upcoming sessions on a published roster."
+              : "You don't have any confirmed sessions to lead coming up."}
         </p>
       ) : (
         [...quarters].map(([label, list]) => (

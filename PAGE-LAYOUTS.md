@@ -123,9 +123,14 @@ weights) sits to its right, otherwise it drops below the table.
 
 **`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right. Link
 cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, songs with key chips.
+Worship leaders also see their sessions' drafts here, mixed in by date: white, with a dashed
+amber border (`amber-400`) and a small amber "Draft" pill after the date (9px text, 14px tall,
+just under the date's line) in place of "Just published". A published plan with unpublished
+changes stays a normal white card with a green "Published" pill then the "Draft" pill.
 
 **`/sessions/build`**: narrow **768px**. Back link, title, subtitle, amber notice; per quarter a
-small uppercase heading and a list of session rows (date block, name, stage badge).
+small uppercase heading and a list of session rows (date block, name, stage badge). Only sessions
+whose plan hasn't been started; started ones (drafts, published) are on `/sessions`.
 
 **`/sessions/[id]` (workbench / session builder)**: **wider than the nav**, the same width as the
 roster editor (`<WidePage />`: max (window + 992px) ÷ 2). Two columns from 1024px: the plan on the left and a

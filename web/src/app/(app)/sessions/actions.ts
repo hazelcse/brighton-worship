@@ -88,6 +88,7 @@ export async function startSession(rosterSessionId: string): Promise<void> {
     await db.from("worship_sessions").update({ roster_session_id: rs.id }).eq("id", plan.id);
   }
   revalidatePath("/sessions");
+  revalidatePath("/sessions/build");
   redirect(`/sessions/${plan.id}`);
 }
 
