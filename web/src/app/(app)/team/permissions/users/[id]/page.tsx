@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { TeamLoader } from "@/components/team-loader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -139,7 +140,7 @@ async function UserView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function UserPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<TeamLoader label="Loading permissions" className="py-24" />}>
       <UserView params={params} />
     </Suspense>
   );

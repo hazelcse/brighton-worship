@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { TeamLoader } from "@/components/team-loader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -97,7 +98,7 @@ async function GroupView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function GroupPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<TeamLoader label="Loading the group" className="py-24" />}>
       <GroupView params={params} />
     </Suspense>
   );

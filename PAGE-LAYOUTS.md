@@ -227,6 +227,14 @@ roster . .. ..." (the label names the page). Same 300ms fade-in and reduce-motio
 `NoteLoader`. It only shows on a full page load; moving between pages in the app keeps the old
 page up until the new one is ready.
 
+**Loading (team and session pages)**: same pattern and style (three 30px items in
+`text-foreground/70`, taking turns over a label naming the page, `py-24`, 300ms fade-in,
+still with reduce motion). Every `/team/...` page shows `TeamLoader`
+(`web/src/components/team-loader.tsx`): a roll call of three solid little people that pop in one
+after another, then all fade out. Every `/sessions/...` page shows `SessionLoader`
+(`web/src/components/session-loader.tsx`): three 24×30px song sheets (outlined like the calendar
+pages) whose three lines draw in left to right in turn.
+
 ### Team
 
 **`/team`**: full width, no title. Toolbar: instrument and ministry pickers and search (224px

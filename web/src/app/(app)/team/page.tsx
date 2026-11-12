@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { TeamLoader } from "@/components/team-loader";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMembers } from "@/lib/team";
@@ -32,7 +33,7 @@ async function TeamView() {
 
 export default function TeamPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading the team…</p>}>
+    <Suspense fallback={<TeamLoader label="Loading the team" className="py-24" />}>
       <TeamView />
     </Suspense>
   );

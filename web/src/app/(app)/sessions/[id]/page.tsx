@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { SessionLoader } from "@/components/session-loader";
 import { requireUser } from "@/lib/auth";
 import { loadSongBank, loadWorkbench, sessionAccess } from "@/lib/sessions";
 import { Workbench } from "@/components/sessions/workbench";
@@ -34,7 +35,7 @@ async function WorkbenchView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function WorkbenchPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading the session…</p>}>
+    <Suspense fallback={<SessionLoader label="Loading the session" className="py-24" />}>
       <WorkbenchView params={params} />
     </Suspense>
   );

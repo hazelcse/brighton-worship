@@ -168,6 +168,60 @@ body {
   }
 }
 
+/* Team pages' loading indicator (components/team-loader.tsx): a roll call. Hidden for the first 300ms. */
+.team-loader {
+  animation: note-loader-in 0.3s ease-out 0.3s both;
+}
+.team-loader-person {
+  animation: team-loader-roll 2.4s ease-in-out infinite both;
+}
+@keyframes team-loader-roll {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.85);
+  }
+  20%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Session pages' loading indicator (components/session-loader.tsx): song sheets filling in.
+   Hidden for the first 300ms. */
+.session-loader {
+  animation: note-loader-in 0.3s ease-out 0.3s both;
+}
+.session-loader-line {
+  transform-origin: 0 50%;
+  animation: session-loader-line 2.4s ease-out infinite both;
+}
+@keyframes session-loader-line {
+  0%,
+  10% {
+    transform: scaleX(0);
+  }
+  35%,
+  85% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-loader-person,
+  .session-loader-line {
+    animation: none;
+  }
+}
+
 dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
   backdrop-filter: blur(2px);

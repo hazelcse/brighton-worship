@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { SessionLoader } from "@/components/session-loader";
 import { requireUser } from "@/lib/auth";
 import { loadSongBank } from "@/lib/sessions";
 import { countPending, loadRecords } from "@/lib/tracking-data";
@@ -51,7 +52,7 @@ async function Tracking() {
 
 export default function TrackingPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading sessions…</p>}>
+    <Suspense fallback={<SessionLoader label="Loading sessions" className="py-24" />}>
       <Tracking />
     </Suspense>
   );

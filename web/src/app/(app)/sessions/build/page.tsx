@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { SessionLoader } from "@/components/session-loader";
 import { requireUser } from "@/lib/auth";
 import { formatDate, quarterOf } from "@/lib/roster";
 import { buildsAnySession, loadBuildableSessions, type BuildableSession } from "@/lib/sessions";
@@ -103,7 +104,7 @@ async function BuildView() {
 
 export default function BuildSessionPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading your sessions…</p>}>
+    <Suspense fallback={<SessionLoader label="Loading your sessions" className="py-24" />}>
       <BuildView />
     </Suspense>
   );

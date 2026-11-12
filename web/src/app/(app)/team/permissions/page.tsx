@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { TeamLoader } from "@/components/team-loader";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -138,7 +139,7 @@ async function PermissionsView() {
 
 export default function PermissionsPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<TeamLoader label="Loading permissions" className="py-24" />}>
       <PermissionsView />
     </Suspense>
   );

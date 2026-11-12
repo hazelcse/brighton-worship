@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { SessionLoader } from "@/components/session-loader";
 import { requireUser } from "@/lib/auth";
 import { formatDate } from "@/lib/roster";
 import { buildsAnySession, loadBuildableSessions, loadNewlyPublished, loadUpcomingPlans } from "@/lib/sessions";
@@ -81,7 +82,7 @@ export default function SessionsPage() {
   return (
     <>
       <AutoRefresh />
-      <Suspense fallback={<p className="text-sm text-muted">Loading sessions…</p>}>
+      <Suspense fallback={<SessionLoader label="Loading sessions" className="py-24" />}>
         <SessionsView />
       </Suspense>
     </>

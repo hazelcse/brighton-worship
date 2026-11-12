@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { TeamLoader } from "@/components/team-loader";
 import { requireUser } from "@/lib/auth";
 import { GENDER_LABEL, INSTRUMENT_LABEL, SERVES_LABEL, isPlaceholderEmail, loadMember, ministryLabel } from "@/lib/team";
 import { updateMember } from "../actions";
@@ -108,7 +109,7 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function MemberPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<TeamLoader label="Loading the profile" className="py-24" />}>
       <MemberView params={params} />
     </Suspense>
   );
