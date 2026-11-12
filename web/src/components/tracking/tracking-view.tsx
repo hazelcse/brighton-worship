@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
-import { formatDate } from "@/lib/roster";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { formatDate, todayYmd } from "@/lib/roster";
+import { downloadTrackingCsv } from "@/lib/tracking-csv";
 import { BAND_COLUMNS, MAX_SONGS, MINISTRY_TEXT, linkLabel, serviceType, songSlots, type BandKey, type SessionRecord } from "@/lib/tracking";
 import { deleteRecords, updateRecord } from "@/app/(app)/sessions/tracking/actions";
 import { RecordForm } from "@/components/tracking/record-form";
+import { QUERY_COLUMNS, parseQuery, runQuery } from "@/lib/tracking-query";
 import type { BankSong } from "@/components/sessions/song-bank-panel";
 
 // ---------------------------------------------------------------------------
@@ -896,6 +898,9 @@ export function TrackingView({
   const [view, setView] = useState<"table" | "list">("table");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [query, setQuery] = useState("");
+  // "text": plain search across everything. "query": [WL = "Vanessa"] and ![AG = "Chong Han"]…
+  const [searchMode, setSearchMode] = useState<"text" | "query">("text");
+  const joinClip = useId();
   const [hidden, setHidden] = useHiddenColumns();
   // Ticked table rows, and the sessions waiting on the "Are you sure…?" popup.
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -916,8 +921,12 @@ export function TrackingView({
     } catch {}
   };
 
-  const q = query.trim().toLowerCase();
-  const shown = useMemo(() => records.filter((r) => matches(r, filters, q)), [records, filters, q]);
+  const q = searchMode === "text" ? query.trim().toLowerCase() : "";
+  const parsed = useMemo(() => (searchMode === "query" ? parseQuery(query) : null), [searchMode, query]);
+  const shown = useMemo(
+    () => records.filter((r) => matches(r, filters, q) && (!parsed?.ok || runQuery(parsed.node, r))),
+    [records, filters, q, parsed],
+  );
   // Only ticked rows still showing count (a filter or search can hide ticked rows).
   const ticked = view === "table" ? shown.filter((r) => deletable(r) && selected.has(r.id)).map((r) => r.id) : [];
 
@@ -937,6 +946,18 @@ export function TrackingView({
             <BinIcon size={18} />
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => downloadTrackingCsv(shown, todayYmd())}
+          disabled={!shown.length}
+          title={`Download the ${shown.length} session${shown.length === 1 ? "" : "s"} shown (after filters and search) as a CSV file`}
+          className="flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm hover:border-accent/50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-muted">
+            <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+          </svg>
+          Export CSV
+        </button>
         {add}
       </div>
     </div>
@@ -955,28 +976,49 @@ export function TrackingView({
       <div className="flex flex-wrap items-center gap-2">
         <FilterDropdown records={records} filters={filters} setFilters={setFilters} />
         <div className="relative min-w-48 flex-1">
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search songs, people, services, comments…"
-            aria-label="Search sessions"
-            className="h-10 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            placeholder={searchMode === "text" ? "Search songs, people, services, comments…" : '[WL = "Vanessa"] and [Song Title = "Praise"]'}
+            aria-label={searchMode === "text" ? "Search sessions" : "Query sessions"}
+            aria-invalid={parsed && !parsed.ok && parsed.error ? true : undefined}
+            aria-describedby={searchMode === "query" ? "tracking-query-help" : undefined}
+            spellCheck={searchMode === "text"}
+            autoCapitalize="off"
+            autoCorrect="off"
+            className={`h-10 w-full rounded-lg border bg-surface pl-3 pr-11 text-sm outline-none focus:ring-2 ${
+              parsed && !parsed.ok && parsed.error ? "border-danger focus:border-danger focus:ring-danger/20" : "border-border focus:border-accent focus:ring-accent/20"
+            }`}
           />
+          <button
+            type="button"
+            onClick={() => setSearchMode((m) => (m === "text" ? "query" : "text"))}
+            aria-pressed={searchMode === "query"}
+            aria-label={searchMode === "text" ? "Switch to query search" : "Switch to plain search"}
+            title={searchMode === "text" ? "Query search, e.g. [WL = \"Vanessa\"] and [Song Title = \"Praise\"]" : "Plain search"}
+            className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-accent/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          >
+            {searchMode === "text" ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+            ) : (
+              // A right join: two overlapping circles, the left one empty, the right one filled (the
+              // left circle's edge runs across the fill as a light line, so both circles show).
+              <svg width="26" height="16" viewBox="0 0 26 16" aria-hidden>
+                <defs>
+                  <clipPath id={joinClip}>
+                    <circle cx="17.5" cy="8" r="6" />
+                  </clipPath>
+                </defs>
+                <circle cx="8.5" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="17.5" cy="8" r="6" fill="currentColor" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="8.5" cy="8" r="6" fill="none" stroke="var(--color-surface)" strokeWidth="1.25" clipPath={`url(#${joinClip})`} />
+              </svg>
+            )}
+          </button>
         </div>
         {view === "table" && <ColumnPicker hidden={hidden} setHidden={setHidden} />}
         <div role="tablist" aria-label="View" className="flex h-10 rounded-lg border border-border bg-surface p-0.5">
@@ -995,6 +1037,18 @@ export function TrackingView({
         </div>
       </div>
 
+      {searchMode === "query" && (
+        <p id="tracking-query-help" className={`text-xs ${parsed && !parsed.ok && parsed.error ? "text-danger" : "text-muted"}`}>
+          {parsed && !parsed.ok && parsed.error ? (
+            parsed.error
+          ) : (
+            <>
+              Each test in [ ], e.g. [WL = &quot;Caleb&quot;] or [Vox = &quot;Caleb&quot;]. = exact, != not, ~ contains; join with and, or,
+              ! (not) and ( ). Columns: {QUERY_COLUMNS}.
+            </>
+          )}
+        </p>
+      )}
       <p className="text-xs text-muted">{shown.length === records.length ? `${records.length} sessions` : `${shown.length} of ${records.length} sessions`}</p>
 
       {records.length === 0 ? (

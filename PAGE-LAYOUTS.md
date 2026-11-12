@@ -157,9 +157,13 @@ shows its details, then the songsheet preview card, then the "Open song page ↗
 
 **`/sessions/tracking`** (root): **wider than the nav**, the same width as the roster editor
 (`data-wide-page`: max (window + 992px) ÷ 2), so more table columns show. Title "Tracking", dark **+** with a pending count
-badge; while table rows are ticked, a red-outlined 40px **bin** sits just left of the + (opens
+badge, and just left of it a 40px "Export CSV" button (downloads the sessions shown after filters
+and search, every column, `web/src/lib/tracking-csv.ts`); while table rows are ticked, a red-outlined 40px **bin** sits just left of the + (opens
 "Are you sure you want to delete N sessions?"). Toolbar (wraps): Filters, search (fills the row,
-min 192px), Columns, Table/List switch. The Columns menu (240px) hangs from the button's right
+min 192px), Columns, Table/List switch. The search's icon sits inside its right end (32px button): the
+magnifier (plain search) or a right-join icon (query search, `web/src/lib/tracking-query.ts`), and
+tapping it switches between them. In query mode a help line (red with the error when the query
+can't be read) shows under the toolbar. The query searches within what the filters leave. The Columns menu (240px) hangs from the button's right
 edge, or from its left edge when that would run off the screen (phones, where Columns wraps to
 the start of a row).
 Table view: bordered box, max 65% of the window tall, scrolls both ways, sticky header; a sticky
