@@ -75,6 +75,14 @@ body {
   }
 }
 
+/* Roster landing (phones): the quarter button's text fades in when a hold flips it. */
+@keyframes quarter-flip {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 /* Drag a song over another section: the bar fills while it waits to move there. */
 @keyframes hold {
   from {

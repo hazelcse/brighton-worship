@@ -11,6 +11,7 @@ import { RequestsBoard } from "@/components/roster/requests-board";
 import { MyServices } from "@/components/roster/my-services";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { NewMenu } from "@/components/roster/new-menu";
+import { QuarterSwitchButton } from "@/components/roster/quarter-switch-button";
 import { BroadcastActionables } from "@/components/broadcasts";
 import { loadBroadcastActionables } from "@/lib/broadcasts";
 
@@ -51,7 +52,17 @@ async function RosterView() {
   return (
     <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className={`flex flex-1 flex-col gap-2 sm:flex-row ${upcoming ? "sm:max-w-3xl" : "sm:max-w-xl"}`}>
+        {/* Phones: with both rosters out, one button; hold it to flip to next quarter. */}
+        {roster && upcoming && (
+          <QuarterSwitchButton
+            className="sm:hidden"
+            current={{ href: "/roster/current", heading: "This quarter's roster", range: formatRange(roster.starts_on, roster.ends_on) }}
+            next={{ href: "/roster/current?quarter=next", heading: "Next quarter's roster", range: formatRange(upcoming.starts_on, upcoming.ends_on) }}
+          />
+        )}
+        <div
+          className={`flex-1 flex-col gap-2 sm:flex sm:flex-row ${roster && upcoming ? "hidden" : "flex"} ${upcoming ? "sm:max-w-3xl" : "sm:max-w-xl"}`}
+        >
           {roster ? (
             <Link
               href="/roster/current"

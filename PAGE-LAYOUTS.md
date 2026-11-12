@@ -83,7 +83,10 @@ dashed "not on any upcoming sessions" box, then broadcasts and notices.
 
 **`/roster` (landing)**: full width, fills the window height (`min-h-[calc(100dvh-8.5rem)]`,
 `gap-4`). Top row: dark "This quarter's roster" card (max 576px) and, when published, a 224px
-"Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu. Below,
+"Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu. On phones,
+when both are published they're one button (`quarter-switch-button.tsx`): press and hold flips it
+between this quarter (dark) and next quarter (light, like the desktop card), two dots show which,
+and a tap opens the one showing. Below,
 **Your Services** and the **Requests** panel (root: **Actionables**) share the rest of the
 height equally (`flex-[1_1_0px]` each, so content doesn't skew the split; space is left blank when
 there are few services; with none, an animated wind-and-leaf picture, `wind-leaf.tsx`, sits
