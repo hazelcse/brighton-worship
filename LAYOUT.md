@@ -4,6 +4,20 @@ Recorded for the project owner on 11 Nov 2026. **Don't change these as a side ef
 work.** If a change needs a different width or size, ask the owner first, or at least say clearly
 in your summary which measurement changed, where and why.
 
+## Page widths and the nav bar width: owner-only
+
+Restated by the owner on 13 Nov 2026:
+
+- **Page widths**: don't change any page's width (the 992px page area, the wider `<WidePage />`
+  pages, or a page's own `max-w-2xl` / `max-w-3xl` column) unless the owner specifically asks for
+  that page's width to change.
+- **Nav bar width**: the span from the left edge of "Brighton Worship" to the right edge of the
+  account (profile) button stays as it is unless the owner specifically mentions changing it.
+- **If Claude decides one of these needs to change** (including as part of other work), it must
+  stop before editing, **warn** the owner, **explain why** the change is needed and what would
+  change (old → new), and **ask for permission**. Nothing is edited until the owner says yes.
+  Saying so in a summary afterwards is not enough for these two.
+
 Widths are in CSS pixels at normal (100%) browser zoom. "From 640px up" means windows at least
 640px wide (Tailwind's `sm:`); below that is the phone layout.
 

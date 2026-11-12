@@ -5,6 +5,12 @@ layout, and keep it up to date when you do. The measurements the owner chose on 
 protected in [LAYOUT.md](LAYOUT.md) (and checked by `web/scripts/check-layout.mjs`); don't change
 those without asking. Fonts are in [FONTS.md](FONTS.md).
 
+**Page widths and the nav bar width are owner-only** (restated 13 Nov 2026): never change a page's
+width, or the nav's span from "Brighton Worship" to the account (profile) button, unless the owner
+specifically asks. If Claude decides one needs to change, it must first warn the owner, explain
+why and what would change, and ask for permission; no edit until they say yes. See
+[LAYOUT.md](LAYOUT.md#page-widths-and-the-nav-bar-width-owner-only).
+
 Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 672, `3xl` 768,
 `4xl` 896. Breakpoints: `sm` 640px, `md` 768, `lg` 1024, `xl` 1280 (window widths).
 
@@ -329,3 +335,5 @@ security groups card, permissions list with a dropdown per category; save at the
   `max-w-2xl` or `max-w-3xl`); never widen past `max-w-page`.
 - Card grids of people or songs: reuse the gallery grid above so they match.
 - Changing `max-w-page`, the nav, or anything listed in LAYOUT.md needs the owner's OK.
+- Page widths and the nav bar width: only when the owner specifically asks. If Claude thinks one
+  must change, warn, explain why, and ask permission **before** editing (not just in a summary).
