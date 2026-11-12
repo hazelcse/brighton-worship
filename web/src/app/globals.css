@@ -222,6 +222,65 @@ body {
   }
 }
 
+/* Home page's loading indicator (components/home-loader.tsx): the band becomes a cross and back.
+   Hidden for the first 300ms. One 5s round, starting and ending on the cross:
+   the band flies out of the middle (staggered), holds, flies back in and shrinks away, then the
+   cross grows there; at the end of the round the cross shrinks as the band flies out again. */
+.home-loader {
+  animation: note-loader-in 0.3s ease-out 0.3s both;
+}
+.home-loader-instrument {
+  animation: home-loader-instrument 5s ease-in-out infinite both;
+}
+@keyframes home-loader-instrument {
+  0% {
+    opacity: 0;
+    transform: translateX(var(--dx)) scale(0.35);
+  }
+  12%,
+  40% {
+    opacity: 1;
+    transform: none;
+  }
+  54%,
+  100% {
+    opacity: 0;
+    transform: translateX(var(--dx)) scale(0.35);
+  }
+}
+.home-loader-cross {
+  transform-origin: 50% 60%;
+  animation: home-loader-cross 5s ease-in-out infinite both;
+}
+@keyframes home-loader-cross {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  8%,
+  63% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  71% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  77%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-loader-instrument {
+    animation: none;
+  }
+  .home-loader-cross {
+    display: none;
+  }
+}
+
 dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
   backdrop-filter: blur(2px);

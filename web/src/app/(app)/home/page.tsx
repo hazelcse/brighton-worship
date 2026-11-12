@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { HomeLoader } from "@/components/home-loader";
 import { requireUser } from "@/lib/auth";
 import { daysBetween, formatDate, formatTime, todayYmd } from "@/lib/roster";
 import { countdown, rehearsalTime } from "@/lib/reminder";
@@ -190,7 +191,7 @@ export default function HomePage() {
   return (
     <>
       <AutoRefresh />
-      <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+      <Suspense fallback={<HomeLoader className="py-24" />}>
         <HomeView />
       </Suspense>
     </>

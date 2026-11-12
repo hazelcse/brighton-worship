@@ -235,6 +235,13 @@ after another, then all fade out. Every `/sessions/...` page shows `SessionLoade
 (`web/src/components/session-loader.tsx`): three 24×30px song sheets (outlined like the calendar
 pages) whose three lines draw in left to right in turn.
 
+**Loading (home page)**: `/home` shows `HomeLoader` (`web/src/components/home-loader.tsx`),
+`py-24`, same size, colour, label, fade-in and reduce-motion rules: five 30px instruments (mic,
+keyboard, acoustic guitar, electric guitar/bass, drums; 10px apart) fly out of the middle to
+their places, hold, gather back into the middle and become a plain (empty) Latin cross; the cross
+shrinks back as the band flies out again, in a 5s loop with no gap. With reduce motion the band
+sits still and the cross isn't shown.
+
 ### Team
 
 **`/team`**: full width, no title. Toolbar: instrument and ministry pickers and search (224px
