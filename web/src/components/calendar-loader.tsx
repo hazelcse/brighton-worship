@@ -11,8 +11,6 @@ import { useEffect, useState } from "react";
  * Each flip starts and ends edge-on (invisible), so the date moves on a week between flips.
  */
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /** The next Sunday on or after today, as a local date at midnight. */
 function nextSunday(): Date {
   const d = new Date();
@@ -41,18 +39,17 @@ export function CalendarLoader({ label = "Loading", className = "" }: { label?: 
 
   return (
     <div role="status" className={`calendar-loader flex flex-col items-center justify-center gap-3 text-muted ${className}`}>
-      <div aria-hidden className="flex items-end gap-3 [perspective:400px]">
+      {/* Sized and coloured like NoteLoader's symbols (text-3xl, foreground/70): drawn in currentColor. */}
+      <div aria-hidden className="flex items-end gap-3 text-foreground/70 [perspective:200px]">
         {dates.map((d, i) => (
           <div
             key={i}
-            className="calendar-loader-page flex w-11 flex-col overflow-hidden rounded-md border border-border bg-surface text-center shadow-sm"
+            className="calendar-loader-page flex h-[30px] w-[26px] flex-col overflow-hidden rounded-[4px] border-[1.5px] border-current text-center"
             style={{ animationDelay: `${i * 0.25}s` }}
             onAnimationIteration={() => turn(i)}
           >
-            <span className="bg-accent py-0.5 text-[10px] leading-none text-accent-foreground uppercase">
-              {d ? MONTHS[d.getMonth()] : " "}
-            </span>
-            <span className="py-1.5 text-lg leading-none text-foreground/80">{d ? d.getDate() : " "}</span>
+            <span className="h-[7px] shrink-0 bg-current" />
+            <span className="flex flex-1 items-center justify-center text-xs leading-none">{d ? d.getDate() : ""}</span>
           </div>
         ))}
       </div>
