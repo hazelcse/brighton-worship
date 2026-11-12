@@ -10,16 +10,39 @@ import { CountdownNumber } from "@/components/countdown-number";
 import { BroadcastList } from "@/components/broadcasts";
 import { loadMyBroadcasts } from "@/lib/broadcasts";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { HomeNotices, type HomeNotice } from "@/components/home-notices";
+import { updateText } from "@/components/roster/updates-board";
+import { loadUpdates, type UpdateItem } from "@/lib/serving";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata: Metadata = { title: "Home · Brighton Worship" };
 
+/** Roster updates that change who's in a session's band (shown once on the landing page). */
+const BAND_CHANGES = new Set<UpdateItem["kind"]>([
+  "roster_band_changed",
+  "roster_added",
+  "roster_removed",
+  "roster_part_changed",
+  "taken",
+  "swapped",
+  "band_role_taken",
+]);
+
+/** Up to when band changes have been shown to them here (null: not known, so none are shown). */
+async function homeBandSeenAt(userId: string): Promise<string | null> {
+  const { data } = await createAdminClient().from("profiles").select("home_band_seen_at").eq("id", userId).maybeSingle();
+  return (data?.home_band_seen_at as string | null | undefined) ?? null;
+}
+
 async function HomeView() {
   const user = await requireUser();
-  const [next, fresh, due, broadcasts] = await Promise.all([
+  const [next, fresh, due, broadcasts, updates, bandSeenAt] = await Promise.all([
     loadNextSession(user.id),
     loadNewlyPublished(user.id),
     loadPublishDue(user.id),
     loadMyBroadcasts(user),
+    loadUpdates(user), // the nav's Roster badge loads these too: fetched once
+    homeBandSeenAt(user.id),
   ]);
   const first = (user.fullName || "").split(" ")[0];
 
@@ -27,7 +50,7 @@ async function HomeView() {
   const pending = next?.serveStatus === "pending";
   const link = "font-medium underline underline-offset-2";
   const day = (d: string) => formatDate(d, { weekday: "short", day: "numeric", month: "short" });
-  const notices: Notice[] = fresh.map((f) => {
+  const notices: HomeNotice[] = fresh.map((f) => {
     const isNext = pending && f.planId === next?.plan?.id;
     return {
       key: f.planId,
@@ -81,11 +104,38 @@ async function HomeView() {
     });
   }
 
+  // Changes to the band of an upcoming session they're on, made by someone else, not shown here yet.
+  // Shown on one visit only (HomeNotices marks them seen), last in the box.
+  const today = todayYmd();
+  const upcoming = (u: UpdateItem) => (u.session?.date ?? "") >= today || (u.otherSession?.date ?? "") >= today;
+  if (bandSeenAt) {
+    notices.push(
+      ...updates
+        .filter((u) => BAND_CHANGES.has(u.kind) && u.concernsMe && !u.byMe && u.createdAt > bandSeenAt && upcoming(u))
+        .reverse() // oldest first, like the rest of the box
+        .map((u) => ({
+          key: `band-${u.id}`,
+          text: updateText(u),
+          action: (
+            <Link href="/roster#updates" className={link}>
+              See updates
+            </Link>
+          ),
+          once: u.createdAt,
+        })),
+    );
+  }
+  // Broadcasts and notices sit together: under the countdown, above the session.
+  const messages = (broadcasts.length > 0 || notices.length > 0) && (
+    <div className="space-y-3">
+      <BroadcastList items={broadcasts} />
+      <HomeNotices items={notices} />
+    </div>
+  );
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <h1 className="font-display text-3xl font-medium">{first ? `Hi ${first},` : "Welcome"}</h1>
-
-      <BroadcastList items={broadcasts} />
 
       {!next && (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
@@ -95,7 +145,7 @@ async function HomeView() {
           </Link>
         </p>
       )}
-      {!next && <Notices items={notices} />}
+      {!next && messages}
       {next && (
         <>
           <section aria-label="Countdown" className="rounded-xl bg-ink p-6 text-ink-foreground">
@@ -127,29 +177,12 @@ async function HomeView() {
             </p>
           </section>
 
-          <Notices items={notices} />
+          {messages}
 
           <SessionCard s={next} />
         </>
       )}
     </div>
-  );
-}
-
-type Notice = { key: string; text: React.ReactNode; action: React.ReactNode };
-
-/** Notices for the person (plans to publish, plans published, sessions to confirm), together in one box. */
-function Notices({ items }: { items: Notice[] }) {
-  if (!items.length) return null;
-  return (
-    <ul aria-label="Notices" className="divide-y divide-accent/20 rounded-xl border border-accent/40 bg-accent/10 text-sm">
-      {items.map((n) => (
-        <li key={n.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
-          <span className="min-w-0 flex-1">{n.text}</span>
-          <span className="shrink-0">{n.action}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 

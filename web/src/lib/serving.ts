@@ -174,6 +174,10 @@ export type UpdateItem = {
   createdAt: string;
   /** Not seen before (and not the viewer's own doing). */
   isNew: boolean;
+  /** The viewer made this change themselves. */
+  byMe: boolean;
+  /** About a session the viewer is rostered on (either side of a swap), or about the viewer. */
+  concernsMe: boolean;
   /** When what it was about got sorted (the place covered, the role taken over), if it has. */
   resolvedAt: string | null;
   /** Where clicking it goes (a session's plan was updated: its page). */
@@ -928,17 +932,20 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
     return s ? info(s) : null;
   };
 
-  // Older direct asks with a swap logged both "asked" and "swap_proposed" for the one request:
-  // keep only the swap proposal.
+  // Older direct asks with a swap logged both "asked" and "swap_proposed" for the one request, the
+  // ask just before the swap: keep only the swap proposal. An ask logged after a swap proposal is
+  // the swap being dropped for a plain take-over, and stays.
   const swapAt = new Map<string, number[]>();
   for (const u of data ?? []) {
     if (u.kind !== "swap_proposed") continue;
     const k = `${u.session_id}|${u.actor_id}|${u.member_id}`;
     swapAt.set(k, [...(swapAt.get(k) ?? []), new Date(u.created_at).getTime()]);
   }
-  const duplicateAsk = (u: { kind: string; session_id: string; actor_id: string; member_id: string | null; created_at: string }) =>
-    u.kind === "asked" &&
-    (swapAt.get(`${u.session_id}|${u.actor_id}|${u.member_id}`) ?? []).some((t) => Math.abs(t - new Date(u.created_at).getTime()) < 60_000);
+  const duplicateAsk = (u: { kind: string; session_id: string; actor_id: string; member_id: string | null; created_at: string }) => {
+    if (u.kind !== "asked") return false;
+    const askedAt = new Date(u.created_at).getTime();
+    return (swapAt.get(`${u.session_id}|${u.actor_id}|${u.member_id}`) ?? []).some((t) => t >= askedAt && t - askedAt < 60_000);
+  };
 
   // The part at each offered swap session: whichever of the two people is rostered on it (the one
   // asked before the swap, the requester after). Usually the same instrument as the request.
@@ -1048,6 +1055,9 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
       detail: (u.detail as string | null) ?? null,
       createdAt: u.created_at,
       isNew: u.actor_id !== user.id && new Date(u.created_at).getTime() > seenAt,
+      byMe: u.actor_id === user.id,
+      concernsMe:
+        u.member_id === user.id || mySessions.has(u.session_id) || Boolean(u.other_session_id && mySessions.has(u.other_session_id)),
       resolvedAt: (u.resolved_at as string | null) ?? null,
       href: href(u),
     }));

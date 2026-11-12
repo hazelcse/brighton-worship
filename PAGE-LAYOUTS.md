@@ -64,8 +64,15 @@ title `font-display text-3xl`, form, "Log out" link.
 ### Home
 
 **`/home`**: narrow column **672px** (`mx-auto max-w-2xl space-y-5`). Title "Hi (name),". Then
-broadcasts list, the dark countdown card (`rounded-xl bg-ink p-6`), notices (accent-tinted list),
-and the next session's card (songs, then band in two columns once the card is wide enough).
+the dark countdown card (`rounded-xl bg-ink p-6`), then broadcasts and notices together
+(`space-y-3`: broadcast cards, then the accent-tinted notices list), then the next session's card
+(songs, then band in two columns once the card is wide enough). With no upcoming session: the
+dashed "not on any upcoming sessions" box, then broadcasts and notices.
+- Notices, in order: plans due to be published, "you haven't confirmed", plans published or
+  updated, then **band changes** (someone else changed the band of an upcoming session they're on:
+  roster edits, take-overs, swaps), worded as on the Roster page's Updates, each with "See
+  updates". A band change shows on one visit only: it's marked seen when shown and stays until
+  they leave the page (`profiles.home_band_seen_at`, `web/src/components/home-notices.tsx`).
 
 ### Roster
 
@@ -89,7 +96,9 @@ range title; root gets "Edit" (dark). Legend line, then the roster table (scroll
 the right, the whole thing filling the window height. Calendar: month header with Today and
 arrows, 7-column grid (96px rows on phones, stretching at lg). Side column: cover panel (if any)
 and the scrolling **Absences** list (root: "Everyone / Only mine" switch), with "+ Create absence"
-under it. Below 768px the create button floats bottom-right as a round 56px button.
+under it. Below 768px the create button floats bottom-right as a round 56px button, and swiping
+the calendar sideways changes month (left = next, right = previous; mostly-horizontal swipes of
+50px+ only, with a short slide-in).
 
 **`/roster/[id]`** (view any roster): full width. Back link, quarter label + date range title;
 "Continue planning" (draft) or "Edit" (published). Notices capped at 672px, then the roster table.

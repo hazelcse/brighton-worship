@@ -27,8 +27,11 @@ const DOT: Record<UpdateItem["kind"], string> = {
 
 const day = (date: string) => formatDate(date, { weekday: "short", day: "numeric", month: "short" });
 
-/** Each update as one sentence naming the part, session and date, e.g. "Keys (CM Sunday Service) – Sun 18 Jan". */
-function text(u: UpdateItem): React.ReactNode {
+/**
+ * Each update as one sentence naming the part, session and date, e.g. "Keys (CM Sunday Service) – Sun 18 Jan".
+ * Also used for the landing page's band change notices.
+ */
+export function updateText(u: UpdateItem): React.ReactNode {
   const part = u.role ? (ROLE_LABEL[u.role] ?? u.role) : "their part";
   const b = (s: string | null) => <span className="font-medium">{s}</span>;
   const place = u.session ? `${part} (${u.session.name}) – ${day(u.session.date)}` : part;
@@ -185,10 +188,10 @@ export function UpdatesBoard({ updates }: { updates: UpdateItem[] }) {
               {u.href ? (
                 // The whole row is the link.
                 <Link href={u.href} className="after:absolute after:inset-0">
-                  {text(u)}
+                  {updateText(u)}
                 </Link>
               ) : (
-                text(u)
+                updateText(u)
               )}
               {u.isNew && <span className="sr-only"> (new)</span>}
             </p>

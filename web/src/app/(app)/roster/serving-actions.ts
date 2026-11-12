@@ -723,6 +723,9 @@ export async function editDirect(input: { coverId: string; targetId: string; off
           .eq("cover_id", c.id)
           .eq("proposed_by", user.id)
           .eq("status", "pending");
+        // The swap is off: it's now a plain ask to take over, so tell them (a new update, so it
+        // shows as new; the "proposed a swap" before it stays as history).
+        await logUpdate(db, { kind: "asked", session_id: c.session_id, role: c.role, actor_id: user.id, member_id: input.targetId });
       }
       return done("Updated.");
     }

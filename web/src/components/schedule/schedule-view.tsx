@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type TouchEvent } from "react";
 import { deleteAbsence, getSessionDetail, saveAbsence } from "@/app/(app)/roster/schedule/actions";
 import { ROLE_SHORT, addDays, formatDate, formatTime, parseYmd, weekday, ymd } from "@/lib/roster";
 import { rehearsalTime, sessionTime } from "@/lib/reminder";
@@ -267,6 +267,37 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
 
   const monthLabel = formatDate(month, { month: "long", year: "numeric" });
 
+  // Phones: swipe the calendar sideways to change month (left = next, right = previous).
+  // Mostly-horizontal swipes only, so vertical scrolling and taps behave as before.
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+  function onTouchStart(e: TouchEvent) {
+    swiped.current = false;
+    swipe.current = e.touches.length === 1 && window.matchMedia("(max-width: 767px)").matches ? { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY } : null;
+  }
+  function onTouchEnd(e: TouchEvent) {
+    const start = swipe.current;
+    swipe.current = null;
+    const t = e.changedTouches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const step = dx < 0 ? 1 : -1;
+    swiped.current = true;
+    setTimeout(() => (swiped.current = false), 400);
+    setMonth((m) => shiftMonth(m, step));
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      weeksRef.current?.animate(
+        [
+          { transform: `translateX(${step * 25}%)`, opacity: 0 },
+          { transform: "none", opacity: 1 },
+        ],
+        { duration: 200, easing: "ease-out" },
+      );
+    }
+  }
+
   return (
     <div className="grid gap-4 pb-20 md:pb-0 lg:h-[calc(100dvh-8.5rem)] lg:min-h-[34rem] lg:grid-cols-[minmax(0,1fr)_20rem]">
       {/* Calendar */}
@@ -297,7 +328,24 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
           ))}
         </div>
 
-        <div ref={weeksRef} className="flex min-h-0 flex-1 flex-col">
+        <div
+          ref={weeksRef}
+          className="flex min-h-0 flex-1 flex-col"
+          onTouchStart={onTouchStart}
+          onTouchMove={(e) => {
+            if (e.touches.length > 1) swipe.current = null;
+          }}
+          onTouchEnd={onTouchEnd}
+          onTouchCancel={() => (swipe.current = null)}
+          // A swipe that ends over a day shouldn't also open it.
+          onClickCapture={(e) => {
+            if (swiped.current) {
+              swiped.current = false;
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }}
+        >
           {weeks.map((w) => {
             const { segments, hidden } = layoutWeek(w, absences, maxLanes);
             return (
@@ -355,7 +403,7 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
                     const chips = showServices
                       ? serviceChips(servicesByDate.get(day) ?? [])
                       : (mineByDate.get(day) ?? []).map((m) => ({
-                          label: `${ROLE_SHORT[m.role] ?? m.role} · ${m.kind === "rehearsal" ? rehearsalLabel([m]) : m.kind.endsWith("_pnp") ? "PnP" : "Svc"}`,
+                          label: `${m.kind === "rehearsal" ? rehearsalLabel([m]) : [ministryOf(m.kind), m.kind.endsWith("_pnp") ? "PnP" : "Svc"].filter(Boolean).join(" ")} · ${ROLE_SHORT[m.role] ?? m.role}`,
                           dot: serviceDot(m.kind),
                         }));
                     if (!chips.length) return null;

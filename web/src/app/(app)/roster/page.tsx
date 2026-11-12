@@ -94,7 +94,7 @@ async function RosterView() {
         )}
       </div>
 
-      <Panel title="Updates">
+      <Panel title="Updates" id="updates">
         <UpdatesBoard updates={updates} />
       </Panel>
       <Panel title={user.isRoot ? "Actionables" : "Requests"} id="requests">
