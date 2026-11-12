@@ -904,6 +904,9 @@ export function loadUpdates(user: { id: string; isRoot: boolean }): Promise<Upda
   return updatesFor(user.id, user.isRoot);
 }
 
+/** How long a roster update stays in the inbox. */
+const UPDATE_LIFETIME_DAYS = 14;
+
 /** Once per request per person: the nav's inbox and the landing page both need it. */
 const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<UpdateItem[]> => {
   const user = { id: userId, isRoot };
@@ -911,8 +914,10 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
   const sessions = await publishedSessions(db);
   if (!sessions.size) return [];
   const columns = "id, kind, session_id, other_session_id, role, actor_id, member_id, reason, detail, created_at, resolved_at";
+  // Updates expire from the inbox after two weeks (the rows stay in the database).
+  const since = new Date(Date.now() - UPDATE_LIFETIME_DAYS * 24 * 60 * 60 * 1000).toISOString();
   // Roster changes are also about sessions since cancelled or deleted: fetched on their own.
-  let changes = db.from("roster_updates").select(columns).in("kind", ROSTER_CHANGE_KINDS);
+  let changes = db.from("roster_updates").select(columns).in("kind", ROSTER_CHANGE_KINDS).gte("created_at", since);
   // Bandmates' notes are one per person: root gets only their own, so they don't crowd the limit.
   changes = user.isRoot ? changes.or(`kind.neq.roster_band_changed,member_id.eq.${user.id}`) : changes.eq("member_id", user.id);
   const [{ data: onSessions }, { data: changeRows }, people, { data: me }, { data: mine }] = await Promise.all([
@@ -921,6 +926,7 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
       .select(columns)
       .in("session_id", [...sessions.keys()])
       .neq("kind", "roster_band_changed") // fetched with the roster changes, for the person they're for
+      .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(300),
     changes.order("created_at", { ascending: false }).limit(100),
