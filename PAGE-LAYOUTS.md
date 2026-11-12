@@ -13,7 +13,9 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 - **Nav bar** (`web/src/components/app-nav.tsx`): `sticky top-0 z-30 bg-ink`, 56px tall. Contents
   `mx-auto flex h-14 max-w-page px-4 sm:px-6`: "Brighton Worship", the menu (from md), and the
   **inbox** (36px icon with an orange unread count) + account icon pushed right. Below md:
-  hamburger + 288px slide-in sidebar.
+  hamburger + 288px slide-in sidebar. In the sidebar, Roster, Sessions and (developers) Develop
+  open the same indented sub-list with a thin line on its left (16px items); Develop's "Reset app
+  data" is in light red.
 - **Inbox** (`web/src/components/inbox.tsx`, for anyone who can see the roster): the roster
   updates, newest first (new ones tinted, linked ones clickable). A popup under the icon, 384px
   wide, right-aligned, max 512px tall with the list scrolling; below 640px it spans the window
@@ -54,7 +56,8 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
   by the page (`w-36` on Songs); popover 240px.
 - **Roster table** (`roster-filter.tsx`, `roster-results.tsx`): chip filters
   (`h-8 rounded-full`), then `overflow-x-auto rounded-xl border` table, `text-[13px]`, sticky
-  header. Scrolls sideways (one column per role).
+  header. Scrolls sideways (one column per role); below 640px the Date column stays frozen at the
+  left (opaque, thin line on its right) while the rest scrolls under it.
 
 ## Pages
 
@@ -83,8 +86,10 @@ dashed "not on any upcoming sessions" box, then broadcasts and notices.
 
 **`/roster` (landing)**: full width, fills the window height (`min-h-[calc(100dvh-8.5rem)]`,
 `gap-4`). Top row: dark "This quarter's roster" card (max 576px) and, when published, a 224px
-"Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu. On phones,
-when both are published they're one button (`quarter-switch-button.tsx`): press and hold flips it
+"Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu (on phones
+they get their own row: View past rosters at the left, + at the right). On phones
+(and on every screen for root and developers, max 576px there), when both are published they're
+one button (`quarter-switch-button.tsx`): press and hold (touch or mouse) flips it
 between this quarter (dark) and next quarter (light, like the desktop card), two dots show which,
 and a tap opens the one showing. Below,
 **Your Services** and the **Requests** panel (root: **Actionables**) share the rest of the
@@ -139,13 +144,20 @@ to the roster".
 pages past the 992px cap (`data-wide-page`): max (window + 992px) ÷ 2, so its edges sit halfway between the
 nav's edges and the window's, giving the roster columns more room on desktop. Header stacks below 1024px: title ("Generated roster"
 or the quarter) left; right: Loads (orange pill), back to planning, Reset, Save draft, Publish
-(all `h-10`). Body: roster table; from **1280px** a 256px side column (warnings, result, rules,
-weights) sits to its right, otherwise it drops below the table.
+(all `h-10`). Editing a published roster: the Published / Unpublished changes / Editing badges sit
+to the right of the title at every width (each wraps on its own), and the buttons are Load, Reset,
+Edit (or ×, save), Republish. Stacked (below 1024px) there's 16px between the date range and the
+button row. **Phones (below 640px)**: the Ministry and Service chips are replaced by one `h-10`
+"Filter" dropdown (`MobileRosterFilter`, styled like FilterMenu; checkboxes grouped under Ministry
+and Service, at least one on in each) at the left of the button row, with Load / Reset / Edit
+right-aligned on the same row. Body: roster table; from **1280px** a 256px side column (warnings,
+result, rules, weights) sits to its right, otherwise it drops below the table.
 
 ### Sessions
 
-**`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right. Link
-cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, songs with key chips.
+**`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right; on
+**phones (below 640px)** that button is hidden and a 40px dark "+" (like the roster's New button,
+named "Build session") sits centred under the cards instead. Link cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, songs with key chips.
 Worship leaders also see their sessions' drafts here, mixed in by date: white, with a dashed
 amber border (`amber-400`) and a small amber "Draft" pill after the date (9px text, 14px tall,
 just under the date's line) in place of "Just published". A published plan with unpublished
@@ -167,7 +179,12 @@ it into a 512px dialog: a month calendar from this month to the service's month,
 the band's absences as 4px bars, days before today or after the service greyed out, the service
 boxed orange, the current rehearsal blue, the new day green; arrows between months, swipe on
 phones; then the time, an "Away on …" list with a sub picker per person, and Remove rehearsal /
-Cancel / Save), title + badges, a row of 36px icon buttons and "Publish",
+Cancel / Save), title + badges (the badges in one row, to the right of the title when they fit,
+otherwise as a row under it), a row of 36px icon buttons and "Publish". **Phones (below 640px)**:
+the date line moves under the title and badges, shortened to one line ("Sun, 15 Nov 2026 ·
+Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row the eye
+(simplified view) stays at the left and Undo / Edit / Publish sit at the right; while editing,
+× and save sit at the left and + at the right. Then
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
@@ -185,7 +202,10 @@ magnifier (plain search) or a right-join icon (query search, `web/src/lib/tracki
 tapping it switches between them. In query mode a help line (red with the error when the query
 can't be read) shows under the toolbar. The query searches within what the filters leave. The Columns menu (240px) hangs from the button's right
 edge, or from its left edge when that would run off the screen (phones, where Columns wraps to
-the start of a row).
+the start of a row). **Phones (below 640px)**: Filters and Columns show just their icon and arrow,
+and share the first row with the search (which may go under 192px there); the second row has the
+Table/List switch at the left (32px tall, fully rounded) and, at the right, the bin (when rows
+are ticked), Export CSV as just its 40px download icon, and the + (these leave the title row).
 Table view: bordered box, max 65% of the window tall, scrolls both ways, sticky header; a sticky
 40px checkbox column (header box ticks all shown rows) then the sticky date column; ticked rows
 tint orange; sessions marked as no session have no checkbox and show their reason across the
@@ -202,16 +222,18 @@ columns from 640px, two link fields).
 - **Toolbar: always one row from 768px up** (`flex flex-wrap items-center gap-2 md:flex-nowrap`),
   left to right:
   - search, filling whatever space is left (`md:flex-1`, never under 160px);
-  - Filters, 144px (`w-36`);
-  - **!** needs review, a 40px square showing only "!", with the count in its tooltip (only for
-    people who can review, when something needs review);
+  - Filters, 144px (`w-36`): one dropdown (`MultiFilterMenu`, same look as FilterMenu) with tick
+    boxes, several per group, nothing ticked = all: Language, Type, Artist (every artist in the
+    library, A–Z; the list scrolls) and, for people who can review when something needs review,
+    Status ("Needs review (N)"; this replaced the old "!" button). The button shows up to two
+    picks, then "N filters";
   - "Missing" / "Missing from Drive" (from 1280px), with count;
   - then pushed right (`ml-auto`): Drive sync (the "Synced … ago" text shows only from 1024px),
     Updates, and the dark **+** add menu.
-  - Nothing in the row shrinks or wraps except the search. Tested with every button showing:
-    one 40px row at 768, 900, 1024, 1100, 1280 and 1440px windows (search 166–298px wide).
+  - Nothing in the row shrinks or wraps except the search. Tested with every button showing (when
+    it still had the "!" button): one 40px row at 768, 900, 1024, 1100, 1280 and 1440px windows (search 166–298px wide).
   - Below 768px: the search and the Filters button share the first row (Filters shows only its
-    icon and arrow, menu opens right-aligned); the **!** button is hidden; Updates is a 40px bell
+    icon and arrow, menu opens right-aligned; it has the same Artist and Status lists); Updates is a 40px bell
     with an orange dot top-right when there are new updates; the rest wrap onto a second row,
     which starts with the song count ("12 of 368 songs", Clear filters) on the left. The
     separate count line below is hidden on phones (except to show "Scanning…").
@@ -279,8 +301,12 @@ sits still and the cross isn't shown.
 ### Team
 
 **`/team`**: full width, no title. Toolbar: instrument and ministry pickers and search (224px
-from 640px) on the left; root gets "+ User" and "Manage permissions" on the right (stacks below
-640px). Count line, then the **gallery cards** grid (4 per row on desktop) with instrument chips.
+from 640px) on the left; root gets "+ User" and "Manage permissions" on the right. **Phones
+(below 640px)**: one row: search (fills the space) on the left, then one "Filter" dropdown in place
+of the two pickers (styled like FilterMenu; tick boxes grouped under Instrument and Ministry,
+nothing ticked = no filter, plus Clear), then for root a black "+ ▾" dropdown holding "+ New user"
+and "Manage permissions" (menu opens right-aligned). Count line, then the **gallery cards** grid (4 per row on desktop)
+with instrument chips.
 
 **`/team/[id]`**: full width. Back link; label, name title, chip row. Member rules card. Root sees
 two columns from 1024px (3 : 2): "Edit member" left; permissions, password and delete cards

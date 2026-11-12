@@ -46,6 +46,9 @@ const HEADER: Record<string, string> = {
 };
 
 /** The roster as a table: one row per session, one column per part, names stacked in each cell. */
+/** Phones: the date column stays put while the table scrolls sideways, with a line down its right edge. */
+const FROZEN = "max-sm:sticky max-sm:left-0 max-sm:z-10 max-sm:shadow-[1px_0_0_var(--color-border)]";
+
 export function RosterTable({
   sessions,
   assignments,
@@ -138,7 +141,7 @@ export function RosterTable({
       <table className="w-full border-collapse text-left text-[13px]">
         <thead className="sticky top-0 bg-background text-xs uppercase tracking-wide text-muted">
           <tr>
-            <th scope="col" className="px-2 py-1.5 font-semibold">
+            <th scope="col" className={`px-2 py-1.5 font-semibold ${FROZEN} max-sm:bg-background`}>
               Date
             </th>
             <th scope="col" className="px-2 py-1.5 font-semibold">
@@ -169,7 +172,12 @@ export function RosterTable({
                 s.id === lastOfWeek ? "border-b-2 border-b-foreground" : ""
               }`}
             >
-              <td className={`whitespace-nowrap px-2 py-1.5 ${thisWeek.includes(s.id) ? "font-bold" : "font-medium"}`}>
+              <td
+                className={`whitespace-nowrap px-2 py-1.5 ${thisWeek.includes(s.id) ? "font-bold" : "font-medium"} ${FROZEN} ${
+                  // Opaque, so names scroll under it: slate-50 is the row tint (slate-100 at 50%) over white.
+                  tinted.has(s.id) ? "max-sm:bg-slate-50" : "max-sm:bg-surface"
+                }`}
+              >
                 <SessionLink session={s} onClick={onSessionClick}>
                   {formatDate(s.date, {
                     weekday: "short",

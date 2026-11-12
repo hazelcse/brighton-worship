@@ -1,6 +1,6 @@
 "use client";
 
-import { FilterMenu, LANGUAGE_OPTIONS, TYPE_OPTIONS } from "@/components/filter-menu";
+import { LANGUAGE_OPTIONS, MultiFilterMenu, TYPE_OPTIONS } from "@/components/filter-menu";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -81,8 +81,10 @@ export function SongGallery({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [type, setType] = useState("");
-  const [language, setLanguage] = useState("");
+  // Tick boxes in the Filters menu: nothing ticked in a group = no filter on it.
+  const [type, setType] = useState<string[]>([]);
+  const [language, setLanguage] = useState<string[]>([]);
+  const [artist, setArtist] = useState<string[]>([]);
   const [reviewOnly, setReviewOnly] = useState(false);
   const [missingOnly, setMissingOnly] = useState(false);
   const [scanning, setScanning] = useState(pendingScans > 0);
@@ -136,8 +138,9 @@ export function SongGallery({
     const hits = new Set<string>();
     const rank = new Map<string, number>();
     const list = songs.filter((s) => {
-      if (type && s.type !== type) return false;
-      if (language && s.language !== language) return false;
+      if (type.length && !(s.type && type.includes(s.type))) return false;
+      if (language.length && !language.includes(s.language)) return false;
+      if (artist.length && !artist.includes(s.artist?.trim() ?? "")) return false;
       if (reviewOnly && !s.needsReview) return false;
       if (missingOnly && !s.missingFromDrive) return false;
       if (!q) return true;
@@ -151,11 +154,19 @@ export function SongGallery({
     // Array.prototype.sort is stable, so each group stays in the library's order.
     if (q) list.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
     return { filtered: list, lyricHit: hits };
-  }, [songs, index, deferredQuery, type, language, reviewOnly, missingOnly]);
+  }, [songs, index, deferredQuery, type, language, artist, reviewOnly, missingOnly]);
 
   const reviewCount = songs.filter((s) => s.needsReview).length;
   const missingCount = songs.filter((s) => s.missingFromDrive).length;
-  const anyFilter = query || type || language || reviewOnly || missingOnly;
+  const anyFilter = query || type.length || language.length || artist.length || reviewOnly || missingOnly;
+  // Every artist in the library, A–Z, for the Filters menu's Artist list.
+  const artistOptions = useMemo(
+    () =>
+      [...new Set(songs.map((s) => s.artist?.trim()).filter((a): a is string => !!a))]
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+        .map((a) => ({ value: a, label: a })),
+    [songs],
+  );
 
   // "12 of 368 songs" (+ Clear filters): in the toolbar on phones, on its own line from 768px.
   const count = (
@@ -166,8 +177,9 @@ export function SongGallery({
           type="button"
           onClick={() => {
             setQuery("");
-            setType("");
-            setLanguage("");
+            setType([]);
+            setLanguage([]);
+            setArtist([]);
             setReviewOnly(false);
             setMissingOnly(false);
           }}
@@ -199,28 +211,31 @@ export function SongGallery({
               className={`${select} w-full pl-9`}
             />
           </label>
-          <FilterMenu
+          {/* Tick boxes: several languages, types or artists at once (the "all" choices are left out:
+              nothing ticked in a group means all). */}
+          <MultiFilterMenu
             className="shrink-0 md:w-36"
             iconOnlyOnMobile
             groups={[
-              { id: "language", label: "Language", options: LANGUAGE_OPTIONS, value: language, onChange: setLanguage },
-              { id: "type", label: "Type", options: TYPE_OPTIONS, value: type, onChange: setType },
+              { id: "language", label: "Language", options: LANGUAGE_OPTIONS.filter((o) => o.value), values: language, onChange: setLanguage },
+              { id: "type", label: "Type", options: TYPE_OPTIONS.filter((o) => o.value), values: type, onChange: setType },
+              { id: "artist", label: "Artist", options: artistOptions, values: artist, onChange: setArtist },
+              // Songs needing review (was the "!" button): for people who can review, when there are any.
+              ...(canReview && reviewCount > 0
+                ? [
+                    {
+                      id: "status",
+                      label: "Status",
+                      options: [{ value: "review", label: `Needs review (${reviewCount})` }],
+                      values: reviewOnly ? ["review"] : [],
+                      onChange: (v: string[]) => setReviewOnly(v.includes("review")),
+                    },
+                  ]
+                : []),
             ]}
           />
           {/* Phones: end the search + Filters row here. */}
           <div className="basis-full md:hidden" aria-hidden />
-          {canReview && reviewCount > 0 && (
-            <button
-              type="button"
-              aria-pressed={reviewOnly}
-              onClick={() => setReviewOnly((v) => !v)}
-              aria-label={`Needs review (${reviewCount})`}
-              title={`Needs review (${reviewCount})`}
-              className="hidden h-10 w-10 shrink-0 place-items-center md:grid rounded-lg border border-border bg-surface text-base font-bold text-rose-600 aria-pressed:border-rose-400 aria-pressed:bg-rose-50"
-            >
-              !
-            </button>
-          )}
           <p className="text-sm text-muted md:hidden">{count}</p>
           {canReview && missingCount > 0 && (
             <button

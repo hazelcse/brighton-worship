@@ -40,10 +40,11 @@ async function SessionsView() {
             {hasDrafts && " Drafts are only visible to their worship leaders."}
           </p>
         </div>
+        {/* From 640px; phones get a "+" under the cards instead. */}
         {leads && (
           <Link
             href="/sessions/build"
-            className="inline-flex h-10 items-center rounded-lg bg-ink px-4 text-sm font-medium text-ink-foreground hover:bg-ink/90"
+            className="hidden h-10 items-center rounded-lg bg-ink px-4 text-sm font-medium text-ink-foreground hover:bg-ink/90 sm:inline-flex"
           >
             + Build session
           </Link>
@@ -53,7 +54,12 @@ async function SessionsView() {
       {plans.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
           No published sessions coming up yet.
-          {leads && " Use Build session to plan the ones you're leading."}
+          {leads && (
+            <>
+              <span className="hidden sm:inline"> Use Build session to plan the ones you&apos;re leading.</span>
+              <span className="sm:hidden"> Use the + below to plan the ones you&apos;re leading.</span>
+            </>
+          )}
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -96,6 +102,20 @@ async function SessionsView() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Phones: build a session from a "+" centred under the cards, like the roster's New button. */}
+      {leads && (
+        <div className="flex justify-center sm:hidden">
+          <Link
+            href="/sessions/build"
+            aria-label="Build session"
+            title="Build session"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-ink text-xl font-medium leading-none text-ink-foreground hover:bg-ink/90"
+          >
+            +
+          </Link>
+        </div>
       )}
     </div>
   );

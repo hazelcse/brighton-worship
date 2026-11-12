@@ -450,19 +450,34 @@ export function AppNav({ user: given }: { user: NavUser }) {
                 <span>Develop</span>
                 <ChevronIcon className={`transition ${openGroup === "develop" ? "rotate-180" : ""}`} />
               </button>
+              {/* Same sub-list as Roster and Sessions above; Reset app data stays red. */}
               {openGroup === "develop" && (
-                <div id="mobile-group-develop" className="ml-4 mt-1 overflow-hidden rounded-lg bg-surface py-1 text-foreground">
-                  <DevelopItems
-                    onPopulate={() => {
-                      setSidebarOpen(false);
-                      setPopulateOpen(true);
-                    }}
-                    onReset={() => {
-                      setSidebarOpen(false);
-                      setResetOpen(true);
-                    }}
-                  />
-                </div>
+                <ul id="mobile-group-develop" className="ml-4 mt-1 flex flex-col gap-1 border-l border-white/15 pl-2">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        setResetOpen(true);
+                      }}
+                      className="block w-full rounded-md px-3 py-2.5 text-left text-base text-red-300 hover:bg-white/10"
+                    >
+                      Reset app data
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        setPopulateOpen(true);
+                      }}
+                      className="block w-full rounded-md px-3 py-2.5 text-left text-base text-ink-foreground/75 hover:bg-white/10"
+                    >
+                      Populate…
+                    </button>
+                  </li>
+                </ul>
               )}
             </li>
           )}

@@ -17,10 +17,9 @@ Widths are in CSS pixels at normal (100%) browser zoom. "From 640px up" means wi
 | Roster landing: quarter cards row | From 640px up: max **768px** when next quarter's card shows, otherwise max **576px** | `sm:max-w-3xl` / `sm:max-w-xl` | `web/src/app/(app)/roster/page.tsx` |
 | Roster landing: this quarter's card | Max **576px** wide from 640px up; **16px** side / **12px** top-bottom padding | `sm:max-w-xl px-4 py-3` | `web/src/app/(app)/roster/page.tsx` |
 | Roster landing: next quarter's card | **224px** wide from 640px up | `sm:w-56` | `web/src/app/(app)/roster/page.tsx` |
-| Song bank toolbar | **Always one row from 768px up**: search, Filters, !, Missing, Drive sync, Updates, + (search on its own row on phones) | `flex flex-wrap items-center gap-2 md:flex-nowrap` | `web/src/components/songs/song-gallery.tsx` |
+| Song bank toolbar | **Always one row from 768px up**: search, Filters, Missing, Drive sync, Updates, + (search on its own row on phones) | `flex flex-wrap items-center gap-2 md:flex-nowrap` | `web/src/components/songs/song-gallery.tsx` |
 | Song bank search | Fills the space left on the row, never under **160px** from 768px; on phones shares the first row with the Filters button | `relative min-w-0 flex-1 md:min-w-40` | `web/src/components/songs/song-gallery.tsx` |
 | Song bank filter button | **144px** wide from 768px; icon and arrow only on phones | `shrink-0 md:w-36` | `web/src/components/songs/song-gallery.tsx` |
-| Song bank needs review | **40px** square showing just **!**; count in the tooltip; hidden on phones | `hidden h-10 w-10 shrink-0 … md:grid` | `web/src/components/songs/song-gallery.tsx` |
 | Song bank Missing / right-hand buttons | Never wrap or shrink; Drive sync, Updates and + pinned right | `shrink-0 whitespace-nowrap`, `ml-auto flex shrink-0` | `web/src/components/songs/song-gallery.tsx` |
 | Song bank "Synced … ago" text | Only from **1024px** up, so the row fits | `hidden … lg:inline` | `web/src/components/songs/drive-sync-button.tsx` |
 | Song bank cards | Same as Team: **4** per row from 1280px, 3 from 1024px, 2 from 420px, 1 below | `grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4` | `song-gallery.tsx`, `web/src/app/(app)/songs/page.tsx` |
@@ -54,6 +53,8 @@ These depend on the root font size staying at the browser default (16px): nothin
   hidden.
 - 11 Nov 2026: the owner asked for the session builder (workbench, `/sessions/[id]`) to use the same
   wide width. The session list for building (`/sessions/build`) stays 768px.
+- 13 Nov 2026: the owner asked for the song bank's "!" (needs review) button to go; "Needs review"
+  is now a Status choice in the Filters dropdown, which also gained an Artist list.
 
 How every page is laid out (not just these measurements) is in [PAGE-LAYOUTS.md](PAGE-LAYOUTS.md).
 

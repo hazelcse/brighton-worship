@@ -38,9 +38,11 @@ type Props = {
   rehearsalTime: string | null;
   /** A worship leader of a rostered session with a rehearsal: may change it. */
   canChange: boolean;
+  /** Extra classes for the date line (the workbench moves it under the title on phones). */
+  className?: string;
 };
 
-export function RehearsalDates({ planId, date, startTime, rehearsal, rehearsalTime, canChange }: Props) {
+export function RehearsalDates({ planId, date, startTime, rehearsal, rehearsalTime, canChange, className = "" }: Props) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [mode, setMode] = useState<"info" | "change">("info");
@@ -70,22 +72,18 @@ export function RehearsalDates({ planId, date, startTime, rehearsal, rehearsalTi
       <button
         type="button"
         onClick={open}
-        className="group block text-left text-sm font-medium text-muted outline-none"
+        className={`group block text-left text-sm font-medium text-muted outline-none ${className}`}
       >
         {/*
          * The underline grows out from the middle on hover (and focus) and shrinks back to it after:
-         * a 1.5px line drawn as a background, so it can animate. On phones the rehearsal wraps to its
-         * own line (the <br>), and each line gets its own underline (box-decoration-break: clone).
+         * a 1.5px line drawn as a background, so it can animate. On phones the date is shortened
+         * ("Sun 15 Nov 2026") so the service and rehearsal fit on one line; if they still don't, the
+         * line wraps and each line gets its own underline (box-decoration-break: clone).
          */}
         <span className="bg-[linear-gradient(currentColor,currentColor)] bg-[length:0%_1.5px] bg-[position:50%_100%] bg-no-repeat pb-[3px] transition-[background-size] duration-300 ease-out [box-decoration-break:clone] group-hover:bg-[length:100%_1.5px] group-focus-visible:bg-[length:100%_1.5px] motion-reduce:transition-none">
-          {formatDate(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-          {rehearsal && (
-            <>
-              <span className="hidden sm:inline"> · </span>
-              <br className="sm:hidden" />
-              Rehearsal {formatDate(rehearsal, { weekday: "short", day: "numeric", month: "short" })}
-            </>
-          )}
+          <span className="hidden sm:inline">{formatDate(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
+          <span className="sm:hidden">{formatDate(date, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+          {rehearsal && <> · Rehearsal {formatDate(rehearsal, { weekday: "short", day: "numeric", month: "short" })}</>}
         </span>
       </button>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { CellEditor, type EditPerson } from "./cell-editor";
 import { isHighlighted, useHighlight } from "./highlight";
 import { hhmm } from "@/lib/roster";
@@ -19,14 +19,17 @@ function Chips<T extends string>({
   options,
   value,
   onChange,
+  phonesHidden,
 }: {
   label: string;
   options: { value: T; label: string }[];
   value: T[];
   onChange: (v: T[]) => void;
+  /** Below 640px, when MobileRosterFilter shows these instead. */
+  phonesHidden?: boolean;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex items-center gap-1.5">
+    <div role="group" aria-label={label} className={`${phonesHidden ? "hidden sm:flex" : "flex"} items-center gap-1.5`}>
       <span className="text-xs font-medium uppercase tracking-wide text-muted">{label}</span>
       {options.map((o) => {
         const on = value.includes(o.value);
@@ -36,13 +39,114 @@ function Chips<T extends string>({
             type="button"
             aria-pressed={on}
             // Keep at least one option on in each group.
-            onClick={() => onChange(on ? (value.length > 1 ? value.filter((v) => v !== o.value) : value) : [...value, o.value])}
+            onClick={() => onChange(toggle(value, o.value))}
             className={`h-8 rounded-full border px-3 text-sm font-medium ${on ? "border-ink bg-ink text-ink-foreground" : "border-border bg-surface text-muted hover:border-accent/50"}`}
           >
             {o.label}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const MINISTRY_OPTIONS: { value: Ministry; label: string }[] = [
+  { value: "em", label: "EM" },
+  { value: "cm", label: "CM" },
+];
+const TYPE_OPTIONS: { value: Type; label: string }[] = [
+  { value: "sunday", label: "Sunday service" },
+  { value: "pnp", label: "P&P" },
+  { value: "adhoc", label: "Ad-hoc" },
+];
+
+type Filters = {
+  ministries: Ministry[];
+  setMinistries: (v: Ministry[]) => void;
+  types: Type[];
+  setTypes: (v: Type[]) => void;
+};
+const FilterContext = createContext<Filters | null>(null);
+
+/**
+ * Shares the roster filters between the table and a dropdown elsewhere on the page: the roster editor
+ * puts that dropdown (`MobileRosterFilter`) in the header's button row on phones, in place of the chips.
+ */
+export function RosterFilterProvider({ children }: { children: React.ReactNode }) {
+  const [ministries, setMinistries] = useState<Ministry[]>(["em", "cm"]);
+  const [types, setTypes] = useState<Type[]>(["sunday", "pnp", "adhoc"]);
+  return <FilterContext.Provider value={{ ministries, setMinistries, types, setTypes }}>{children}</FilterContext.Provider>;
+}
+
+/** Turn one option on or off, keeping at least one on in its group. */
+function toggle<T>(value: T[], v: T): T[] {
+  return value.includes(v) ? (value.length > 1 ? value.filter((x) => x !== v) : value) : [...value, v];
+}
+
+/** Phones only: the Ministry and Service filters as one dropdown of checkboxes, the same size as the header buttons. */
+export function MobileRosterFilter() {
+  const f = useContext(FilterContext);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  if (!f) return null;
+  const off = MINISTRY_OPTIONS.length - f.ministries.length + TYPE_OPTIONS.length - f.types.length;
+  const group = <T extends string>(label: string, options: { value: T; label: string }[], value: T[], set: (v: T[]) => void) => (
+    <fieldset className="space-y-0.5">
+      <legend className="mb-1 px-2 text-xs font-medium uppercase tracking-wide text-muted">{label}</legend>
+      {options.map((o) => (
+        <label key={o.value} className="flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm hover:bg-background">
+          <input
+            type="checkbox"
+            checked={value.includes(o.value)}
+            // The last one on in a group can't be turned off.
+            disabled={value.length === 1 && value.includes(o.value)}
+            onChange={() => set(toggle(value, o.value))}
+            className="size-4 accent-ink"
+          />
+          {o.label}
+        </label>
+      ))}
+    </fieldset>
+  );
+  return (
+    // mr-auto: the filter sits at the left of the header's button row, the buttons stay right-aligned.
+    <div ref={ref} className="relative mr-auto sm:hidden" data-keep-highlight>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={off ? "Filters: some sessions hidden" : "Filters: all sessions"}
+        // Looks like the shared FilterMenu button (which only does one choice per group).
+        className={`flex h-10 items-center gap-2 rounded-lg border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 ${
+          off ? "border-accent/60" : "border-border"
+        }`}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted">
+          <path d="M3 5h18M6 12h12M10 19h4" />
+        </svg>
+        Filter
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-52 space-y-3 rounded-xl border border-border bg-surface p-2 shadow-lg">
+          {group("Ministry", MINISTRY_OPTIONS, f.ministries, f.setMinistries)}
+          {group("Service", TYPE_OPTIONS, f.types, f.setTypes)}
+        </div>
+      )}
     </div>
   );
 }
@@ -81,7 +185,16 @@ export function FilteredRosterTable({
     quarter?: { start: string; end: string };
   };
 }) {
-  const [ministries, setMinistries] = useState<Ministry[]>(["em", "cm"]);
+  // Inside a RosterFilterProvider the filters are shared with MobileRosterFilter, which replaces the chips on phones.
+  const shared = useContext(FilterContext);
+  const [ownMinistries, setOwnMinistries] = useState<Ministry[]>(["em", "cm"]);
+  const [ownTypes, setOwnTypes] = useState<Type[]>(["sunday", "pnp", "adhoc"]);
+  const { ministries, setMinistries, types, setTypes } = shared ?? {
+    ministries: ownMinistries,
+    setMinistries: setOwnMinistries,
+    types: ownTypes,
+    setTypes: setOwnTypes,
+  };
   const hl = useHighlight();
   const [cell, setCell] = useState<{ sessionId: string; role: string } | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -104,7 +217,6 @@ export function FilteredRosterTable({
     setSessionId(null);
   };
   const settingsOf = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
-  const [types, setTypes] = useState<Type[]>(["sunday", "pnp", "adhoc"]);
   // With `thisWeekOf`: sessions in earlier weeks start folded away (the triangle beside the table shows them).
   const [showPast, setShowPast] = useState(false);
   const shown = sessions.filter(
@@ -117,17 +229,8 @@ export function FilteredRosterTable({
     // Clicks inside the roster keep a rule highlight; clicks elsewhere clear it.
     <div className="space-y-3" data-keep-highlight>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <Chips label="Ministry" options={[{ value: "em", label: "EM" }, { value: "cm", label: "CM" }]} value={ministries} onChange={setMinistries} />
-        <Chips
-          label="Service"
-          options={[
-            { value: "sunday", label: "Sunday service" },
-            { value: "pnp", label: "P&P" },
-            { value: "adhoc", label: "Ad-hoc" },
-          ]}
-          value={types}
-          onChange={setTypes}
-        />
+        <Chips label="Ministry" options={MINISTRY_OPTIONS} value={ministries} onChange={setMinistries} phonesHidden={!!shared} />
+        <Chips label="Service" options={TYPE_OPTIONS} value={types} onChange={setTypes} phonesHidden={!!shared} />
         <span className="text-xs text-muted">{active} sessions</span>
         {toolbarEnd && <div className="ml-auto">{toolbarEnd}</div>}
       </div>

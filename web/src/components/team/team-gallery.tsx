@@ -53,6 +53,7 @@ function MultiSelect({
   pluralNoun,
   groupLabel,
   combinedLabel,
+  className = "",
 }: {
   options: readonly (readonly [string, string])[];
   selected: string[];
@@ -61,6 +62,7 @@ function MultiSelect({
   pluralNoun: string;
   groupLabel: string;
   combinedLabel?: string; // shown when every option is ticked
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -86,7 +88,7 @@ function MultiSelect({
           : `${selected.length} ${pluralNoun}`;
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative ${className}`}>
       <button
         type="button"
         aria-expanded={open}
@@ -131,6 +133,151 @@ function MultiSelect({
   );
 }
 
+/**
+ * Phones only: the instrument and ministry filters as one dropdown, tick boxes grouped under
+ * Instrument and Ministry (nothing ticked in a group = no filter, like the desktop dropdowns).
+ */
+function MobileFilter({
+  instruments,
+  setInstruments,
+  ministries,
+  setMinistries,
+}: {
+  instruments: string[];
+  setInstruments: (v: string[]) => void;
+  ministries: string[];
+  setMinistries: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const picked = instruments.length + ministries.length;
+  const group = (label: string, options: readonly (readonly [string, string])[], selected: string[], set: (v: string[]) => void) => (
+    <fieldset>
+      <legend className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted">{label}</legend>
+      {options.map(([value, name]) => {
+        const on = selected.includes(value);
+        return (
+          <label key={value} className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-background">
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={() => set(on ? selected.filter((x) => x !== value) : [...selected, value])}
+              className="accent-accent"
+            />
+            {name}
+          </label>
+        );
+      })}
+    </fieldset>
+  );
+  return (
+    <div ref={ref} className="relative shrink-0 sm:hidden">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={picked ? `Filters: ${picked} picked` : "Filters: everyone"}
+        onClick={() => setOpen((o) => !o)}
+        // Looks like the shared FilterMenu button.
+        className={`flex h-10 items-center gap-2 rounded-lg border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 ${
+          picked ? "border-accent text-accent" : "border-border"
+        }`}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted">
+          <path d="M3 5h18M6 12h12M10 19h4" />
+        </svg>
+        Filter
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 z-20 mt-2 max-h-[70vh] w-60 overflow-y-auto rounded-xl border border-border bg-surface pb-1 shadow-lg">
+          {group("Instrument", INSTRUMENTS, instruments, setInstruments)}
+          {group("Ministry", MINISTRIES, ministries, setMinistries)}
+          {picked > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setInstruments([]);
+                setMinistries([]);
+              }}
+              className="mt-1 w-full border-t border-border px-3 py-2 text-left text-sm text-muted hover:bg-background"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Phones only, root: a black "+" dropdown holding "New user" and "Manage permissions". */
+function MobileActions({ onNewUser }: { onNewUser: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const item = "flex w-full items-center px-3 py-2.5 text-left text-sm hover:bg-background";
+  return (
+    <div ref={ref} className="relative shrink-0 sm:hidden">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Add user or manage permissions"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-10 items-center gap-1.5 rounded-lg bg-ink px-3 text-ink-foreground hover:bg-ink/90"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onNewUser();
+            }}
+            className={item}
+          >
+            + New user
+          </button>
+          <Link href="/team/permissions" role="menuitem" onClick={() => setOpen(false)} className={item}>
+            Manage permissions
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TeamGallery({
   members,
   isRoot,
@@ -162,7 +309,10 @@ export function TeamGallery({
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Phones: one row of search, Filter dropdown and (root) the "+" actions dropdown; from 640px the two
+            filter dropdowns, then search, with root's buttons on the right. */}
         <div className="flex flex-wrap items-center gap-2">
+          <MobileFilter instruments={instruments} setInstruments={setInstruments} ministries={ministries} setMinistries={setMinistries} />
           <MultiSelect
             options={INSTRUMENTS}
             selected={instruments}
@@ -170,6 +320,7 @@ export function TeamGallery({
             allLabel="All instruments"
             pluralNoun="instruments"
             groupLabel="Filter by instrument"
+            className="hidden sm:block"
           />
           <MultiSelect
             options={MINISTRIES}
@@ -179,6 +330,7 @@ export function TeamGallery({
             pluralNoun="ministries"
             combinedLabel="EM/CM"
             groupLabel="Filter by ministry"
+            className="hidden sm:block"
           />
           <input
             type="search"
@@ -186,11 +338,13 @@ export function TeamGallery({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name"
             aria-label="Search members by name"
-            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 sm:w-56"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 max-sm:order-first sm:w-56 sm:flex-none"
           />
+          {isRoot && <MobileActions onNewUser={() => dialogRef.current?.showModal()} />}
         </div>
         {isRoot && (
-          <div className="flex flex-wrap gap-2">
+          // From 640px; phones get these from MobileActions.
+          <div className="hidden flex-wrap gap-2 sm:flex">
             <button
               type="button"
               onClick={() => dialogRef.current?.showModal()}

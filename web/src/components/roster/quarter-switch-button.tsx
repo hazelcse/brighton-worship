@@ -9,8 +9,9 @@ const HOLD_MS = 450;
 const MOVE_TOLERANCE = 10;
 
 /**
- * Phone-only roster button: one card for this quarter's roster. Holding it flips it to next
- * quarter's roster (and back); a tap opens whichever one it's showing.
+ * One card for this quarter's roster (phones for everyone; every screen for root and developers).
+ * Holding it (touch or mouse) flips it to next quarter's roster and back; a tap or click opens
+ * whichever one it's showing.
  */
 export function QuarterSwitchButton({ current, next, className = "" }: { current: Quarter; next: Quarter; className?: string }) {
   const [showNext, setShowNext] = useState(false);
@@ -32,8 +33,10 @@ export function QuarterSwitchButton({ current, next, className = "" }: { current
       href={shown.href}
       aria-label={`${shown.heading}, ${shown.range}. Press and hold to switch to ${showNext ? "this" : "next"} quarter.`}
       className={`group flex flex-1 select-none items-center justify-between gap-3 rounded-xl px-4 py-3 transition [-webkit-touch-callout:none] active:scale-[0.99] ${
-        showNext ? "border border-border bg-surface" : "bg-ink text-ink-foreground"
+        showNext ? "border border-border bg-surface hover:border-accent/50" : "bg-ink text-ink-foreground hover:bg-ink/90"
       } ${className}`}
+      draggable={false}
+      title={`Hold to switch to ${showNext ? "this" : "next"} quarter`}
       onPointerDown={(e) => {
         held.current = false;
         start.current = { x: e.clientX, y: e.clientY };

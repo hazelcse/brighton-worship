@@ -9,7 +9,7 @@ import { describeCheck, problemCells, rosterProblems } from "@/lib/roster-check"
 import { EditWarnings } from "@/components/roster/edit-warnings";
 import { GeneratedActions, LoadsButton } from "@/components/roster/generated-actions";
 import { RevisionActions, RevisionBadges, RevisionEditing, RevisionRosterTable } from "@/components/roster/revision-controls";
-import { FilteredRosterTable } from "@/components/roster/roster-filter";
+import { FilteredRosterTable, MobileRosterFilter, RosterFilterProvider } from "@/components/roster/roster-filter";
 import { HighlightProvider } from "@/components/roster/highlight";
 import { WidePage } from "@/components/wide-page";
 import { LoadsTable, ResultStatus, RulesPanel, WeightsPanel } from "@/components/roster/roster-results";
@@ -104,14 +104,18 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <RevisionEditing rosterId={roster.id} assignments={assignments} sessions={sessions}>
+    {/* Shares the table's filters with the phone-only filter dropdown in the header's button row. */}
+    <RosterFilterProvider>
     <div className="space-y-5">
       {/* Wider than the nav, so every roster column fits (see LAYOUT.md). */}
       <WidePage />
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      {/* Stacked (below 1024px): 16px between the date range and the filter / buttons row. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-3">
         <div>
           {revision ? (
-            <div className="flex flex-col gap-x-3 gap-y-1.5 sm:flex-row sm:flex-wrap sm:items-center">
-              <h1 className="font-display text-4xl font-semibold">{quarterTitle(roster.starts_on)} Roster</h1>
+            // Badges sit to the right of the title at every width (each one wraps on its own if it doesn't fit).
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <h1 className="mr-1 font-display text-4xl font-semibold">{quarterTitle(roster.starts_on)} Roster</h1>
               <RevisionBadges unpublished={unpublished} />
             </div>
           ) : (
@@ -123,6 +127,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
           <p className="text-sm text-muted">{formatRange(roster.starts_on, roster.ends_on)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <MobileRosterFilter />
           <LoadsButton>
             <LoadsTable result={result} people={people} />
           </LoadsButton>
@@ -167,6 +172,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
       </div>
       </HighlightProvider>
     </div>
+    </RosterFilterProvider>
     </RevisionEditing>
   );
 }

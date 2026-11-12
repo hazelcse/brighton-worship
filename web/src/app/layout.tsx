@@ -13,6 +13,9 @@ const display = Cormorant_Garamond({
 export const metadata: Metadata = {
   title: "Brighton Worship",
   description: "Rostering and songsheets for the Brighton worship team",
+  // iPhone "Add to Home Screen": opens full-screen with this icon and name.
+  appleWebApp: { capable: true, title: "Worship", statusBarStyle: "black" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {

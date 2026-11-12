@@ -184,7 +184,8 @@ export function RevisionRosterTable({ published, ...props }: TableProps & { publ
 export function RevisionBadges({ unpublished }: { unpublished: boolean }) {
   const { editing } = useContext(EditingContext);
   return (
-    <div className="flex items-center gap-2">
+    // `contents`: each badge is its own item in the title row, so Published stays beside the title on phones.
+    <div className="contents">
       <StageBadge stage="published" />
       {unpublished && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">Unpublished changes</span>}
       {editing && <span className="rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-semibold text-accent">Editing</span>}

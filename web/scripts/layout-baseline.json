@@ -59,7 +59,7 @@
       "name": "Song bank: toolbar stays on one row",
       "file": "web/src/components/songs/song-gallery.tsx",
       "snippet": "flex flex-wrap items-center gap-2 md:flex-nowrap",
-      "means": "from 768px up, search, filter, !, Missing, Drive sync, Updates and + all sit on one row (PAGE-LAYOUTS.md)"
+      "means": "from 768px up, search, filter, Missing, Drive sync, Updates and + all sit on one row (PAGE-LAYOUTS.md)"
     },
     {
       "name": "Song bank: search box",
@@ -72,12 +72,6 @@
       "file": "web/src/components/songs/song-gallery.tsx",
       "snippet": "className=\"shrink-0 md:w-36\"",
       "means": "144px wide from 768px; icon and arrow only on phones"
-    },
-    {
-      "name": "Song bank: needs review is a ! button",
-      "file": "web/src/components/songs/song-gallery.tsx",
-      "snippet": "hidden h-10 w-10 shrink-0 place-items-center md:grid rounded-lg border border-border bg-surface text-base font-bold text-rose-600",
-      "means": "40px square showing just !, count in the tooltip; hidden on phones"
     },
     {
       "name": "Song bank: missing from Drive button",

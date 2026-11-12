@@ -242,6 +242,7 @@ function FilterDropdown({ records, filters, setFilters }: { records: SessionReco
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
+        aria-label={count ? `Filters (${count})` : "Filters"}
         onClick={() => {
           setOpen((o) => !o);
           setSection(null);
@@ -253,7 +254,8 @@ function FilterDropdown({ records, filters, setFilters }: { records: SessionReco
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden className="text-muted">
           <path d="M3 5h18M6 12h12M10 19h4" />
         </svg>
-        Filters
+        {/* Phones: just the icon (and arrow). */}
+        <span className="hidden sm:inline">Filters</span>
         {count > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-5 text-white">{count}</span>}
         <Chevron open={open} />
       </button>
@@ -388,6 +390,7 @@ function ColumnPicker({ hidden, setHidden }: { hidden: ColKey[]; setHidden: (h: 
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
+        aria-label={hidden.length ? `Columns (${shown} of ${ALL_COLS.length} shown)` : "Columns"}
         onClick={() => setOpen((o) => !o)}
         className={`flex h-10 items-center gap-2 rounded-lg border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 ${
           hidden.length ? "border-accent/60" : "border-border"
@@ -397,9 +400,10 @@ function ColumnPicker({ hidden, setHidden }: { hidden: ColKey[]; setHidden: (h: 
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <path d="M9 4v16M15 4v16" />
         </svg>
-        Columns
+        {/* Phones: just the icon (and arrow). */}
+        <span className="hidden sm:inline">Columns</span>
         {hidden.length > 0 && (
-          <span className="text-xs text-muted">
+          <span className="hidden text-xs text-muted sm:inline">
             {shown}/{ALL_COLS.length}
           </span>
         )}
@@ -930,36 +934,45 @@ export function TrackingView({
   // Only ticked rows still showing count (a filter or search can hide ticked rows).
   const ticked = view === "table" ? shown.filter((r) => deletable(r) && selected.has(r.id)).map((r) => r.id) : [];
 
+  // Bin (for ticked rows), Export CSV and +: in the header from 640px; on phones at the right of
+  // the toolbar's second row, Export CSV as just its download icon.
+  const actions = (phone: boolean) => (
+    <>
+      {ticked.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setToDelete(ticked)}
+          aria-label={`Delete ${ticked.length} ticked session${ticked.length === 1 ? "" : "s"}`}
+          title={`Delete ${ticked.length} session${ticked.length === 1 ? "" : "s"}`}
+          className="grid h-10 w-10 place-items-center rounded-lg border border-red-300 text-danger hover:bg-red-50"
+        >
+          <BinIcon size={18} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => downloadTrackingCsv(shown, todayYmd())}
+        disabled={!shown.length}
+        title={`Download the ${shown.length} session${shown.length === 1 ? "" : "s"} shown (after filters and search) as a CSV file`}
+        aria-label={phone ? "Export CSV" : undefined}
+        className={`flex h-10 items-center rounded-lg border border-border bg-surface text-sm hover:border-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+          phone ? "w-10 justify-center" : "gap-2 px-3"
+        }`}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-muted">
+          <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+        </svg>
+        {!phone && "Export CSV"}
+      </button>
+      {add}
+    </>
+  );
+
   return (
     <>
     <div className="flex flex-wrap items-center justify-between gap-3">
       {heading}
-      <div className="flex items-center gap-2">
-        {ticked.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setToDelete(ticked)}
-            aria-label={`Delete ${ticked.length} ticked session${ticked.length === 1 ? "" : "s"}`}
-            title={`Delete ${ticked.length} session${ticked.length === 1 ? "" : "s"}`}
-            className="grid h-10 w-10 place-items-center rounded-lg border border-red-300 text-danger hover:bg-red-50"
-          >
-            <BinIcon size={18} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => downloadTrackingCsv(shown, todayYmd())}
-          disabled={!shown.length}
-          title={`Download the ${shown.length} session${shown.length === 1 ? "" : "s"} shown (after filters and search) as a CSV file`}
-          className="flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm hover:border-accent/50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-muted">
-            <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
-          </svg>
-          Export CSV
-        </button>
-        {add}
-      </div>
+      <div className="hidden items-center gap-2 sm:flex">{actions(false)}</div>
     </div>
     {toDelete && (
       <ConfirmDelete
@@ -975,7 +988,7 @@ export function TrackingView({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <FilterDropdown records={records} filters={filters} setFilters={setFilters} />
-        <div className="relative min-w-48 flex-1">
+        <div className="relative min-w-0 flex-1 sm:min-w-48">
           <input
             type="search"
             value={query}
@@ -1021,7 +1034,10 @@ export function TrackingView({
           </button>
         </div>
         {view === "table" && <ColumnPicker hidden={hidden} setHidden={setHidden} />}
-        <div role="tablist" aria-label="View" className="flex h-10 rounded-lg border border-border bg-surface p-0.5">
+        {/* Phones: Filters, search and Columns on the first row; the Table / List switch (shorter,
+            fully rounded) starts the second, with Export CSV and + at its right. */}
+        <div className="basis-full sm:hidden" aria-hidden />
+        <div role="tablist" aria-label="View" className="flex h-10 rounded-lg border border-border bg-surface p-0.5 max-sm:h-8 max-sm:rounded-full">
           {(["table", "list"] as const).map((v) => (
             <button
               key={v}
@@ -1029,12 +1045,13 @@ export function TrackingView({
               role="tab"
               aria-selected={view === v}
               onClick={() => pick(v)}
-              className="rounded-md px-3 text-sm capitalize text-muted aria-selected:bg-ink aria-selected:text-ink-foreground"
+              className="rounded-md px-3 text-sm capitalize text-muted aria-selected:bg-ink aria-selected:text-ink-foreground max-sm:rounded-full"
             >
               {v}
             </button>
           ))}
         </div>
+        <div className="ml-auto flex items-center gap-2 sm:hidden">{actions(true)}</div>
       </div>
 
       {searchMode === "query" && (

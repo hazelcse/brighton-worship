@@ -116,7 +116,8 @@ export function FilterMenu({
                   </span>
                 </button>
                 {expanded && (
-                  <div role="menu" aria-label={g.label} className="border-y border-border bg-background/60 py-1">
+                  // Long lists (e.g. artists) scroll inside the menu.
+                  <div role="menu" aria-label={g.label} className="max-h-64 overflow-y-auto border-y border-border bg-background/60 py-1">
                     {g.options.map((o) => {
                       const on = o.value === g.value;
                       return (
@@ -149,6 +150,142 @@ export function FilterMenu({
               role="menuitem"
               onClick={() => {
                 for (const g of groups) g.onChange("");
+                setOpen(false);
+              }}
+              className="w-full border-t border-border px-3 py-2.5 text-left text-sm text-muted hover:bg-background hover:text-foreground"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export type MultiFilterGroup = {
+  id: string;
+  /** e.g. "Language". */
+  label: string;
+  /** Tick boxes; nothing ticked = no filter on this group. */
+  options: { value: string; label: string }[];
+  values: string[];
+  onChange: (values: string[]) => void;
+};
+
+/**
+ * Like FilterMenu (same button and menu), but each group is a list of tick boxes: several choices
+ * per group, nothing ticked = everything. Used by the song bank.
+ */
+export function MultiFilterMenu({
+  groups,
+  className = "",
+  iconOnlyOnMobile = false,
+}: {
+  groups: MultiFilterGroup[];
+  className?: string;
+  /** Below 768px the button shows only its icon and arrow. */
+  iconOnlyOnMobile?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [section, setSection] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  const labelOf = (g: MultiFilterGroup, v: string) => g.options.find((o) => o.value === v)?.label ?? v;
+  const picked = groups.flatMap((g) => g.values.map((v) => labelOf(g, v)));
+  const summary = picked.length === 0 ? "All songs" : picked.length <= 2 ? picked.join(" · ") : `${picked.length} filters`;
+  // What a group shows beside its name: its choice, "N picked", or "All".
+  const groupSummary = (g: MultiFilterGroup) =>
+    g.values.length === 0 ? "All" : g.values.length === 1 ? labelOf(g, g.values[0]) : `${g.values.length} picked`;
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Filters: ${picked.length ? picked.join(", ") : "All songs"}`}
+        onClick={() => {
+          setOpen((o) => !o);
+          setSection(null);
+        }}
+        className={`flex h-10 w-full items-center justify-between gap-2 rounded-lg border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 ${
+          picked.length ? "border-accent/60" : "border-border"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted">
+            <path d="M3 5h18M6 12h12M10 19h4" />
+          </svg>
+          <span className={`truncate ${iconOnlyOnMobile ? "hidden md:inline" : ""}`}>{summary}</span>
+        </span>
+        <Chevron open={open} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className={`absolute top-full z-30 mt-1.5 w-60 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg ${
+            iconOnlyOnMobile ? "right-0 md:left-0 md:right-auto" : "left-0"
+          }`}
+        >
+          {groups.map((g) => {
+            const expanded = section === g.id;
+            return (
+              <div key={g.id}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={expanded}
+                  onClick={() => setSection(expanded ? null : g.id)}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-background"
+                >
+                  <span className="font-medium">{g.label}</span>
+                  <span className="flex min-w-0 items-center gap-1.5 text-muted">
+                    <span className="truncate">{groupSummary(g)}</span>
+                    <Chevron dir="right" open={expanded} />
+                  </span>
+                </button>
+                {expanded && (
+                  // Long lists (e.g. artists) scroll inside the menu.
+                  <div role="group" aria-label={g.label} className="max-h-64 overflow-y-auto border-y border-border bg-background/60 py-1">
+                    {g.options.map((o) => {
+                      const on = g.values.includes(o.value);
+                      return (
+                        <label key={o.value} className="flex cursor-pointer items-center gap-2.5 py-2 pl-6 pr-3 text-sm hover:bg-background">
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => g.onChange(on ? g.values.filter((v) => v !== o.value) : [...g.values, o.value])}
+                            className="accent-accent"
+                          />
+                          {o.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {picked.length > 0 && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                for (const g of groups) g.onChange([]);
                 setOpen(false);
               }}
               className="w-full border-t border-border px-3 py-2.5 text-left text-sm text-muted hover:bg-background hover:text-foreground"

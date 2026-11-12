@@ -43,6 +43,8 @@ async function RosterView() {
   // Next quarter's roster shows up here as soon as it's published, for everyone who can see rosters.
   const [roster, upcoming] = await Promise.all([publishedRosterFor(today), publishedRosterFor(next.start)]);
   const canEdit = user.can("roster.edit");
+  // Root and developers get the one hold-to-switch button on desktop too, not just phones.
+  const switchEverywhere = user.isRoot || user.isDeveloper;
   const [services, board, broadcasts] = await Promise.all([
     loadMyServices(user.id),
     loadRequestsBoard(user.id),
@@ -52,16 +54,18 @@ async function RosterView() {
   return (
     <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* Phones: with both rosters out, one button; hold it to flip to next quarter. */}
+        {/* With both rosters out, one button; hold it to flip to next quarter. Phones for everyone; root and developers on every screen. */}
         {roster && upcoming && (
           <QuarterSwitchButton
-            className="sm:hidden"
+            className={switchEverywhere ? "sm:max-w-xl" : "sm:hidden"}
             current={{ href: "/roster/current", heading: "This quarter's roster", range: formatRange(roster.starts_on, roster.ends_on) }}
             next={{ href: "/roster/current?quarter=next", heading: "Next quarter's roster", range: formatRange(upcoming.starts_on, upcoming.ends_on) }}
           />
         )}
         <div
-          className={`flex-1 flex-col gap-2 sm:flex sm:flex-row ${roster && upcoming ? "hidden" : "flex"} ${upcoming ? "sm:max-w-3xl" : "sm:max-w-xl"}`}
+          className={`flex-1 flex-col gap-2 sm:flex-row ${
+            roster && upcoming ? (switchEverywhere ? "hidden" : "hidden sm:flex") : "flex"
+          } ${upcoming ? "sm:max-w-3xl" : "sm:max-w-xl"}`}
         >
           {roster ? (
             <Link
@@ -95,7 +99,8 @@ async function RosterView() {
           )}
         </div>
         {canEdit && (
-          <div className="flex flex-wrap gap-2">
+          // Phones: View past rosters at the left, + at the right (from 640px the pair sits at the right together).
+          <div className="flex flex-wrap justify-between gap-2">
             <Link
               href="/roster/past"
               className="inline-flex h-10 items-center rounded-lg border border-border bg-surface px-4 text-sm font-medium hover:border-accent/50"

@@ -251,6 +251,7 @@ function IconButton({
   disabled,
   primary,
   pressed,
+  className = "",
   children,
 }: {
   label: string;
@@ -259,6 +260,7 @@ function IconButton({
   primary?: boolean;
   /** A toggle: shown filled while on. */
   pressed?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -271,7 +273,7 @@ function IconButton({
       title={label}
       className={`inline-flex size-9 items-center justify-center rounded-lg disabled:opacity-50 ${
         primary || pressed ? "bg-ink text-ink-foreground hover:bg-ink/90" : "border border-border bg-surface text-muted hover:border-accent/50 hover:text-foreground"
-      }`}
+      } ${className}`}
     >
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         {children}
@@ -785,11 +787,13 @@ export function Workbench({
           ← Sessions
         </Link>
 
-        {/* Phones: date, rehearsal, title, badges and buttons each get a line of their own. */}
+        {/* Phones: title and badges, then the date and rehearsal on one line under it, then the buttons. */}
         <header className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
-          <div className="min-w-0 sm:flex-1">
-            {/* Opens the service and rehearsal dates; worship leaders can move the rehearsal from there. */}
+          <div className="flex min-w-0 flex-col sm:block sm:flex-1">
+            {/* Opens the service and rehearsal dates; worship leaders can move the rehearsal from there.
+                Above the title from 640px, below it on phones. */}
             <RehearsalDates
+              className="max-sm:order-last max-sm:mt-1"
               planId={initial.id}
               date={initial.date}
               startTime={initial.startTime}
@@ -797,9 +801,11 @@ export function Workbench({
               rehearsalTime={initial.rehearsalTime}
               canChange={canEdit && initial.onRoster}
             />
-            <div className="flex flex-col gap-x-2 gap-y-1.5 sm:flex-row sm:flex-wrap sm:items-center">
-              <h1 className="font-display text-3xl font-semibold">{initial.serviceName}</h1>
-              <div className="flex items-center gap-2">
+            {/* Badges in one row to the right of the title at every width; the row only drops under the
+                title when it doesn't fit beside it. */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <h1 className="min-w-0 font-display text-3xl font-semibold">{initial.serviceName}</h1>
+              <div className="flex shrink-0 items-center gap-2">
                 <StageBadge stage={shownStatus} />
                 {published && revision && (
                   <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">Unpublished changes</span>
@@ -808,6 +814,8 @@ export function Workbench({
               </div>
             </div>
           </div>
+          {/* Phones: while editing, × and save sit at the left and + at the right; otherwise the eye stays
+              at the left and Undo / Edit / Publish sit at the right. */}
           <div className="flex flex-wrap items-center gap-2">
             {editing ? (
               <>
@@ -815,7 +823,7 @@ export function Workbench({
                 <IconButton label="Stop editing" onClick={() => (dirty ? setLeaving({ href: null }) : void discardAndStop())} disabled={busy}>
                   <path d="M18 6 6 18M6 6l12 12" />
                 </IconButton>
-                <IconButton label={published ? "Save changes to the revised draft" : "Save changes to the draft"} onClick={() => void saveAndStop()} disabled={busy} primary>
+                <IconButton label={published ? "Save changes to the revised draft" : "Save changes to the draft"} onClick={() => void saveAndStop()} disabled={busy} primary className="max-sm:mr-auto">
                   {/* Floppy disk */}
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
                   <path d="M17 21v-8H7v8M7 3v5h8" />
@@ -824,7 +832,7 @@ export function Workbench({
               </>
             ) : (
               <>
-                <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple}>
+                <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className="max-sm:mr-auto">
                   {/* Eye */}
                   <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
                   <circle cx="12" cy="12" r="3" />
