@@ -11,6 +11,7 @@ import { CountdownNumber } from "@/components/countdown-number";
 import { BroadcastList } from "@/components/broadcasts";
 import { loadMyBroadcasts } from "@/lib/broadcasts";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { OpenInboxButton } from "@/components/inbox";
 import { HomeNotices, type HomeNotice } from "@/components/home-notices";
 import { updateText } from "@/components/roster/updates-board";
 import { loadUpdates, type UpdateItem } from "@/lib/serving";
@@ -42,7 +43,7 @@ async function HomeView() {
     loadNewlyPublished(user.id),
     loadPublishDue(user.id),
     loadMyBroadcasts(user),
-    loadUpdates(user), // the nav's Roster badge loads these too: fetched once
+    loadUpdates(user), // the nav's inbox loads these too: fetched once
     homeBandSeenAt(user.id),
   ]);
   const first = (user.fullName || "").split(" ")[0];
@@ -118,9 +119,7 @@ async function HomeView() {
           key: `band-${u.id}`,
           text: updateText(u),
           action: (
-            <Link href="/roster#updates" className={link}>
-              See updates
-            </Link>
+            <OpenInboxButton className={link}>See updates</OpenInboxButton>
           ),
           once: u.createdAt,
         })),

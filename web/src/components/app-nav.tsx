@@ -7,6 +7,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/actions/auth";
 import { ViewAsMenu } from "@/components/view-as";
+import { Inbox } from "@/components/inbox";
+import type { UpdateItem } from "@/lib/serving";
 
 type NavLink = { href: string; label: string };
 type NavItem = NavLink & { children?: readonly NavLink[] };
@@ -38,6 +40,8 @@ type NavUser = {
   profileId?: string | null;
   /** Counts shown next to top-level links, e.g. new song library updates on Songs. */
   badges?: Record<string, number>;
+  /** Roster updates for the inbox; undefined: no inbox (they can't see the roster). */
+  inbox?: UpdateItem[];
 };
 
 /** Root also gets Tracking (past sessions) under Sessions. */
@@ -294,58 +298,61 @@ export function AppNav({ user: given }: { user: NavUser }) {
             )}
           </ul>
 
-          <div ref={menuRef} className="relative ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Account menu"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground"
-            >
-              {initials || "?"}
-            </button>
-            {user.isDeveloper && (
-              <span
-                title={
-                  user.viewAs
-                    ? `${user.viewAsKey?.startsWith("person:") ? "Acting as" : "Viewing as"} ${user.viewAs}`
-                    : "Developer: full access"
-                }
-                className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${user.viewAs ? "border-violet-400 bg-violet-500/15 text-violet-200" : "border-accent/70 bg-accent/10 text-orange-200"}`}
+          <div className="ml-auto flex items-center gap-2">
+            {user.inbox && <Inbox updates={user.inbox} />}
+            <div ref={menuRef} className="relative flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((o) => !o)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground"
               >
-                {user.viewAs ?? "Dev"}
-              </span>
-            )}
-            {menuOpen && (
-              <div className="absolute right-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-surface text-foreground shadow-lg">
-                <div className="border-b border-border px-4 py-3">
-                  <p className="truncate text-sm font-medium">{user.name}</p>
-                  <p className="truncate text-xs text-muted">
-                    {user.email || "developer"}
-                    {user.email && (user.isDeveloper ? " · developer" : user.isRoot && " · root")}
-                  </p>
+                {initials || "?"}
+              </button>
+              {user.isDeveloper && (
+                <span
+                  title={
+                    user.viewAs
+                      ? `${user.viewAsKey?.startsWith("person:") ? "Acting as" : "Viewing as"} ${user.viewAs}`
+                      : "Developer: full access"
+                  }
+                  className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${user.viewAs ? "border-violet-400 bg-violet-500/15 text-violet-200" : "border-accent/70 bg-accent/10 text-orange-200"}`}
+                >
+                  {user.viewAs ?? "Dev"}
+                </span>
+              )}
+              {menuOpen && (
+                <div className="absolute right-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-surface text-foreground shadow-lg">
+                  <div className="border-b border-border px-4 py-3">
+                    <p className="truncate text-sm font-medium">{user.name}</p>
+                    <p className="truncate text-xs text-muted">
+                      {user.email || "developer"}
+                      {user.email && (user.isDeveloper ? " · developer" : user.isRoot && " · root")}
+                    </p>
+                  </div>
+                  {user.isDeveloper && (
+                    <ViewAsMenu viewAs={user.viewAsKey ?? null} groups={user.groups ?? []} people={user.people ?? []} onPicked={() => setMenuOpen(false)} />
+                  )}
+                  {user.profileId && (
+                    <Link href={`/team/${user.profileId}`} className="block px-4 py-2.5 text-sm hover:bg-background">
+                      My profile
+                    </Link>
+                  )}
+                  {user.canAdmin && (
+                    <Link href="/team/permissions" className="block px-4 py-2.5 text-sm hover:bg-background">
+                      Manage permissions
+                    </Link>
+                  )}
+                  <form action={signOut}>
+                    <button type="submit" className="w-full px-4 py-2.5 text-left text-sm hover:bg-background">
+                      Log out
+                    </button>
+                  </form>
                 </div>
-                {user.isDeveloper && (
-                  <ViewAsMenu viewAs={user.viewAsKey ?? null} groups={user.groups ?? []} people={user.people ?? []} onPicked={() => setMenuOpen(false)} />
-                )}
-                {user.profileId && (
-                  <Link href={`/team/${user.profileId}`} className="block px-4 py-2.5 text-sm hover:bg-background">
-                    My profile
-                  </Link>
-                )}
-                {user.canAdmin && (
-                  <Link href="/team/permissions" className="block px-4 py-2.5 text-sm hover:bg-background">
-                    Manage permissions
-                  </Link>
-                )}
-                <form action={signOut}>
-                  <button type="submit" className="w-full px-4 py-2.5 text-left text-sm hover:bg-background">
-                    Log out
-                  </button>
-                </form>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </nav>
       </header>

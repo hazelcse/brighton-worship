@@ -630,6 +630,59 @@ export async function loadSessionDetail(user: { id: string; isRoot: boolean }, s
   return sessionDetail(db, user.id, sessionId);
 }
 
+/** One of the viewer's upcoming services, for the Roster page's "Your Services" gallery. */
+export type MyService = {
+  rosterSessionId: string;
+  date: string;
+  name: string;
+  /** In role order (WL, vocalists, then the instruments). */
+  band: BandMember[];
+  /** The published plan's id (opens the session); null while it isn't published. */
+  planId: string | null;
+};
+
+/**
+ * Upcoming sessions on any published roster (this quarter's, and next quarter's once it's out)
+ * that the person is rostered on and has confirmed, soonest first.
+ */
+export async function loadMyServices(userId: string): Promise<MyService[]> {
+  const db = createAdminClient();
+  const [sessions, { data: mine }, confirmed] = await Promise.all([
+    upcomingPublishedSessions(),
+    db.from("roster_assignments").select("session_id").eq("member_id", userId),
+    confirmedSessions(db, userId),
+  ]);
+  const ids = [...new Set((mine ?? []).map((m) => m.session_id as string))].filter((id) => sessions.has(id) && confirmed.has(id));
+  if (!ids.length) return [];
+  const [{ data: band }, { data: plans }] = await Promise.all([
+    db.from("roster_assignments").select("session_id, member_id, role, also_roles").in("session_id", ids),
+    db.from("worship_sessions").select("id, roster_session_id").in("roster_session_id", ids).eq("status", "published"),
+  ]);
+  const people = await names(db, [...new Set((band ?? []).map((b) => b.member_id as string))]);
+  const order = new Map(Object.keys(ROLE_LABEL).map((r, i) => [r, i]));
+  const planFor = new Map((plans ?? []).map((p) => [p.roster_session_id as string, p.id as string]));
+  return ids
+    .map((id) => {
+      const s = sessions.get(id)!;
+      return {
+        rosterSessionId: id,
+        date: s.date,
+        name: s.name,
+        planId: planFor.get(id) ?? null,
+        band: (band ?? [])
+          .filter((b) => b.session_id === id)
+          .map((b) => ({
+            id: b.member_id as string,
+            name: people.get(b.member_id) ?? "Someone",
+            role: b.role as string,
+            also: (b.also_roles as string[] | null) ?? [],
+          }))
+          .sort((a, b) => (order.get(a.role) ?? 99) - (order.get(b.role) ?? 99) || a.name.localeCompare(b.name)),
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+}
+
 /** A plan published (or published again) since the person last looked at Sessions. */
 export type PublishedNotice = {
   planId: string;

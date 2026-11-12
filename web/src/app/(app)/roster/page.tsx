@@ -5,9 +5,10 @@ import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { formatRange, nextQuarter, quarterOf, todayYmd } from "@/lib/roster";
 import { publishedRosterFor } from "@/lib/roster-data";
-import { loadRequestsBoard, loadUpdates } from "@/lib/serving";
+import { loadRequestsBoard } from "@/lib/serving";
+import { loadMyServices } from "@/lib/sessions";
 import { RequestsBoard } from "@/components/roster/requests-board";
-import { UpdatesBoard } from "@/components/roster/updates-board";
+import { MyServices } from "@/components/roster/my-services";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { NewMenu } from "@/components/roster/new-menu";
 import { BroadcastActionables } from "@/components/broadcasts";
@@ -17,7 +18,7 @@ export const metadata: Metadata = { title: "Roster · Brighton Worship" };
 
 function Panel({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
-    <section id={id} aria-label={title} className="flex min-h-0 flex-1 scroll-mt-4 flex-col overflow-hidden rounded-xl border border-border bg-surface">
+    <section id={id} aria-label={title} className="flex min-h-0 flex-[1_1_0px] scroll-mt-4 flex-col overflow-hidden rounded-xl border border-border bg-surface">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-lg font-semibold">{title}</h2>
       </div>
@@ -41,8 +42,8 @@ async function RosterView() {
   // Next quarter's roster shows up here as soon as it's published, for everyone who can see rosters.
   const [roster, upcoming] = await Promise.all([publishedRosterFor(today), publishedRosterFor(next.start)]);
   const canEdit = user.can("roster.edit");
-  const [updates, board, broadcasts] = await Promise.all([
-    loadUpdates(user),
+  const [services, board, broadcasts] = await Promise.all([
+    loadMyServices(user.id),
     loadRequestsBoard(user.id),
     user.isRoot ? loadBroadcastActionables() : Promise.resolve([]),
   ]);
@@ -95,9 +96,8 @@ async function RosterView() {
         )}
       </div>
 
-      <Panel title="Updates" id="updates">
-        <UpdatesBoard updates={updates} />
-      </Panel>
+      {/* Roster updates are in the nav's inbox. */}
+      <MyServices services={services} />
       <Panel title={user.isRoot ? "Actionables" : "Requests"} id="requests">
         <RequestsBoard board={board} before={broadcasts.length > 0 && <BroadcastActionables items={broadcasts} />} />
       </Panel>

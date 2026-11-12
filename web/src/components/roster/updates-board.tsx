@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ROLE_LABEL, formatDate } from "@/lib/roster";
 import type { UpdateItem } from "@/lib/serving";
-import { MarkUpdatesSeen } from "./mark-updates-seen";
 
 const DOT: Record<UpdateItem["kind"], string> = {
   declined: "bg-red-500",
@@ -167,19 +166,20 @@ export function updateText(u: UpdateItem): React.ReactNode {
  */
 const PROBLEMS = new Set<UpdateItem["kind"]>(["declined", "refused", "band_role_refused", "band_role_missing"]);
 
-/** Roster changes, newest first, in a scrolling list. New ones are tinted until the next visit. */
-export function UpdatesBoard({ updates }: { updates: UpdateItem[] }) {
+/**
+ * Roster changes, newest first, in a scrolling list (the nav's inbox). New ones are tinted until the
+ * inbox has been opened. `onNavigate`: called when an update's link is followed.
+ */
+export function UpdatesBoard({ updates, onNavigate }: { updates: UpdateItem[]; onNavigate?: () => void }) {
   if (!updates.length) {
     return (
       <div className="flex flex-1 items-center justify-center p-6">
         <p className="max-w-sm text-center text-sm text-muted">No updates yet.</p>
-        <MarkUpdatesSeen />
       </div>
     );
   }
   return (
-    <ul className="max-h-80 flex-1 divide-y divide-border overflow-y-auto">
-      <MarkUpdatesSeen />
+    <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
       {updates.map((u) => (
         <li key={u.id} className={`relative flex gap-3 px-4 py-2.5 ${u.isNew ? "bg-orange-50" : ""} ${u.href ? "hover:bg-background" : ""}`}>
           <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${DOT[u.kind]}`} />
@@ -187,7 +187,7 @@ export function UpdatesBoard({ updates }: { updates: UpdateItem[] }) {
             <p className="text-sm leading-6">
               {u.href ? (
                 // The whole row is the link.
-                <Link href={u.href} className="after:absolute after:inset-0">
+                <Link href={u.href} onClick={onNavigate} className="after:absolute after:inset-0">
                   {updateText(u)}
                 </Link>
               ) : (

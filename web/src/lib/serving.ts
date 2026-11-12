@@ -895,11 +895,6 @@ const SWAP_PENDING: UpdateKind[] = ["swap_proposed", "swap_declined"];
 /** Only root and admins (and whoever caused it) see these. */
 const FOR_ADMINS: UpdateKind[] = ["band_role_missing"];
 
-/** How many roster updates the person hasn't seen yet (the nav badge on Roster). */
-export async function countUnseenRosterUpdates(user: { id: string; isRoot: boolean }): Promise<number> {
-  return (await loadUpdates(user)).filter((u) => u.isNew).length;
-}
-
 /**
  * Recent roster changes, newest first. Root sees everything, with reasons. Everyone else sees
  * changes they're part of, and changes to the bands they're in (the session, and for a swap the
@@ -909,7 +904,7 @@ export function loadUpdates(user: { id: string; isRoot: boolean }): Promise<Upda
   return updatesFor(user.id, user.isRoot);
 }
 
-/** Once per request per person: the Roster page and the nav badge both need it. */
+/** Once per request per person: the nav's inbox and the landing page both need it. */
 const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<UpdateItem[]> => {
   const user = { id: userId, isRoot };
   const db = createAdminClient();

@@ -54,16 +54,68 @@ function BandTags({ roles }: { roles: { role: string }[] }) {
   );
 }
 
+/**
+ * A request with its buttons on the right. When the board is too narrow for any one request's text
+ * and buttons to share a line, every request puts its buttons on a row of their own underneath
+ * (right-aligned), so they all look the same (see useStackedRows).
+ */
 function Row({ title, sub, children }: { title: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
-      <div className="min-w-0">
+    <li className="flex items-center justify-between gap-x-3 gap-y-2 px-4 py-3 group-data-[stacked]/requests:flex-col group-data-[stacked]/requests:items-stretch">
+      <div data-row-text className="min-w-0">
         <p className="text-sm font-medium">{title}</p>
         {sub && <p className="text-xs text-muted">{sub}</p>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      {children && (
+        <div data-row-actions className="flex shrink-0 items-center gap-2 group-data-[stacked]/requests:justify-end">
+          {children}
+        </div>
+      )}
     </li>
   );
+}
+
+/**
+ * Whether the board's request rows should put their buttons underneath: true when, for any row, the
+ * text on one line plus its buttons is wider than the row. Re-checked when the board resizes or its
+ * rows change. It measures the text's natural width, so stacking doesn't change the answer.
+ */
+function useStackedRows(ref: React.RefObject<HTMLDivElement | null>, deps: unknown) {
+  const [stacked, setStacked] = useState(false);
+  useEffect(() => {
+    const board = ref.current;
+    if (!board) return;
+    const measure = () => {
+      let tooWide = false;
+      for (const actions of board.querySelectorAll<HTMLElement>("[data-row-actions]")) {
+        const row = actions.parentElement!;
+        const text = row.querySelector<HTMLElement>("[data-row-text]");
+        if (!text) continue;
+        const style = getComputedStyle(row);
+        // Exact (fractional) widths: rounding can say "fits" when the text actually wraps by a hair.
+        const room = row.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const gap = parseFloat(style.columnGap) || 0;
+        // The text's width on one line, without letting it show.
+        const { whiteSpace, width } = text.style;
+        text.style.whiteSpace = "nowrap";
+        text.style.width = "max-content";
+        const needed = Math.ceil(text.getBoundingClientRect().width) + gap + actions.getBoundingClientRect().width;
+        text.style.whiteSpace = whiteSpace;
+        text.style.width = width;
+        if (needed > room) {
+          tooWide = true;
+          break;
+        }
+      }
+      setStacked(tooWide);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(board);
+    void document.fonts?.ready.then(measure);
+    return () => ro.disconnect();
+  }, [ref, deps]);
+  return stacked;
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -1016,6 +1068,8 @@ function HandoverMineRow({ h }: { h: HandoverItem }) {
 
 export function RequestsBoard({ board, before }: { board: Board; /** Shown above the requests (root's broadcasts). */ before?: React.ReactNode }) {
   const [declining, setDeclining] = useState<PendingRequest | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const stacked = useStackedRows(listRef, board);
   const empty =
     !before &&
     !board.pending.length &&
@@ -1032,7 +1086,7 @@ export function RequestsBoard({ board, before }: { board: Board; /** Shown above
     );
   }
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div ref={listRef} data-stacked={stacked || undefined} className="group/requests flex-1 overflow-y-auto">
       {before}
       {board.awayUncovered.length > 0 && (
         <Section label="Away but still rostered">

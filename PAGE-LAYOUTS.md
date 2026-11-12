@@ -12,7 +12,12 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 
 - **Nav bar** (`web/src/components/app-nav.tsx`): `sticky top-0 z-30 bg-ink`, 56px tall. Contents
   `mx-auto flex h-14 max-w-page px-4 sm:px-6`: "Brighton Worship", the menu (from md), and the
-  account icon pushed right. Below md: hamburger + 288px slide-in sidebar.
+  **inbox** (36px icon with an orange unread count) + account icon pushed right. Below md:
+  hamburger + 288px slide-in sidebar.
+- **Inbox** (`web/src/components/inbox.tsx`, for anyone who can see the roster): the roster
+  updates, newest first (new ones tinted, linked ones clickable). A popup under the icon, 384px
+  wide, right-aligned, max 512px tall with the list scrolling; below 640px it spans the window
+  less 16px each side. Opening it marks everything read.
 - **Page area** (`web/src/app/(app)/layout.tsx`): `<main className="mx-auto w-full max-w-page
   flex-1 px-4 py-6 sm:px-6">`. `max-w-page` = **992px** (`--container-page: 62rem` in
   `globals.css`), so the usable width is **944px** from 640px up (window − 32px below that). Pages
@@ -70,17 +75,29 @@ the dark countdown card (`rounded-xl bg-ink p-6`), then broadcasts and notices t
 dashed "not on any upcoming sessions" box, then broadcasts and notices.
 - Notices, in order: plans due to be published, "you haven't confirmed", plans published or
   updated, then **band changes** (someone else changed the band of an upcoming session they're on:
-  roster edits, take-overs, swaps), worded as on the Roster page's Updates, each with "See
-  updates". A band change shows on one visit only: it's marked seen when shown and stays until
+  roster edits, take-overs, swaps), worded as in the inbox, each with "See
+  updates" (opens the inbox). A band change shows on one visit only: it's marked seen when shown and stays until
   they leave the page (`profiles.home_band_seen_at`, `web/src/components/home-notices.tsx`).
 
 ### Roster
 
 **`/roster` (landing)**: full width, fills the window height (`min-h-[calc(100dvh-8.5rem)]`,
 `gap-4`). Top row: dark "This quarter's roster" card (max 576px) and, when published, a 224px
-"Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu. Below, two
-panels sharing the height: **Updates** and **Requests** (root: **Actionables**), each a bordered
-box with a scrolling list. Below 640px the top row stacks.
+"Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu. Below,
+**Your Services** and the **Requests** panel (root: **Actionables**) share the rest of the
+height equally (`flex-[1_1_0px]` each, so content doesn't skew the split; space is left blank when
+there are few services; with none, an animated wind-and-leaf picture, `wind-leaf.tsx`, sits
+centred in it over "No confirmed services coming up."). Your Services has no box or border: an `text-lg font-semibold` h2
+over **one sideways-scrolling row** of gallery-style cards (`drag-scroll.tsx`), as wide as the
+gallery grid's columns (4 per row from 1280px, 3 from 1024px, 2 from 420px, 85% on small phones so
+the next card peeks in). The row snaps to cards; touch and trackpads scroll natively, and a mouse
+can press-and-drag it (with a short glide, stopping at either end, never looping); fades show on
+whichever side has more. Cards: their confirmed upcoming services on any published roster, with
+the date, service name and the band (role short name + name; never songs). A card links to the
+session once its plan is published, otherwise it isn't clickable. Requests is a bordered box with
+a scrolling list; each request has its buttons (✓ / ✗, Can't / Take over) on the right, unless
+any one request's text and buttons can't share a line, then every request puts its buttons on a
+row of their own underneath, right-aligned (`useStackedRows` in `requests-board.tsx`). Roster updates moved to the nav's inbox. Below 640px the top row stacks.
 
 **`/roster/new` (Rosters)**: narrow **672px**. Back link, title "Rosters" + "Past rosters →".
 List of roster rows (`rounded-xl border px-4 py-3`); selecting one shows open/delete icon tiles;

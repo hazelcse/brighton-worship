@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppNav, AppNavSkeleton } from "@/components/app-nav";
 import { countUnseenSongUpdates, updateKindsFor } from "@/lib/song-updates";
-import { countUnseenRosterUpdates } from "@/lib/serving";
+import { loadUpdates } from "@/lib/serving";
 import { loadNewlyPublished, loadPublishDue } from "@/lib/sessions";
 
 /** Reads the session, so it sits behind Suspense (required with Cache Components). */
@@ -24,9 +24,10 @@ async function SignedInNav() {
           .then(({ data }) => (data ?? []).map((p) => ({ id: p.id as string, name: (p.full_name as string) || (p.email as string) }))),
       ])
     : [[], []];
-  const [songUpdates, rosterUpdates, published, publishDue] = await Promise.all([
+  const [songUpdates, inbox, published, publishDue] = await Promise.all([
     countUnseenSongUpdates(user.id, updateKindsFor(user)),
-    countUnseenRosterUpdates(user),
+    // Roster updates live in the nav's inbox (with its own unread count), not on the Roster page.
+    user.can("roster.view") ? loadUpdates(user) : Promise.resolve(undefined),
     loadNewlyPublished(user.id),
     loadPublishDue(user.id),
   ]);
@@ -43,9 +44,9 @@ async function SignedInNav() {
           isDeveloper: user.isDeveloper,
           badges: {
             ...(songUpdates ? { "/songs": songUpdates } : {}),
-            ...(rosterUpdates ? { "/roster": rosterUpdates } : {}),
             ...(sessionBadge ? { "/sessions": sessionBadge } : {}),
           },
+          inbox,
           viewAs: user.viewAs,
           viewAsKey: user.viewAsKey,
           groups,
