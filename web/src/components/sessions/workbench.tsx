@@ -19,6 +19,7 @@ import { SimplePlan } from "@/components/sessions/simple-plan";
 import { PartCues } from "@/components/sessions/part-cues";
 import { SongBankPanel, type BankSong } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { formatDate, ROLE_SHORT } from "@/lib/roster";
 import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanSection } from "@/lib/session-plan";
 import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessions";
@@ -755,6 +756,8 @@ export function Workbench({
       style={bankWidth && !minimised ? ({ "--bank": bankColumn(bankWidth) } as React.CSSProperties) : undefined}
       className={`grid gap-4 ${minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_var(--bank)] lg:[--bank:24rem] xl:[--bank:28rem]"}`}
     >
+      {/* View mode only: pick up the worship leaders' changes. Never while editing, so a refresh can't fight the draft. */}
+      {!editing && <AutoRefresh />}
       {/* The session being built */}
       <div className="min-w-0 space-y-4">
         <Link href={canEdit ? "/sessions/build" : "/sessions"} className="block w-fit text-sm text-muted hover:text-foreground">

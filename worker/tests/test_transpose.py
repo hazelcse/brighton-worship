@@ -81,3 +81,39 @@ def test_confirmed_key_overrides_the_scanner():
     out, rep = transpose_docx(data, target_key="A", from_key="G")
     assert rep.from_key == "G" and rep.semitones == 2
     assert extract(out).all_lines()[1].split() == ["||", "D", "|", "A", "|", "D", "|", "A", "||"]
+
+
+def _flat_line_docx(segments: int, pad: int = 0) -> bytes:
+    """'| Bb  Eb   ' repeated, each flat written as a superscript "b" (how many sheets write it)."""
+    def run(t: str, sup: bool = False) -> str:
+        va = '<w:vertAlign w:val="superscript"/>' if sup else ""
+        return f'<w:r><w:rPr><w:b/><w:sz w:val="22"/>{va}</w:rPr><w:t xml:space="preserve">{t}</w:t></w:r>'
+    chords = "".join(run("| B") + run("b", True) + run("  E") + run("b", True) + run("     ") for _ in range(segments))
+    body = (f'<w:p>{run("SONG")}</w:p><w:p>{run("Bb Major")}</w:p><w:p>{chords}{run(" " * pad + "||")}</w:p>')
+    doc = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W}><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:left="1440" w:right="1440" w:top="1440" w:bottom="1440"/></w:sectPr></w:body></w:document>'
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+        z.writestr("word/document.xml", doc)
+    return out.getvalue()
+
+
+def _chord_line_width(data: bytes) -> float:
+    from lxml import etree
+    from worship_worker.transpose import NS, Styles, line_widths, paragraph_pieces, q
+    doc = etree.fromstring(zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml"))
+    p = list(doc.iter(q("w", "p")))[2]
+    styles = Styles(None, None)
+    return max(line_widths(paragraph_pieces(p, styles), styles.para_layout(p), 36.0))
+
+
+def test_superscript_flats_are_measured_small():
+    # A line that fits the page only because its flats are superscript must not be mistaken for
+    # one that already wrapped: once transposed to full-size letters it has to be made to fit.
+    # (10,000 Reasons, F -> C: the closing || wrapped and pushed the last line out of its box.)
+    # 9 segments, padded to just under 468pt drawn; over 468pt if the superscript "b"s were full size.
+    data = _flat_line_docx(9, pad=13)
+    assert 460 < _chord_line_width(data) <= 468
+    out, rep = transpose_docx(data, target_key="Db")  # flats come back full size: the line grows
+    assert not rep.warnings
+    assert _chord_line_width(out) <= 468

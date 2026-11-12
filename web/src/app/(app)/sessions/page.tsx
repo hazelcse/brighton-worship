@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { formatDate } from "@/lib/roster";
 import { buildsAnySession, loadBuildableSessions, loadNewlyPublished, loadUpcomingPlans } from "@/lib/sessions";
 import { MarkSessionsSeen } from "@/components/sessions/mark-sessions-seen";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 export const metadata: Metadata = { title: "Sessions · Brighton Worship" };
 
@@ -78,8 +79,11 @@ async function SessionsView() {
 
 export default function SessionsPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading sessions…</p>}>
-      <SessionsView />
-    </Suspense>
+    <>
+      <AutoRefresh />
+      <Suspense fallback={<p className="text-sm text-muted">Loading sessions…</p>}>
+        <SessionsView />
+      </Suspense>
+    </>
   );
 }

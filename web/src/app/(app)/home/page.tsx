@@ -9,6 +9,7 @@ import { SessionCard } from "@/components/sessions/session-card";
 import { CountdownNumber } from "@/components/countdown-number";
 import { BroadcastList } from "@/components/broadcasts";
 import { loadMyBroadcasts } from "@/lib/broadcasts";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 export const metadata: Metadata = { title: "Home · Brighton Worship" };
 
@@ -154,8 +155,11 @@ function Notices({ items }: { items: Notice[] }) {
 
 export default function HomePage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
-      <HomeView />
-    </Suspense>
+    <>
+      <AutoRefresh />
+      <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+        <HomeView />
+      </Suspense>
+    </>
   );
 }

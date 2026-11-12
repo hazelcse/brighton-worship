@@ -119,12 +119,23 @@ def transpose_keys_in(text: str, n: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Word draws superscript/subscript at about 2/3 of the font size (LibreOffice ~58%; the larger
+# value is used so a line is never measured narrower than it really is).
+SCRIPT_SCALE = 0.67
+
+
 @dataclass(frozen=True)
 class RunProps:
     family: str
     size: float
     bold: bool
     italic: bool = False
+    small: bool = False  # superscript/subscript: Word draws it smaller than its font size
+
+    @property
+    def drawn_size(self) -> float:
+        """The size the text is actually drawn at, for width maths (e.g. the superscript "b" in Bb)."""
+        return self.size * SCRIPT_SCALE if self.small else self.size
 
 
 def _on(el: etree._Element | None) -> bool | None:
@@ -194,7 +205,9 @@ class Styles:
                      for sz in [l.find("w:sz", NS)] if sz is not None), 10.0)
         bold = next((b for b in (_on(l.find("w:b", NS)) if l is not None else None for l in layers) if b is not None), False)
         italic = next((i for i in (_on(l.find("w:i", NS)) if l is not None else None for l in layers) if i is not None), False)
-        return RunProps(family, size, bold, italic)
+        va = next((v.get(q("w", "val")) for l in layers if l is not None
+                   for v in [l.find("w:vertAlign", NS)] if v is not None), "baseline")
+        return RunProps(family, size, bold, italic, va in ("superscript", "subscript"))
 
     def para_layout(self, para: etree._Element) -> tuple[float, float, list[float]]:
         """(left indent pt, first-line offset pt, custom left tab stops pt)."""
@@ -310,7 +323,7 @@ def _simulate(pieces: list[Piece], styles_layout: tuple[float, float, list[float
             x = nxt
             landings.append(x)
         else:
-            x += text_width_pt(pc.text, pc.props.family, pc.props.size, pc.props.bold, pc.props.italic)
+            x += text_width_pt(pc.text, pc.props.family, pc.props.drawn_size, pc.props.bold, pc.props.italic)
     widths.append(x)
     return widths, landings
 
@@ -393,7 +406,7 @@ def add_column_tab_stops(p: etree._Element, pieces: list[Piece], styles: "Styles
             x = stop
             k += 1
         else:
-            x += text_width_pt(pc.text, pc.props.family, pc.props.size, pc.props.bold, pc.props.italic)
+            x += text_width_pt(pc.text, pc.props.family, pc.props.drawn_size, pc.props.bold, pc.props.italic)
 
     ppr = p.find("w:pPr", NS)
     if ppr is None:
@@ -460,10 +473,10 @@ def _chord_edits(text: str, lo: int, hi: int, pieces: list[Piece], n: int, key_c
         start = m.start() + lead
         end = start + len(core)
         props = char_props[start] if start < len(char_props) else pieces[0].props
-        delta = text_width_pt(new, props.family, props.size, props.bold) - text_width_pt(
-            core, props.family, props.size, props.bold
+        delta = text_width_pt(new, props.family, props.drawn_size, props.bold) - text_width_pt(
+            core, props.family, props.drawn_size, props.bold
         )
-        space = text_width_pt(" ", props.family, props.size, props.bold) or 3.0
+        space = text_width_pt(" ", props.family, props.drawn_size, props.bold) or 3.0
 
         # Spaces right after the chord (not counting what was already in the raw token).
         after = end + (len(raw) - lead - len(core))
@@ -582,7 +595,7 @@ def shrink_to_fit(p: etree._Element, pieces: list[Piece], styles: "Styles", defa
     while max(line_widths(pieces, layout, default_tab)) > limit and scale > 0.8:
         scale = round(scale - 0.04, 2)
         for pc, orig in zip(pieces, original):
-            pc.props = RunProps(orig.family, half(orig.size * scale), orig.bold, orig.italic)
+            pc.props = RunProps(orig.family, half(orig.size * scale), orig.bold, orig.italic, orig.small)
     if scale == 1.0:
         return None
     # Every run keeps its size relative to the others (small notes stay smaller).
