@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from lxml import etree
 
 from .fonts import text_width_pt
-from .music import NOTE_TO_PC, chords_in_line, parse_chord, parse_key_name, semitones_between
+from .music import NOTE_TO_PC, chords_in_line, inline_chord_spans, parse_chord, parse_key_name, semitones_between
 from .scanner import KEY_CHANGE_RE, KEY_HEADER_RE, KEY_IN_TITLE_RE, LABEL_KEY_RE, ORIGINAL_KEY_RE, scan_docx
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -746,6 +746,14 @@ def transpose_docx(data: bytes, target_key: str | None = None, semitones: int | 
                 line_edits = _chord_edits(text, lo + len(label) + 1, hi, pieces, n, ctx[0])
                 report.chords_changed += len(line_edits)
                 edits.extend(line_edits)
+                continue
+            # Chords inside a note: "(Repeat one bar of A to go to Verse)", "can also play | Em7 F#7 |".
+            spans = inline_chord_spans(line)
+            if spans:
+                for a, b in spans:
+                    line_edits = _chord_edits(text, lo + a, lo + b, pieces, n, ctx[0])
+                    report.chords_changed += len(line_edits)
+                    edits.extend(line_edits)
                 continue
             lk = LABEL_KEY_RE.search(line_s)
             if lk and line_s.endswith(":"):

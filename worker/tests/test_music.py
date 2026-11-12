@@ -28,3 +28,17 @@ def test_key_names_and_intervals():
     assert parse_key_name("bb") == "Bb"
     assert semitones_between("E", "F#") == 2
     assert semitones_between("G", "E") == -3
+
+
+def test_inline_chord_spans_in_notes():
+    from worship_worker.music import inline_chord_spans
+
+    def found(s):
+        return [s[a:b].strip() for a, b in inline_chord_spans(s)]
+
+    assert found("(Repeat one bar of A to go to Verse/Bridge/Tag)") == ["A"]
+    assert found("Verse 2 to Chorus, extra 4/4 bar of E") == ["E"]
+    assert found("Two bars of G and D/F# then Em") == ["G", "D/F#", "Em"]
+    assert found("can also play | Em7/C#   F#7  |") == ["Em7/C#   F#7"]
+    assert found("Take note the 2nd bar of chorus (even bar numbers)") == []
+    assert found("The 2nd bar of Chorus") == []

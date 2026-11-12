@@ -109,6 +109,34 @@ def chords_in_line(line: str) -> list[Chord] | None:
     return None
 
 
+_BAR_OF_RE = re.compile(
+    r"\b(?i:bars?|beats?|measures?)\s+of\s+"
+    r"(?P<chords>[A-G][^\s,;)]*(?:\s*(?:,|-|–|and|&|then|to)\s*[A-G][^\s,;)]*)*)"
+)
+_BAR_GROUP_RE = re.compile(r"\|([^|]+)(?=\|)")
+
+
+def inline_chord_spans(line: str) -> list[tuple[int, int]]:
+    """Chords written inside a prose line, as (start, end) spans of the line.
+
+    Catches notes like "(Repeat one bar of A to go to Verse)" and
+    "can also play | Em7/C#  F#7 |", where the line as a whole isn't a chord line.
+    """
+    spans: list[tuple[int, int]] = []
+    for m in _BAR_OF_RE.finditer(line):
+        base = m.start("chords")
+        for t in re.finditer(r"[^\s,;)]+", m["chords"]):
+            if parse_chord(t.group(0)):
+                spans.append((base + t.start(), base + t.end()))
+    for m in _BAR_GROUP_RE.finditer(line):
+        tokens = m[1].split()
+        if tokens and all(parse_chord(t) or NON_CHORD_TOKENS.match(t) for t in tokens) and any(
+            parse_chord(t) for t in tokens
+        ):
+            spans.append((m.start(1), m.end(1)))
+    return sorted(set(spans))
+
+
 # ---------------------------------------------------------------------------
 # Key estimation
 # ---------------------------------------------------------------------------
