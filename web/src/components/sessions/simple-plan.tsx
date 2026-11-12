@@ -99,6 +99,8 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
   const key = keyLabel(item.key, item.transpose_to);
   const steps = item.sequence ?? [];
   const ls = lines(steps);
+  // The links set for this song in the session (as in the full view), under its sequence.
+  const links = (item.links ?? []).filter((l) => l.url);
   return (
     <li className="space-y-1">
       <p className="font-semibold">
@@ -113,6 +115,19 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
             <SeqLine key={l[0]?.id ?? i} steps={l} first={i === 0} last={i === ls.length - 1} highlight={highlight} />
           ))}
         </div>
+      )}
+      {links.length > 0 && (
+        // "Live version: https://…", one per line. A link with no name is just its address.
+        <ul className="space-y-0.5 pl-4 leading-6">
+          {links.map((l, i) => (
+            <li key={i}>
+              {l.label && `${l.label}: `}
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className="break-all underline underline-offset-2 hover:text-accent">
+                {l.url}
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
     </li>
   );

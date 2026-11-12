@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 /** How often an open, visible page picks up other people's changes. */
-const EVERY_MS = 60_000;
+const EVERY_MS = 30_000;
 
 /** Don't pull the page out from under someone mid-task: a dialog open, or typing / choosing in a field. */
 function busy(): boolean {

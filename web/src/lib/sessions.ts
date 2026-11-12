@@ -2,7 +2,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_LABEL, addDays, todayYmd } from "@/lib/roster";
 import type { ReminderSession } from "@/lib/reminder";
-import { LOCK_STALE_MS, keyLabel, partCues, type BuildStage, type PartCue, type PlanSection, type PlanStatus, type SeqStep, type SongType } from "@/lib/session-plan";
+import { LOCK_STALE_MS, keyLabel, partCues, type BuildStage, type PartCue, type PlanLink, type PlanSection, type PlanStatus, type SeqStep, type SongType } from "@/lib/session-plan";
 import type { CurrentUser } from "@/lib/auth";
 import { sheetKeysFor } from "@/lib/session-songsheets";
 
@@ -228,11 +228,13 @@ export type Workbench = {
    * worship leaders' work so far).
    */
   plan: PlanSection[];
+  /** Links for the whole session (on top of each song's own), from the same version as `plan`. */
+  links: PlanLink[];
   /**
    * For the worship leaders of a published session: their revised copy, not published yet. null
    * when there's none (the draft is the published plan), and always null for everyone else.
    */
-  revision: { plan: PlanSection[]; updatedAt: string | null; updatedBy: string | null } | null;
+  revision: { plan: PlanSection[]; links: PlanLink[]; updatedAt: string | null; updatedBy: string | null } | null;
   /** Republished changes the viewer hasn't closed the box on yet, newest first. */
   changes: PlanRevisionNotice[];
   /**
@@ -277,6 +279,13 @@ export function normalisePlan(raw: unknown): PlanSection[] {
   }));
 }
 
+/** Session links as stored, tidied (anything malformed is left out). */
+export function sessionLinks(raw: unknown): PlanLink[] {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((l): l is PlanLink => Boolean(l) && typeof l.url === "string" && l.url !== "")
+    .map((l) => ({ label: typeof l.label === "string" ? l.label : "", url: l.url }));
+}
+
 /**
  * A session plan for the session page. `withRevision`: include the worship leaders' unpublished
  * revision (only for people who can edit).
@@ -286,7 +295,7 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
   const { data: s } = await db
     .from("worship_sessions")
     .select(
-      "id, date, service, service_name, roster_session_id, status, locked_by, locked_at, updated_at, updated_by, draft_plan, draft_updated_at, draft_updated_by, worship_session_sections(id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, transpose_to, artist, sequence, custom_elements, links, notes))",
+      "id, date, service, service_name, roster_session_id, status, locked_by, locked_at, updated_at, updated_by, links, draft_plan, draft_links, draft_updated_at, draft_updated_by, worship_session_sections(id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, transpose_to, artist, sequence, custom_elements, links, notes))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -340,10 +349,13 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
       .sort((a, b) => order(a.role) - order(b.role) || a.name.localeCompare(b.name)),
     myRole: ((assignments ?? []).find((a) => a.member_id === userId)?.role as string | undefined) ?? null,
     plan,
+    links: sessionLinks(s.links),
     sheetKeys: await sheetKeysFor(plan.flatMap((sec) => sec.items).filter((i) => i.kind === "song")),
     revision: hasRevision
       ? {
           plan: normalisePlan(s.draft_plan),
+          // A revision saved before session links existed keeps the published ones.
+          links: sessionLinks(s.draft_links ?? s.links),
           updatedAt: (s.draft_updated_at as string | null) ?? null,
           updatedBy: s.draft_updated_by ? (people.get(s.draft_updated_by as string) ?? null) : null,
         }

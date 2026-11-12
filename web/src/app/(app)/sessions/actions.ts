@@ -5,9 +5,9 @@ import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildsAnySession, loadWorkbench, normalisePlan, sessionAccess, type Workbench } from "@/lib/sessions";
+import { buildsAnySession, loadWorkbench, normalisePlan, sessionAccess, sessionLinks, type Workbench } from "@/lib/sessions";
 import { prepareSessionSongsheets } from "@/lib/session-songsheets";
-import { describePlanChanges } from "@/lib/plan-changes";
+import { describeLinkChanges, describePlanChanges } from "@/lib/plan-changes";
 import { LOCK_STALE_MS, cleanSteps, defaultPlan, majorKey, songSteps, type PlanItem, type PlanLink, type PlanSection, type SeqStep, type SongType } from "@/lib/session-plan";
 
 const WL = "worship leader";
@@ -174,6 +174,21 @@ const id = (v: unknown) => {
   return v;
 };
 
+/** Check and tidy a list of links sent from the browser (a song's, or the whole session's). */
+function cleanLinks(raw: unknown[]): PlanLink[] {
+  const links = (raw as PlanLink[])
+    .map((l) => ({ label: str(l?.label, 120), url: str(l?.url, 500) }))
+    .filter((l) => l.url || l.label)
+    .slice(0, 20);
+  for (const l of links) {
+    if (l.url && !/^https?:\/\//i.test(l.url)) throw new Error(`Links must start with http:// or https:// (${l.url}).`);
+  }
+  return links;
+}
+
+/** The whole session's links sent from the browser: only ones with an address. */
+const cleanSessionLinks = (raw: unknown): PlanLink[] => (Array.isArray(raw) ? cleanLinks(raw).filter((l) => l.url) : []);
+
 /** Check and tidy a plan sent from the browser. */
 function cleanPlan(raw: unknown): PlanSection[] {
   if (!Array.isArray(raw) || raw.length > 30) throw new Error("The plan couldn't be read. Reload the page.");
@@ -185,15 +200,7 @@ function cleanPlan(raw: unknown): PlanSection[] {
       name: str(s.name, 80) || "Section",
       items: items.map((i: Record<string, unknown>): PlanItem => {
         const bpm = i.bpm === null || i.bpm === "" || i.bpm === undefined ? null : Number(i.bpm);
-        const links = Array.isArray(i.links)
-          ? (i.links as PlanLink[])
-              .map((l) => ({ label: str(l?.label, 120), url: str(l?.url, 500) }))
-              .filter((l) => l.url || l.label)
-              .slice(0, 20)
-          : null;
-        for (const l of links ?? []) {
-          if (l.url && !/^https?:\/\//i.test(l.url)) throw new Error(`Links must start with http:// or https:// (${l.url}).`);
-        }
+        const links = Array.isArray(i.links) ? cleanLinks(i.links) : null;
         return {
           id: id(i.id),
           kind: i.kind === "transition" ? "transition" : "song",
@@ -252,6 +259,12 @@ async function publishedPlan(id: string): Promise<PlanSection[]> {
   return normalisePlan(data ?? []);
 }
 
+/** The published session links. */
+async function publishedLinks(id: string): Promise<PlanLink[]> {
+  const { data } = await createAdminClient().from("worship_sessions").select("links").eq("id", id).single();
+  return sessionLinks(data?.links);
+}
+
 /** JSON with keys sorted, so two plans compare equal however their keys were stored (jsonb reorders them). */
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
@@ -266,6 +279,7 @@ function canonical(v: unknown): string {
   return JSON.stringify(v ?? null);
 }
 const sameAs = (a: PlanSection[], b: PlanSection[]) => canonical(normalisePlan(a)) === canonical(normalisePlan(b));
+const sameLinks = (a: PlanLink[], b: PlanLink[]) => canonical(a) === canonical(b);
 
 const revalidateSession = (id: string) => {
   revalidatePath("/sessions");
@@ -278,7 +292,7 @@ const revalidateSession = (id: string) => {
  * session never published, the draft is the plan itself. For a published one it's the revision:
  * the band keeps seeing the published plan until it's published again.
  */
-export async function saveDraft(id: string, rawPlan: unknown): Promise<SaveResult> {
+export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown): Promise<SaveResult> {
   try {
     const user = await signedIn();
     const row = await editablePlan(user, id);
@@ -286,19 +300,28 @@ export async function saveDraft(id: string, rawPlan: unknown): Promise<SaveResul
       return { ok: false, lostLock: true, message: "You were away long enough for the session to be unlocked, so these changes couldn't be saved." };
     }
     const plan = await tidyPlan(row, rawPlan);
+    const links = cleanSessionLinks(rawLinks);
     const db = createAdminClient();
     const now = new Date().toISOString();
     if (row.status === "published") {
-      // Saved back to exactly the published plan: there's no revision any more.
-      const revision = sameAs(plan, await publishedPlan(id)) ? null : plan;
+      // Saved back to exactly the published plan and links: there's no revision any more.
+      const [before, beforeLinks] = await Promise.all([publishedPlan(id), publishedLinks(id)]);
+      const revised = !sameAs(plan, before) || !sameLinks(links, beforeLinks);
       const { error } = await db
         .from("worship_sessions")
-        .update({ draft_plan: revision, draft_updated_at: revision ? now : null, draft_updated_by: revision ? user.id : null })
+        .update({
+          draft_plan: revised ? plan : null,
+          draft_links: revised ? links : null,
+          draft_updated_at: revised ? now : null,
+          draft_updated_by: revised ? user.id : null,
+        })
         .eq("id", id);
       if (error) throw error;
     } else {
       const { error } = await db.rpc("save_worship_session_plan", { p_session_id: id, p_user_id: user.id, p_plan: plan });
       if (error) throw error;
+      const { error: linksErr } = await db.from("worship_sessions").update({ links }).eq("id", id);
+      if (linksErr) throw linksErr;
     }
     await db.from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id);
     revalidateSession(id);
@@ -324,20 +347,23 @@ export async function publishSession(id: string): Promise<SaveResult> {
         const { error } = await db.from("worship_sessions").update({ status: "published", published_at: now, published_by: user.id }).eq("id", id);
         if (error) throw error;
       } else {
-        const { data: s } = await db.from("worship_sessions").select("draft_plan").eq("id", id).single();
+        const { data: s } = await db.from("worship_sessions").select("draft_plan, draft_links, links").eq("id", id).single();
         if (!Array.isArray(s?.draft_plan)) return { ok: false, lostLock: false, message: "There are no changes to publish." };
         const before = await publishedPlan(id);
         const after_ = normalisePlan(s.draft_plan);
         const leadIds = [...new Set(after_.flatMap((sec) => sec.items.flatMap((i) => (i.lead_id ? [i.lead_id] : []))))];
         const { data: leads } = leadIds.length ? await db.from("profiles").select("id, full_name, email").in("id", leadIds) : { data: [] };
         const leadName = new Map((leads ?? []).map((p) => [p.id as string, (p.full_name || p.email) as string]));
-        const changes = describePlanChanges(before, after_, (lid) => leadName.get(lid) ?? null);
+        // A revision saved before session links existed keeps the published ones.
+        const linksBefore = sessionLinks(s.links);
+        const linksAfter = sessionLinks(s.draft_links ?? s.links);
+        const changes = [...describeLinkChanges(linksBefore, linksAfter), ...describePlanChanges(before, after_, (lid) => leadName.get(lid) ?? null)];
 
         const { error } = await db.rpc("save_worship_session_plan", { p_session_id: id, p_user_id: user.id, p_plan: after_ });
         if (error) throw error;
         const { error: upErr } = await db
           .from("worship_sessions")
-          .update({ draft_plan: null, draft_updated_at: null, draft_updated_by: null, published_at: now, published_by: user.id })
+          .update({ links: linksAfter, draft_plan: null, draft_links: null, draft_updated_at: null, draft_updated_by: null, published_at: now, published_by: user.id })
           .eq("id", id);
         if (upErr) throw upErr;
         await db.from("worship_session_revisions").insert({ session_id: id, published_at: now, published_by: user.id, changes });
@@ -369,7 +395,7 @@ export async function revertToPublished(id: string): Promise<SaveResult> {
     if (!(await takeLock(user.id, id))) return { ok: false, lostLock: false, message: await busyMessage(user.id, id) };
     const { error } = await createAdminClient()
       .from("worship_sessions")
-      .update({ draft_plan: null, draft_updated_at: null, draft_updated_by: null, locked_by: null, locked_at: null })
+      .update({ draft_plan: null, draft_links: null, draft_updated_at: null, draft_updated_by: null, locked_by: null, locked_at: null })
       .eq("id", id);
     if (error) throw error;
     revalidateSession(id);

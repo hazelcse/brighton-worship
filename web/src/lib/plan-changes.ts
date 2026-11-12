@@ -1,4 +1,19 @@
-import { PART_ROLES, keyLabel, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
+import { PART_ROLES, keyLabel, type PlanItem, type PlanLink, type PlanSection, type SeqStep } from "@/lib/session-plan";
+
+/** The whole session's links added, removed or renamed, as sentences for the band (matched by address). */
+export function describeLinkChanges(before: PlanLink[], after: PlanLink[]): string[] {
+  const name = (l: PlanLink) => l.label || l.url;
+  const was = new Map(before.map((l) => [l.url, l]));
+  const now = new Map(after.map((l) => [l.url, l]));
+  const out: string[] = [];
+  for (const l of after) {
+    const old = was.get(l.url);
+    if (!old) out.push(`A session link has been added: ${name(l)}`);
+    else if (old.label !== l.label) out.push(`The session link ${name(old)} has been renamed to ${name(l)}`);
+  }
+  for (const l of before) if (!now.has(l.url)) out.push(`The session link ${name(l)} has been removed`);
+  return out;
+}
 
 /**
  * What changed between the published plan and the revision about to replace it, as sentences for

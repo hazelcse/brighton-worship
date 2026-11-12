@@ -125,7 +125,10 @@ minimised). The 16px gap between them is a drag handle (line shows on hover; arr
 16px, Shift 64px; double-click resets): it moves the split only, never the page width. The bank
 stays 320px to half the row and the plan keeps at least 560px; the chosen width is remembered per
 browser (`localStorage` `sessions.songBankWidth`). Left: back link, date line, title + badges, a row of 36px icon buttons and "Publish",
-alerts, band (collapsible), then the plan editor (item cards, 2 → 4 field columns). Below 1024px
+alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
+while editing; only when the session has links; added from the **+** menu's "+ Session link"),
+then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
+one "Name: address" per line, no bullets) (item cards, 2 → 4 field columns). Below 1024px
 the song bank is a floating "Song bank" pill that opens full screen. A song opened in the panel
 shows its details, then the songsheet preview card, then the "Open song page ↗" link.
 

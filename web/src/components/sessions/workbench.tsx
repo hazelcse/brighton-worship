@@ -19,9 +19,10 @@ import { SimplePlan } from "@/components/sessions/simple-plan";
 import { PartCues } from "@/components/sessions/part-cues";
 import { SongBankPanel, type BankSong } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
+import { SessionLinks, type SessionLinkEdit } from "@/components/sessions/session-links";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { formatDate, ROLE_SHORT } from "@/lib/roster";
-import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanSection } from "@/lib/session-plan";
+import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanLink, type PlanSection } from "@/lib/session-plan";
 import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessions";
 
 const btn = "inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium disabled:opacity-60";
@@ -163,7 +164,9 @@ function moveThrough(plan: PlanSection[], id: string, dir: -1 | 1): PlanSection[
   return next;
 }
 
-function AddMenu({ onAdd }: { onAdd: (what: "song" | "transition" | "section") => void }) {
+type AddWhat = "song" | "transition" | "section" | "session-link";
+
+function AddMenu({ onAdd }: { onAdd: (what: AddWhat) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -177,7 +180,7 @@ function AddMenu({ onAdd }: { onAdd: (what: "song" | "transition" | "section") =
       document.removeEventListener("keydown", esc);
     };
   }, [open]);
-  const item = (what: "song" | "transition" | "section", text: string, nested = false) => (
+  const item = (what: AddWhat, text: string, nested = false) => (
     <button
       type="button"
       role="menuitem"
@@ -204,6 +207,7 @@ function AddMenu({ onAdd }: { onAdd: (what: "song" | "transition" | "section") =
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-full z-30 mt-2 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+          {item("session-link", "+ Session link")}
           {item("section", "+ New section")}
           <div className="border-t border-border" />
           {item("song", "+ New song")}
@@ -365,6 +369,9 @@ export function Workbench({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<PlanSection[]>(initial.plan);
+  const [draftLinks, setDraftLinks] = useState<PlanLink[]>(initial.links);
+  /** The session link popup: which link, or "new". */
+  const [linkDialog, setLinkDialog] = useState<SessionLinkEdit>(null);
   /** Changed since editing started (and not saved). */
   const [dirty, setDirty] = useState(false);
   const [lockMessage, setLockMessage] = useState<string | null>(null);
@@ -396,18 +403,21 @@ export function Workbench({
   const revision = canEdit ? initial.revision : null;
   const viewingRevision = !editing && Boolean(revision) && !showPublished;
   const plan = editing ? draft : viewingRevision ? revision!.plan : initial.plan;
+  const links = editing ? draftLinks : viewingRevision ? revision!.links : initial.links;
   const shownStatus = initial.status;
   const published = shownStatus === "published";
 
   // ---- editing --------------------------------------------------------------
   // Nothing saves until the floppy disk. Close the app (or lose the lock) and the edits are dropped.
   const latest = useRef(draft);
+  const latestLinks = useRef(draftLinks);
 
   const stopEditing = useCallback(
     (message: string | null) => {
       setEditing(false);
       setDirty(false);
       setSelectedId(null);
+      setLinkDialog(null);
       setLeaving(null);
       setLockMessage(message);
       router.refresh();
@@ -421,6 +431,12 @@ export function Workbench({
       latest.current = next;
       return next;
     });
+    setDirty(true);
+  }, []);
+
+  const changeLinks = useCallback((next: PlanLink[]) => {
+    latestLinks.current = next;
+    setDraftLinks(next);
     setDirty(true);
   }, []);
 
@@ -439,6 +455,9 @@ export function Workbench({
     const start = res.workbench.revision?.plan ?? res.workbench.plan;
     latest.current = start;
     setDraft(start);
+    const startLinks = res.workbench.revision?.links ?? res.workbench.links;
+    latestLinks.current = startLinks;
+    setDraftLinks(startLinks);
     setDirty(false);
     setShowPublished(false);
     setEditing(true);
@@ -448,7 +467,7 @@ export function Workbench({
   const saveAndStop = useCallback(async (): Promise<boolean> => {
     setBusy(true);
     setError(null);
-    const res = await saveDraft(initial.id, latest.current);
+    const res = await saveDraft(initial.id, latest.current, latestLinks.current);
     setBusy(false);
     if (res.ok) {
       stopEditing(null);
@@ -652,7 +671,8 @@ export function Workbench({
     select(item);
   }
 
-  function add(what: "song" | "transition" | "section") {
+  function add(what: AddWhat) {
+    if (what === "session-link") return setLinkDialog("new");
     if (what === "section") {
       const id = newId();
       change((p) => [...p, { id, name: "New section", items: [] }]);
@@ -905,6 +925,8 @@ export function Workbench({
             </ul>
           </details>
         )}
+
+        <SessionLinks links={links} editing={editing} dialog={linkDialog} onDialog={setLinkDialog} onChange={changeLinks} />
 
         {!editing && simple ? (
           <SimplePlan plan={plan} leadName={(id) => (id ? (singers.find((x) => x.id === id)?.name ?? null) : null)} highlight={initial.myRole} />

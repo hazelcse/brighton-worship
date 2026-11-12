@@ -215,7 +215,7 @@ function Grip({ item, drag, api }: { item: PlanItem; drag: Drag; api: EditorApi 
 // ---------------------------------------------------------------------------
 
 /** "Link 1: Live version", the name linking to the address; the address itself if it has no name. */
-function LinkList({ links, onEdit, onRemove }: { links: PlanLink[]; onEdit?: (i: number) => void; onRemove?: (i: number) => void }) {
+export function LinkList({ links, onEdit, onRemove }: { links: PlanLink[]; onEdit?: (i: number) => void; onRemove?: (i: number) => void }) {
   return (
     <ul className="space-y-1">
       {links.map((l, i) => (
@@ -246,7 +246,7 @@ function LinkList({ links, onEdit, onRemove }: { links: PlanLink[]; onEdit?: (i:
 }
 
 /** Add or edit one link in a popup: Cancel leaves things as they were, Save puts it in. */
-function LinkDialog({ initial, onSave, onClose }: { initial: PlanLink | null; onSave: (link: PlanLink) => void; onClose: () => void }) {
+export function LinkDialog({ initial, onSave, onClose }: { initial: PlanLink | null; onSave: (link: PlanLink) => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState(initial?.label ?? "");
   const [url, setUrl] = useState(initial?.url ?? "");
