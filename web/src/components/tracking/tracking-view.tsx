@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { formatDate } from "@/lib/roster";
 import { BAND_COLUMNS, MAX_SONGS, MINISTRY_TEXT, linkLabel, serviceType, songSlots, type BandKey, type SessionRecord } from "@/lib/tracking";
 import { deleteRecords, updateRecord } from "@/app/(app)/sessions/tracking/actions";
@@ -370,6 +370,15 @@ function ColumnPicker({ hidden, setHidden }: { hidden: ColKey[]; setHidden: (h: 
     };
   }, [open]);
   const shown = ALL_COLS.length - hidden.length;
+  // The menu hangs from the button's right edge, unless that would push it off the left of the
+  // screen (on phones the button wraps to the start of a row): then it hangs from the left edge.
+  const [fromLeft, setFromLeft] = useState(false);
+  useLayoutEffect(() => {
+    if (!open || !ref.current) return;
+    const menu = ref.current.querySelector<HTMLElement>("[data-columns-menu]");
+    const right = ref.current.getBoundingClientRect().right;
+    setFromLeft(right - (menu?.offsetWidth ?? 240) < 16);
+  }, [open]);
 
   return (
     <div ref={ref} className="relative">
@@ -395,7 +404,7 @@ function ColumnPicker({ hidden, setHidden }: { hidden: ColKey[]; setHidden: (h: 
         <Chevron open={open} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1.5 max-h-[70vh] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg">
+        <div data-columns-menu className={`absolute ${fromLeft ? "left-0" : "right-0"} top-full z-30 mt-1.5 max-h-[70vh] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg`}>
           {COLUMN_GROUPS.map((g) => {
             const keys = g.cols.map((c) => c.key);
             const allOn = keys.every((k) => !hidden.includes(k));

@@ -3,10 +3,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * One preview page as a PNG (/preview/1, /preview/2, ...) or the whole sheet as a PDF (/preview/pdf).
+ * One preview page as a PNG (/preview/1, /preview/2, ...) or the whole sheet as a PDF (/preview/pdf;
+ * ?download=1 sends it as a download).
  * Previews never change for a given songsheet (a replaced sheet gets a new id), so they can be cached.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ versionId: string; page: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ versionId: string; page: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if (!user.can("songs.view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -38,7 +39,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ version
   };
   if (isPdf) {
     const name = v.file_name.replace(/\.docx$/i, ".pdf");
-    headers["Content-Disposition"] = `inline; filename*=UTF-8''${encodeURIComponent(name)}`;
+    const disposition = new URL(req.url).searchParams.has("download") ? "attachment" : "inline";
+    headers["Content-Disposition"] = `${disposition}; filename*=UTF-8''${encodeURIComponent(name)}`;
   }
   return new Response(blob, { headers });
 }

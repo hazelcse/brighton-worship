@@ -150,6 +150,7 @@ async function SongView({ params, searchParams }: Params) {
                     scan_status: versions[0].scan_status,
                     scan_error: versions[0].scan_error,
                     issues: versions[0].issues,
+                    hasPdf: (versions[0].preview_pages ?? 0) > 0,
                     keyInfo: {
                       keys: versions[0].keys ?? [],
                       alternates: versions[0].alternate_keys ?? [],

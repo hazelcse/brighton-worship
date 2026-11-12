@@ -90,7 +90,10 @@ a dashed **+** square adds one (dialog with a quarter picker, 2 → 4 columns).
 status pill on the right.
 
 **`/roster/current`** (and `?quarter=next`): full width. Back link; quarter label over the date
-range title; root gets "Edit" (dark). Legend line, then the roster table (scrolls sideways).
+range title; root gets "Edit" (dark). Legend line, then the roster table (scrolls sideways). This
+week's rows are bold between two heavy lines; earlier weeks are faded (`opacity-70`) and start
+hidden. A small triangle in the left side padding (16px wide, so it fits the phone gutter), centred
+on this week's heavy top line, shows / hides them (▸ hidden, ▾ shown; `past-rows-toggle.tsx`).
 
 **`/roster/schedule`**: full width. From 1024px: calendar on the left, a **320px** side column on
 the right, the whole thing filling the window height. Calendar: month header with Today and
@@ -156,7 +159,9 @@ shows its details, then the songsheet preview card, then the "Open song page ↗
 (`data-wide-page`: max (window + 992px) ÷ 2), so more table columns show. Title "Tracking", dark **+** with a pending count
 badge; while table rows are ticked, a red-outlined 40px **bin** sits just left of the + (opens
 "Are you sure you want to delete N sessions?"). Toolbar (wraps): Filters, search (fills the row,
-min 192px), Columns, Table/List switch.
+min 192px), Columns, Table/List switch. The Columns menu (240px) hangs from the button's right
+edge, or from its left edge when that would run off the screen (phones, where Columns wraps to
+the start of a row).
 Table view: bordered box, max 65% of the window tall, scrolls both ways, sticky header; a sticky
 40px checkbox column (header box ticks all shown rows) then the sticky date column; ticked rows
 tint orange; sessions marked as no session have no checkbox and show their reason across the

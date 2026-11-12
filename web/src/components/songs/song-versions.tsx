@@ -16,6 +16,8 @@ type Version = {
   scan_error: string | null;
   issues: { code: string; severity: "error" | "warning" | "info"; message: string }[];
   keyInfo: KeyInfo;
+  /** A PDF of the sheet exists (made with the preview). */
+  hasPdf: boolean;
 };
 
 const KEY_ISSUE_CODES = new Set(["written_key_mismatch", "title_key_mismatch", "low_key_confidence"]);
@@ -63,8 +65,9 @@ export function SongVersions({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {/* The PDF (from the stored preview); the .docx until a preview exists. */}
             <a
-              href={`/api/songsheets/${v.id}`}
+              href={v.hasPdf ? `/api/songsheets/${v.id}/preview/pdf?download=1` : `/api/songsheets/${v.id}`}
               className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-background"
             >
               Download

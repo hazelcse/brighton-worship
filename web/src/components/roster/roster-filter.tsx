@@ -105,6 +105,8 @@ export function FilteredRosterTable({
   };
   const settingsOf = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
   const [types, setTypes] = useState<Type[]>(["sunday", "pnp", "adhoc"]);
+  // With `thisWeekOf`: sessions in earlier weeks start folded away (the triangle beside the table shows them).
+  const [showPast, setShowPast] = useState(false);
   const shown = sessions.filter(
     (s) => (s.ministry === "any" || ministries.includes(s.ministry)) && types.includes(typeOf(s)),
   );
@@ -143,6 +145,8 @@ export function FilteredRosterTable({
           problems={edit?.problemCells ? new Map(Object.entries(edit.problemCells)) : undefined}
           serveStatus={serveStatus}
           thisWeekOf={thisWeekOf}
+          pastHidden={!showPast}
+          onTogglePast={thisWeekOf ? () => setShowPast((v) => !v) : undefined}
           isMarked={hl?.highlight ? (memberId, date) => isHighlighted(hl.highlight, memberId, date) : undefined}
         />
       )}

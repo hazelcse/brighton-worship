@@ -14,6 +14,7 @@ import type {
   SessionRow,
 } from "@/lib/roster-data";
 import { MissBadge } from "./miss-badge";
+import { PastRowsFrame } from "./past-rows-toggle";
 
 const MINISTRY_STYLE = {
   em: "bg-sky-100 text-sky-800",
@@ -57,6 +58,8 @@ export function RosterTable({
   isMarked,
   serveStatus,
   thisWeekOf,
+  pastHidden,
+  onTogglePast,
 }: {
   sessions: SessionRow[];
   assignments: AssignmentRow[];
@@ -78,6 +81,10 @@ export function RosterTable({
   thisWeekOf?: string;
   /** This quarter's roster: light orange until confirmed, light red when they can't serve. */
   serveStatus?: Record<string, "pending" | "accepted" | "declined">;
+  /** With `thisWeekOf`: hide the sessions in weeks before it. */
+  pastHidden?: boolean;
+  /** With `thisWeekOf`: show a triangle beside this week's top line that hides / shows past sessions. */
+  onTogglePast?: () => void;
 }) {
   const active = sessions.filter((s) => !s.cancelled);
   const cell = new Map<string, AssignmentRow[]>();
@@ -119,8 +126,14 @@ export function RosterTable({
   const thisWeek = thisWeekOf ? active.filter((s) => weekOf(s.date) === weekOf(thisWeekOf)).map((s) => s.id) : [];
   const firstOfWeek = thisWeek[0];
   const lastOfWeek = thisWeek[thisWeek.length - 1];
+  // Sessions in weeks before this one, which can be folded away; the toggle sits on the first
+  // row after them (this week's first row, when this week has a session).
+  const past = new Set(thisWeekOf ? active.filter((s) => weekOf(s.date) < weekOf(thisWeekOf)).map((s) => s.id) : []);
+  const boundary = past.size > 0 ? active.find((s) => !past.has(s.id))?.id : undefined;
+  const togglePast = onTogglePast && boundary ? onTogglePast : undefined;
+  const rows = togglePast && pastHidden ? active.filter((s) => !past.has(s.id)) : active;
 
-  return (
+  const table = (
     <div className="overflow-x-auto rounded-xl border border-border bg-surface">
       <table className="w-full border-collapse text-left text-[13px]">
         <thead className="sticky top-0 bg-background text-xs uppercase tracking-wide text-muted">
@@ -147,11 +160,12 @@ export function RosterTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {active.map((s) => (
+          {rows.map((s) => (
             <tr
               key={s.id}
+              data-past-boundary={togglePast && s.id === boundary ? "" : undefined}
               aria-current={thisWeek.includes(s.id) ? "date" : undefined}
-              className={`align-top ${tinted.has(s.id) ? "bg-slate-100/50" : ""} ${s.id === firstOfWeek ? "border-t-2 border-t-foreground" : ""} ${
+              className={`align-top ${past.has(s.id) ? "opacity-70" : ""} ${tinted.has(s.id) ? "bg-slate-100/50" : ""} ${s.id === firstOfWeek ? "border-t-2 border-t-foreground" : ""} ${
                 s.id === lastOfWeek ? "border-b-2 border-b-foreground" : ""
               }`}
             >
@@ -254,6 +268,12 @@ export function RosterTable({
         </tbody>
       </table>
     </div>
+  );
+  if (!togglePast) return table;
+  return (
+    <PastRowsFrame hidden={Boolean(pastHidden)} count={past.size} onToggle={togglePast}>
+      {table}
+    </PastRowsFrame>
   );
 }
 
