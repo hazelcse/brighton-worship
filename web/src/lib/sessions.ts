@@ -3,7 +3,7 @@ import { cache } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { CACHE_LIFE, SONGS_TAG } from "@/lib/cache-tags";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ROLE_LABEL, addDays, todayYmd } from "@/lib/roster";
+import { ROLE_LABEL, addDays, defaultRehearsalTime, defaultStartTime, hhmm, todayYmd } from "@/lib/roster";
 import type { ReminderSession } from "@/lib/reminder";
 import { LOCK_STALE_MS, keyLabel, partCues, type BuildStage, type PartCue, type PlanLink, type PlanSection, type PlanStatus, type SeqStep, type SongType } from "@/lib/session-plan";
 import type { CurrentUser } from "@/lib/auth";
@@ -232,6 +232,12 @@ export type Workbench = {
   status: PlanStatus;
   /** The band's rehearsal for this session, if it has one. */
   rehearsalDate: string | null;
+  /** "HH:MM": the rehearsal's time as set, else the usual one for its kind and day; null = none given. */
+  rehearsalTime: string | null;
+  /** "HH:MM": when the service starts (as set, else the usual), or null. */
+  startTime: string | null;
+  /** On a roster (so it can have a rehearsal), rather than an ad-hoc plan. */
+  onRoster: boolean;
   band: BandMember[];
   /** The viewer's part in this session, if they're on it (e.g. "drums"). */
   myRole: string | null;
@@ -318,7 +324,7 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
       ? db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", s.roster_session_id)
       : Promise.resolve({ data: [] as { member_id: string; role: string; also_roles: string[] | null }[] }),
     s.roster_session_id
-      ? db.from("roster_sessions").select("rehearsal_date").eq("id", s.roster_session_id).maybeSingle()
+      ? db.from("roster_sessions").select("kind, rehearsal_date, rehearsal_time, start_time").eq("id", s.roster_session_id).maybeSingle()
       : Promise.resolve({ data: null }),
     db
       .from("worship_session_revisions")
@@ -356,6 +362,11 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
     serviceName: s.service_name,
     status: s.status as PlanStatus,
     rehearsalDate: (rs?.rehearsal_date as string | null | undefined) ?? null,
+    rehearsalTime: rs?.rehearsal_date
+      ? (hhmm(rs.rehearsal_time as string | null) ?? defaultRehearsalTime((rs.kind as string | null) ?? "custom", rs.rehearsal_date as string))
+      : null,
+    startTime: rs ? (hhmm(rs.start_time as string | null) ?? defaultStartTime((rs.kind as string | null) ?? "custom")) : null,
+    onRoster: Boolean(rs),
     band: (assignments ?? [])
       .map((a) => ({ id: a.member_id, name: people.get(a.member_id) ?? "Someone", role: a.role, also: (a.also_roles as string[]) ?? [] }))
       .sort((a, b) => order(a.role) - order(b.role) || a.name.localeCompare(b.name)),

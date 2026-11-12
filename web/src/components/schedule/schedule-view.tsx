@@ -101,23 +101,23 @@ const COLOURS = [
   { bar: "bg-[#a87f92]/20 text-[#5c3a4a] border-[#a87f92]", dot: "bg-[#a87f92]" }, // dusty rose
   { bar: "bg-[#8a8fb5]/20 text-[#3f4468] border-[#8a8fb5]", dot: "bg-[#8a8fb5]" }, // periwinkle
 ];
-function colourFor(memberId: string) {
+export function colourFor(memberId: string) {
   let h = 0;
   for (const ch of memberId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return COLOURS[h % COLOURS.length]!;
 }
 
-function monthStart(date: string) {
+export function monthStart(date: string) {
   const { y, m } = parseYmd(date);
   return ymd(y, m, 1);
 }
-function shiftMonth(first: string, n: number) {
+export function shiftMonth(first: string, n: number) {
   const { y, m } = parseYmd(first);
   const t = y * 12 + (m - 1) + n;
   return ymd(Math.floor(t / 12), (t % 12) + 1, 1);
 }
 /** Monday on or before the date. */
-function weekStart(date: string) {
+export function weekStart(date: string) {
   return addDays(date, -((weekday(date) + 6) % 7));
 }
 function dayNumber(date: string) {
@@ -136,14 +136,14 @@ function shortDate(date: string) {
   const day = formatDate(date, { weekday: "short" });
   return `${day}, ${date.slice(5, 7)}/${date.slice(8, 10)}/${date.slice(2, 4)}`;
 }
-function shortDates(a: { startsOn: string; endsOn: string }) {
+export function shortDates(a: { startsOn: string; endsOn: string }) {
   return a.startsOn === a.endsOn ? shortDate(a.startsOn) : `${shortDate(a.startsOn)} – ${shortDate(a.endsOn)}`;
 }
 
 type Segment = { absence: Absence; col: number; span: number; lane: number; startsHere: boolean; endsHere: boolean };
 
 /** Lay a week's absences into lanes, Google Calendar style: earliest and longest first. */
-function layoutWeek(start: string, absences: Absence[], maxLanes: number) {
+export function layoutWeek(start: string, absences: Absence[], maxLanes: number) {
   const end = addDays(start, 6);
   const inWeek = absences
     .filter((a) => a.startsOn <= end && a.endsOn >= start)
@@ -931,7 +931,7 @@ function AbsenceForm({
   );
 }
 
-function Arrow({ dir }: { dir: "left" | "right" }) {
+export function Arrow({ dir }: { dir: "left" | "right" }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={dir === "left" ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} />

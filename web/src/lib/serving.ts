@@ -255,7 +255,14 @@ const info = (s: SessionInfo & { kind?: string }): SessionInfo => ({ id: s.id, d
  * they're on that session or another that day, away that day or at its rehearsal, or can't do any of the band
  * leader / talkback that comes with the place (nobody else in the band can take it over).
  */
-export async function coverOptions(sessionId: string, role: string, requesterId: string, db: Db = createAdminClient()): Promise<CoverCandidate[]> {
+export async function coverOptions(
+  sessionId: string,
+  role: string,
+  requesterId: string,
+  db: Db = createAdminClient(),
+  /** Check against this rehearsal day instead of the stored one (a rehearsal about to move; null = none). */
+  rehearsalOn?: string | null,
+): Promise<CoverCandidate[]> {
   const [{ data: session }, people, { data: serving }, withPlace] = await Promise.all([
     db.from("roster_sessions").select("date, rehearsal_date, roster_id").eq("id", sessionId).maybeSingle(),
     activePeople(db),
@@ -263,7 +270,8 @@ export async function coverOptions(sessionId: string, role: string, requesterId:
     bandRolesWithPlace(sessionId, requesterId, db),
   ]);
   if (!session) return [];
-  const days = [session.date, ...(session.rehearsal_date ? [session.rehearsal_date] : [])];
+  const rehearsal = rehearsalOn === undefined ? session.rehearsal_date : rehearsalOn;
+  const days = [session.date, ...(rehearsal ? [rehearsal] : [])];
   const [{ data: away }, { data: quarter }] = await Promise.all([
     db
       .from("absences")
@@ -480,6 +488,16 @@ export async function awayFor(db: Db, userId: string, sessionId: string): Promis
   return a ? { id: a.id, startsOn: a.starts_on, endsOn: a.ends_on, reason: a.reason } : null;
 }
 
+/**
+ * Rehearsals this person's worship leader said they can miss (moved to a day they're away, going
+ * ahead without a sub), as "sessionId|rehearsalDate". Stale ones (the rehearsal moved again) don't
+ * match the session's rehearsal any more, so they no longer count.
+ */
+export async function excusedRehearsals(db: Db, userId: string): Promise<Set<string>> {
+  const { data } = await db.from("rehearsal_excusals").select("session_id, rehearsal_date").eq("member_id", userId);
+  return new Set((data ?? []).map((e) => `${e.session_id}|${e.rehearsal_date}`));
+}
+
 /** A session someone is serving at (confirmed, or not answered yet) that falls in an absence they're adding. */
 export type AbsenceClash = {
   session: SessionInfo;
@@ -502,11 +520,12 @@ export type AbsenceClash = {
 export async function absenceClashes(userId: string, startsOn: string, endsOn: string): Promise<AbsenceClash[]> {
   const db = createAdminClient();
   const today = todayYmd();
-  const [sessions, { data: places }, { data: answers }, { data: covers }] = await Promise.all([
+  const [sessions, { data: places }, { data: answers }, { data: covers }, excused] = await Promise.all([
     publishedSessions(db),
     db.from("roster_assignments").select("session_id, role").eq("member_id", userId),
     db.from("serve_requests").select("session_id, status").eq("member_id", userId).in("status", ["accepted", "pending"]),
     db.from("cover_requests").select("session_id").eq("member_id", userId).in("status", ["open", "refused"]),
+    excusedRehearsals(db, userId),
   ]);
   const status = new Map((answers ?? []).map((r) => [r.session_id as string, r.status as "accepted" | "pending"]));
   const handled = new Set((covers ?? []).map((c) => c.session_id));
@@ -514,7 +533,7 @@ export async function absenceClashes(userId: string, startsOn: string, endsOn: s
   const found = (places ?? []).flatMap((p) => {
     const s = sessions.get(p.session_id);
     if (!s || s.date < today || !status.has(s.id) || handled.has(s.id)) return [];
-    const on = [...(inRange(s.date) ? (["service"] as const) : []), ...(s.rehearsal && inRange(s.rehearsal) ? (["rehearsal"] as const) : [])];
+    const on = [...(inRange(s.date) ? (["service"] as const) : []), ...(s.rehearsal && inRange(s.rehearsal) && !excused.has(`${s.id}|${s.rehearsal}`) ? (["rehearsal"] as const) : [])];
     return on.length ? [{ s, role: p.role as string, on, unanswered: status.get(s.id) === "pending" }] : [];
   });
   const clashes = await Promise.all(
@@ -653,12 +672,13 @@ export async function loadRequestsBoard(userId: string): Promise<RequestsBoard> 
   const ids = [...sessions.keys()].filter((id) => sessions.get(id)!.date >= today);
   if (!ids.length) return { pending: [], incoming: [], mine: [], handoversIn: [], handoversMine: [], awayUncovered: [] };
 
-  const [people, { data: pendingRows }, { data: covers }, { data: myServing }, { data: myAway }] = await Promise.all([
+  const [people, { data: pendingRows }, { data: covers }, { data: myServing }, { data: myAway }, excused] = await Promise.all([
     activePeople(db),
     db.from("serve_requests").select("id, session_id, role").eq("member_id", userId).eq("status", "pending").in("session_id", ids),
     db.from("cover_requests").select("id, session_id, member_id, role, target_id, status").in("status", ["open", "refused"]).in("session_id", ids),
     db.from("roster_assignments").select("session_id, role").eq("member_id", userId).in("session_id", ids),
     db.from("absences").select("id, starts_on, ends_on, reason").eq("member_id", userId).gte("ends_on", today),
+    excusedRehearsals(db, userId),
   ]);
   const person = (id: string | null): Candidate | null => (id ? { id, name: people.get(id)?.name ?? "Someone" } : null);
   const byDate = <T extends { session: SessionInfo }>(xs: T[]) =>
@@ -680,8 +700,10 @@ export async function loadRequestsBoard(userId: string): Promise<RequestsBoard> 
 
   const proposals = await pendingProposals(db, (covers ?? []).map((c) => c.id), sessions, people, userId);
   // The absence (if any) covering a session's date or its rehearsal.
+  // A rehearsal their worship leader said they can miss doesn't count.
   const awayAt = (s: SessionInfo): AwayAbsence | null => {
-    const a = (myAway ?? []).find((x) => [s.date, ...(s.rehearsal ? [s.rehearsal] : [])].some((d) => x.starts_on <= d && x.ends_on >= d));
+    const days = [s.date, ...(s.rehearsal && !excused.has(`${s.id}|${s.rehearsal}`) ? [s.rehearsal] : [])];
+    const a = (myAway ?? []).find((x) => days.some((d) => x.starts_on <= d && x.ends_on >= d));
     return a ? { id: a.id, startsOn: a.starts_on, endsOn: a.ends_on, reason: a.reason } : null;
   };
   const incoming: CoverItem[] = [];

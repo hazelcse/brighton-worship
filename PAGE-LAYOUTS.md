@@ -133,7 +133,13 @@ sticky **song bank** panel on the right (384px at lg, 448px at xl by default; co
 minimised). The 16px gap between them is a drag handle (line shows on hover; arrow keys move it
 16px, Shift 64px; double-click resets): it moves the split only, never the page width. The bank
 stays 320px to half the row and the plan keeps at least 560px; the chosen width is remembered per
-browser (`localStorage` `sessions.songBankWidth`). Left: back link, date line, title + badges, a row of 36px icon buttons and "Publish",
+browser (`localStorage` `sessions.songBankWidth`). Left: back link, date line (underlines on hover; opens the **Dates** dialog, 448px: service and
+rehearsal with times, and for its worship leaders "Change rehearsal date" (or "Add rehearsal" when there's none) bottom right, which turns
+it into a 512px dialog: a month calendar from this month to the service's month, 56px rows with
+the band's absences as 4px bars, days before today or after the service greyed out, the service
+boxed orange, the current rehearsal blue, the new day green; arrows between months, swipe on
+phones; then the time, an "Away on …" list with a sub picker per person, and Remove rehearsal /
+Cancel / Save), title + badges, a row of 36px icon buttons and "Publish",
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,

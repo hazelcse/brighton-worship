@@ -20,8 +20,9 @@ import { PartCues } from "@/components/sessions/part-cues";
 import { SongBankPanel, type BankSong } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
 import { SessionLinks, type SessionLinkEdit } from "@/components/sessions/session-links";
+import { RehearsalDates } from "@/components/sessions/rehearsal-dates";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { formatDate, ROLE_SHORT } from "@/lib/roster";
+import { ROLE_SHORT } from "@/lib/roster";
 import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanLink, type PlanSection } from "@/lib/session-plan";
 import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessions";
 
@@ -787,15 +788,15 @@ export function Workbench({
         {/* Phones: date, rehearsal, title, badges and buttons each get a line of their own. */}
         <header className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
           <div className="min-w-0 sm:flex-1">
-            <p className="text-sm font-medium text-muted">
-              {formatDate(initial.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              {initial.rehearsalDate && (
-                <span className="block sm:inline">
-                  <span className="hidden sm:inline"> · </span>
-                  Rehearsal {formatDate(initial.rehearsalDate, { weekday: "short", day: "numeric", month: "short" })}
-                </span>
-              )}
-            </p>
+            {/* Opens the service and rehearsal dates; worship leaders can move the rehearsal from there. */}
+            <RehearsalDates
+              planId={initial.id}
+              date={initial.date}
+              startTime={initial.startTime}
+              rehearsal={initial.rehearsalDate}
+              rehearsalTime={initial.rehearsalTime}
+              canChange={canEdit && initial.onRoster}
+            />
             <div className="flex flex-col gap-x-2 gap-y-1.5 sm:flex-row sm:flex-wrap sm:items-center">
               <h1 className="font-display text-3xl font-semibold">{initial.serviceName}</h1>
               <div className="flex items-center gap-2">

@@ -169,7 +169,7 @@ export function CandidateOptions({ candidates, keep }: { candidates: CoverCandid
 const withPlace = (cs: CoverCandidate[]) => cs.find((c) => c.withPlace?.length)?.withPlace ?? [];
 
 /** Band leader / talkback that come with the place: whoever covers it takes over what they can. */
-function WithPlaceNote({ candidates }: { candidates: CoverCandidate[] }) {
+export function WithPlaceNote({ candidates }: { candidates: CoverCandidate[] }) {
   const roles = withPlace(candidates);
   const star = candidates.find((c) => c.recommended);
   return (
