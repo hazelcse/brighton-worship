@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { formatRange, quarterOf, todayYmd } from "@/lib/roster";
 import { listRosters } from "@/lib/roster-data";
@@ -65,7 +66,7 @@ async function PastRosters() {
 
 export default function PastRostersPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<CalendarLoader label="Loading past rosters" className="py-24" />}>
       <PastRosters />
     </Suspense>
   );

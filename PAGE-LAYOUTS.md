@@ -218,6 +218,14 @@ out the key" show `NoteLoader` (`web/src/components/note-loader.tsx`): three ran
 (text characters, the device's own symbol font) bouncing on the spot over "Loading . .. ...". It
 fades in after 300ms so quick loads show nothing; with reduce motion the notes stay still.
 
+**Loading (roster pages)**: every `/roster/...` page shows `CalendarLoader`
+(`web/src/components/calendar-loader.tsx`) while its data loads, `py-24`: three 44px calendar
+pages (orange month strip, day number, regular weight) for the next three Sundays, each flipping
+over on its top edge in turn and coming back as the Sunday three weeks on, over "Loading the
+roster . .. ..." (the label names the page). Same 300ms fade-in and reduce-motion rule as
+`NoteLoader`. It only shows on a full page load; moving between pages in the app keeps the old
+page up until the new one is ready.
+
 ### Team
 
 **`/team`**: full width, no title. Toolbar: instrument and ministry pickers and search (224px

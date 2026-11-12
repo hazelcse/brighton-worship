@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { addDays, formatRange, makeSentence, quarterOf } from "@/lib/roster";
 import { loadAbsences, loadAssignments, loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
@@ -172,7 +173,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function GeneratedPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading the roster…</p>}>
+    <Suspense fallback={<CalendarLoader label="Loading the roster" className="py-24" />}>
       <GeneratedView params={params} />
     </Suspense>
   );

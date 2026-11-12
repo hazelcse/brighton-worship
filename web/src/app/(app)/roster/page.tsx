@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { formatRange, nextQuarter, quarterOf, todayYmd } from "@/lib/roster";
 import { publishedRosterFor } from "@/lib/roster-data";
@@ -108,7 +109,7 @@ export default function RosterPage() {
   return (
     <>
       <AutoRefresh />
-      <Suspense fallback={<p className="text-sm text-muted">Loading the roster…</p>}>
+      <Suspense fallback={<CalendarLoader label="Loading the roster" className="py-24" />}>
         <RosterView />
       </Suspense>
     </>

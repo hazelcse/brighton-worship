@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { formatRange, makeSentence, quarterOf } from "@/lib/roster";
 import { loadAssignments, loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
@@ -73,7 +74,7 @@ export default function RosterDetailPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <AutoRefresh />
-      <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+      <Suspense fallback={<CalendarLoader label="Loading the roster" className="py-24" />}>
         <RosterDetail params={params} />
       </Suspense>
     </>

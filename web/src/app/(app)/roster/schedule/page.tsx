@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { todayYmd } from "@/lib/roster";
@@ -113,7 +114,7 @@ export default function SchedulePage({ searchParams }: { searchParams: Promise<{
   return (
     <>
       <AutoRefresh />
-      <Suspense fallback={<p className="text-sm text-muted">Loading the schedule…</p>}>
+      <Suspense fallback={<CalendarLoader label="Loading the schedule" className="py-24" />}>
         <Schedule searchParams={searchParams} />
       </Suspense>
     </>

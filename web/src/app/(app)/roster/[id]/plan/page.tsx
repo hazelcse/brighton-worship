@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { formatRange, hhmm, quarterOf } from "@/lib/roster";
 import { loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
@@ -132,7 +133,7 @@ async function PlanView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function PlanPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<CalendarLoader label="Loading the plan" className="py-24" />}>
       <PlanView params={params} />
     </Suspense>
   );

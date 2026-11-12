@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
 import { formatRange, nextQuarter, quarterOf, todayYmd } from "@/lib/roster";
 import { listRosters, type RosterRow } from "@/lib/roster-data";
@@ -65,7 +66,7 @@ async function Rosters() {
 
 export default function RostersPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<CalendarLoader label="Loading the rosters" className="py-24" />}>
       <Rosters />
     </Suspense>
   );

@@ -139,6 +139,35 @@ body {
   }
 }
 
+/* Roster pages' loading indicator (components/calendar-loader.tsx). Hidden for the first 300ms.
+   Each page swings over on its top edge; it's edge-on (invisible) at the start and end of every
+   round, which is when the component moves its date on a week. */
+.calendar-loader {
+  animation: note-loader-in 0.3s ease-out 0.3s both;
+}
+.calendar-loader-page {
+  transform-origin: 50% 0;
+  backface-visibility: hidden;
+  animation: calendar-loader-flip 2.4s ease-in-out infinite;
+}
+@keyframes calendar-loader-flip {
+  0% {
+    transform: rotateX(90deg);
+  }
+  15%,
+  80% {
+    transform: rotateX(0deg);
+  }
+  100% {
+    transform: rotateX(-90deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .calendar-loader-page {
+    animation: none;
+  }
+}
+
 dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
   backdrop-filter: blur(2px);
