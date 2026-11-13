@@ -350,7 +350,9 @@ dialog::backdrop {
    before the wind blows again and the leaf drifts back in from the left (a 7.6s round, so the
    first 47.37% of each keyframe list is the 3.6s of movement). */
 .wind-leaf-gust {
-  stroke-dasharray: 100 100;
+  /* The gap is longer than the dash, and the rest offsets (±110) park the dash well clear of the
+     path, so the round caps don't leave a dot behind at either end while the wind rests. */
+  stroke-dasharray: 100 120;
   animation: wind-leaf-gust 7.6s ease-in-out infinite;
 }
 .wind-leaf-gust:nth-child(2) {
@@ -364,7 +366,7 @@ dialog::backdrop {
 }
 @keyframes wind-leaf-gust {
   0% {
-    stroke-dashoffset: 100;
+    stroke-dashoffset: 110;
   }
   21.32%,
   26.05% {
@@ -372,7 +374,7 @@ dialog::backdrop {
   }
   47.37%,
   100% {
-    stroke-dashoffset: -100;
+    stroke-dashoffset: -110;
   }
 }
 @keyframes wind-leaf-leaf {

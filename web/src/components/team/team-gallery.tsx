@@ -196,13 +196,14 @@ function MobileFilter({
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted">
           <path d="M3 5h18M6 12h12M10 19h4" />
         </svg>
-        Filter
+        {/* Just the icon and arrow, like the song bank's and tracking's phone Filters buttons. */}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition ${open ? "rotate-180" : ""}`}>
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
       {open && (
-        <div className="absolute left-0 z-20 mt-2 max-h-[70vh] w-60 overflow-y-auto rounded-xl border border-border bg-surface pb-1 shadow-lg">
+        // Right-aligned to the button (it sits right of the search box), and never wider than the screen.
+        <div className="absolute right-0 z-20 mt-2 max-h-[70vh] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-surface pb-1 shadow-lg">
           {group("Instrument", INSTRUMENTS, instruments, setInstruments)}
           {group("Ministry", MINISTRIES, ministries, setMinistries)}
           {picked > 0 && (

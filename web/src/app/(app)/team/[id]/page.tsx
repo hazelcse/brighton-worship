@@ -14,8 +14,10 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   if (!user.can("team.view")) notFound();
   const { id } = await params;
-  const m = await loadMember(id, { includeDevelopers: user.isRoot });
-  if (!m) notFound();
+  const loaded = await loadMember(id, { includeDevelopers: user.isRoot });
+  if (!loaded) notFound();
+  // Only root (and developers) see a member's gender; it isn't sent to anyone else.
+  const m = user.isRoot ? loaded : { ...loaded, gender: null };
   const ministry = ministryLabel(m.emPercent);
 
   return (
@@ -96,10 +98,6 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
           <div>
             <dt className="text-muted">Ministry</dt>
             <dd className="mt-0.5 font-medium">{ministry ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-muted">Gender</dt>
-            <dd className="mt-0.5 font-medium">{m.gender ? GENDER_LABEL[m.gender] : "—"}</dd>
           </div>
         </dl>
       )}

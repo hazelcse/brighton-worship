@@ -308,9 +308,9 @@ sits still and the cross isn't shown.
 
 **`/team`**: full width, no title. Toolbar: instrument and ministry pickers and search (224px
 from 640px) on the left; root gets "+ User" and "Manage permissions" on the right. **Phones
-(below 640px)**: one row: search (fills the space) on the left, then one "Filter" dropdown in place
-of the two pickers (styled like FilterMenu; tick boxes grouped under Instrument and Ministry,
-nothing ticked = no filter, plus Clear), then for root a black "+ ▾" dropdown holding "+ New user"
+(below 640px)**: one row: search (fills the space) on the left, then one Filter dropdown in place
+of the two pickers (styled like FilterMenu, icon and arrow only, no word; tick boxes grouped under Instrument and Ministry,
+nothing ticked = no filter, plus Clear; opens right-aligned to the button), then for root a black "+ ▾" dropdown holding "+ New user"
 and "Manage permissions" (menu opens right-aligned). Count line, then the **gallery cards** grid (4 per row on desktop)
 with instrument chips.
 

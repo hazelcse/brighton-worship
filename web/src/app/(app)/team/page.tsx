@@ -23,8 +23,8 @@ async function TeamView() {
   ]);
   return (
     <TeamGallery
-      // Only root sees emails and permission groups.
-      members={members.map((m) => (user.isRoot ? m : { ...m, email: "", groups: [] }))}
+      // Only root (and developers) see emails, permission groups and gender.
+      members={members.map((m) => (user.isRoot ? m : { ...m, email: "", groups: [], gender: null }))}
       isRoot={user.isRoot}
       groups={(groups ?? []).map((g) => g.name).sort((a, b) => (a === "member" ? -1 : b === "member" ? 1 : a.localeCompare(b)))}
     />
