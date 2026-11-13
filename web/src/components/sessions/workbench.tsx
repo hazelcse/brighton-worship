@@ -134,6 +134,113 @@ function BankResizer({ grid, width }: { grid: React.RefObject<HTMLDivElement | n
   );
 }
 
+/*
+ * Phones: the song bank as a sheet over the bottom of the page. No backdrop, so the plan behind it
+ * still scrolls and takes taps. The two-dash handle drags it taller or shorter (up to just under the
+ * nav); let go near the bottom and it shrinks to a bar of just the handle, which drags (or taps) back
+ * up. Only its ✕ closes it.
+ */
+const SHEET_BAR = 24; // the handle row; all that shows of a shrunk sheet
+const SHEET_SNAP = 140; // let go below this and it shrinks to the bar
+const NAV_ROOM = 64; // the sheet stops below the nav
+function sheetMax() {
+  return window.innerHeight - NAV_ROOM;
+}
+
+function BankSheet({
+  height,
+  onHeight,
+  collapsed,
+  onCollapsed,
+  children,
+}: {
+  /** Chosen height in px; null = as tall as it goes. */
+  height: number | null;
+  onHeight: (h: number) => void;
+  collapsed: boolean;
+  onCollapsed: (c: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const [drag, setDrag] = useState<number | null>(null);
+  const start = useRef<{ y: number; h: number; moved: boolean } | null>(null);
+  const clamp = (h: number) => Math.round(Math.max(SHEET_BAR, Math.min(h, sheetMax())));
+  const open = Math.min(height ?? sheetMax(), sheetMax());
+  const shown = drag ?? (collapsed ? SHEET_BAR : open);
+
+  const finish = () => {
+    const s = start.current;
+    start.current = null;
+    if (!s) return;
+    if (!s.moved) {
+      // A tap on the bar opens it back up.
+      if (collapsed) onCollapsed(false);
+    } else if (drag != null) {
+      if (drag < SHEET_SNAP) onCollapsed(true);
+      else {
+        onHeight(drag);
+        onCollapsed(false);
+      }
+    }
+    setDrag(null);
+  };
+
+  return (
+    <>
+      {/* Room under the plan, so its last items can scroll up above the sheet. */}
+      <div aria-hidden style={{ height: shown }} />
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-border bg-surface shadow-[0_-8px_24px_rgba(0,0,0,0.12)]"
+        style={{ height: shown }}
+      >
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={collapsed ? "Song bank: drag up or tap to open" : "Resize song bank"}
+          tabIndex={0}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            start.current = { y: e.clientY, h: shown, moved: false };
+          }}
+          onPointerMove={(e) => {
+            const s = start.current;
+            if (!s) return;
+            const dy = s.y - e.clientY;
+            if (Math.abs(dy) > 4) s.moved = true;
+            if (s.moved) setDrag(clamp(s.h + dy));
+          }}
+          onPointerUp={finish}
+          onPointerCancel={finish}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onCollapsed(!collapsed);
+              return;
+            }
+            const by = e.key === "ArrowUp" ? 48 : e.key === "ArrowDown" ? -48 : 0;
+            if (!by) return;
+            e.preventDefault();
+            const next = clamp(shown + by);
+            if (next < SHEET_SNAP) onCollapsed(true);
+            else {
+              onHeight(next);
+              onCollapsed(false);
+            }
+          }}
+          className="flex shrink-0 cursor-row-resize touch-none flex-col items-center justify-center gap-[3px] outline-none focus-visible:bg-background"
+          style={{ height: SHEET_BAR }}
+        >
+          <span aria-hidden className="h-[3px] w-9 rounded-full bg-muted/50" />
+          <span aria-hidden className="h-[3px] w-9 rounded-full bg-muted/50" />
+        </div>
+        {/* Kept mounted while shrunk, so the search and filters stay as they were. */}
+        <div className={`min-h-0 flex-1 ${collapsed && drag == null ? "invisible" : ""}`}>{children}</div>
+      </div>
+    </>
+  );
+}
+
 /** Take an item out and put it at this position in this section. */
 function placeAt(plan: PlanSection[], id: string, sectionId: string, index: number): PlanSection[] {
   const item = plan.flatMap((s) => s.items).find((i) => i.id === id);
@@ -394,6 +501,9 @@ export function Workbench({
   // Song bank panel
   const [minimised, setMinimised] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Phones: the sheet's dragged height (null = full) and whether it's shrunk to the bar.
+  const [sheetHeight, setSheetHeight] = useState<number | null>(null);
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const bankWidth = useSyncExternalStore(subscribeBankWidth, readBankWidth, () => null);
   const [query, setQuery] = useState("");
@@ -600,6 +710,7 @@ export function Workbench({
   const openPanel = () => {
     setMinimised(false);
     setMobileOpen(true);
+    setSheetCollapsed(false);
   };
 
   // ---- the plan -------------------------------------------------------------
@@ -752,8 +863,10 @@ export function Workbench({
   const target = editing && selected?.kind === "song" ? { label: `song ${numbers[selected.id]}`, songId: selected.song_id } : null;
   const otherEditor = !editing && initial.lockedBy ? initial.lockedBy.name : null;
 
-  const panel = (
+  // The same panel twice: the desktop column (">" collapses it) and the phone sheet ("✕" closes it).
+  const renderPanel = (inSheet: boolean) => (
     <SongBankPanel
+      inSheet={inSheet}
       bank={bank}
       canBrowse={canBrowse}
       query={query}
@@ -764,8 +877,10 @@ export function Workbench({
       target={target}
       onUse={applySong}
       onMinimise={() => {
-        setMinimised(true);
-        setMobileOpen(false);
+        if (inSheet) {
+          setMobileOpen(false);
+          setSheetCollapsed(false);
+        } else setMinimised(true);
       }}
       focusSearch={focusSearch}
       defaultLanguage={initial.service.startsWith("em_") ? "en" : initial.service.startsWith("cm_") ? "zh" : ""}
@@ -984,16 +1099,16 @@ export function Workbench({
           ) : (
             <>
               <BankResizer grid={gridRef} width={bankWidth} />
-              {panel}
+              {renderPanel(false)}
             </>
           )}
         </div>
       </aside>
       <div className="lg:hidden">
         {mobileOpen ? (
-          <div className="fixed inset-0 z-40 flex flex-col bg-black/40 pt-16" onClick={(e) => e.target === e.currentTarget && setMobileOpen(false)}>
-            <div className="min-h-0 flex-1 p-2">{panel}</div>
-          </div>
+          <BankSheet height={sheetHeight} onHeight={setSheetHeight} collapsed={sheetCollapsed} onCollapsed={setSheetCollapsed}>
+            {renderPanel(true)}
+          </BankSheet>
         ) : (
           <button
             type="button"

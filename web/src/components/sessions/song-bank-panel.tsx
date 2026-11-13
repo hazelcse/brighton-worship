@@ -48,6 +48,7 @@ export type PanelTarget = { label: string; songId: string | null } | null;
  * details and songsheet. With a song slot selected in edit mode, songs can be used for that slot.
  */
 export function SongBankPanel({
+  inSheet = false,
   bank,
   canBrowse,
   query,
@@ -61,6 +62,8 @@ export function SongBankPanel({
   focusSearch,
   defaultLanguage,
 }: {
+  /** Phones: inside the bottom sheet (which draws the frame), with an ✕ that closes it instead of ">". */
+  inSheet?: boolean;
   bank: BankSong[];
   canBrowse: boolean;
   query: string;
@@ -97,18 +100,33 @@ export function SongBankPanel({
   const bankSong = detailId ? bank.find((s) => s.id === detailId) : undefined;
 
   return (
-    <section aria-label="Song bank" className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-surface">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+    <section aria-label="Song bank" className={`flex h-full flex-col overflow-hidden bg-surface ${inSheet ? "" : "rounded-xl border border-border"}`}>
+      <div className={`flex items-center gap-2 border-b border-border px-3 ${inSheet ? "pb-2.5" : "py-2.5"}`}>
         {detailId ? (
           <button type="button" onClick={() => onDetail(null)} className="-ml-1 flex items-center gap-1 rounded-md px-1 py-1 text-sm text-muted hover:text-foreground">
-            <Chevron dir="left" /> Song bank
+            {/* An arrow with a line (←), not a bare chevron. */}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M19 12H5m6-6-6 6 6 6" />
+            </svg>
+            Song bank
           </button>
         ) : (
           <h2 className="font-semibold">Song bank</h2>
         )}
-        {target && <span className="min-w-0 flex-1 truncate text-right text-xs text-muted">Choosing for {target.label}</span>}
-        <button type="button" onClick={onMinimise} aria-label="Minimise song bank" title="Minimise" className={`${target ? "" : "ml-auto"} rounded-md p-1.5 text-muted hover:bg-background hover:text-foreground`}>
-          <Chevron dir="right" />
+        <button
+          type="button"
+          onClick={onMinimise}
+          aria-label={inSheet ? "Close song bank" : "Minimise song bank"}
+          title={inSheet ? "Close" : "Minimise"}
+          className="ml-auto rounded-md p-1.5 text-muted hover:bg-background hover:text-foreground"
+        >
+          {inSheet ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          ) : (
+            <Chevron dir="right" />
+          )}
         </button>
       </div>
 
@@ -125,7 +143,13 @@ export function SongBankPanel({
           ) : (
             <>
               <div className="space-y-1">
-                <h3 className="font-display text-2xl font-semibold leading-tight">{detail.title}</h3>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h3 className="min-w-0 font-display text-2xl font-semibold leading-tight">{detail.title}</h3>
+                  {/* Already the song picked for the chosen slot: a small badge, not a full-width bar. */}
+                  {target && bankSong && target.songId === bankSong.id && (
+                    <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted">In {target.label}</span>
+                  )}
+                </div>
                 {detail.artist && <p className="text-sm text-muted">{detail.artist}</p>}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
                   <TypeBadge type={detail.type} />
@@ -134,9 +158,6 @@ export function SongBankPanel({
                   {detail.timeSignature && <span className="rounded-full border border-border px-2 py-0.5">{detail.timeSignature}</span>}
                 </div>
               </div>
-              {target && bankSong && target.songId === bankSong.id && (
-                <p className="rounded-lg bg-background px-3 py-2 text-center text-sm text-muted">In {target.label}</p>
-              )}
               {target && bankSong && target.songId !== bankSong.id && (
                 <button
                   type="button"
@@ -145,6 +166,12 @@ export function SongBankPanel({
                 >
                   Use for {target.label}
                 </button>
+              )}
+              {/* The songsheet first, then its sequence, links and notes. */}
+              {detail.versionId ? (
+                <SongsheetPreview versionId={detail.versionId} previewPages={detail.previewPages} title={detail.title} />
+              ) : (
+                <p className="text-sm text-muted">No songsheet yet.</p>
               )}
               {detail.steps.length > 0 && (
                 <div className="space-y-1">
@@ -174,11 +201,6 @@ export function SongBankPanel({
                   <p className="whitespace-pre-line text-sm">{detail.notes}</p>
                 </div>
               )}
-              {detail.versionId ? (
-                <SongsheetPreview versionId={detail.versionId} previewPages={detail.previewPages} title={detail.title} />
-              ) : (
-                <p className="text-sm text-muted">No songsheet yet.</p>
-              )}
               <Link href={`/songs/${detail.id}`} target="_blank" className="inline-block text-sm text-accent underline-offset-2 hover:underline">
                 Open song page ↗
               </Link>
@@ -187,7 +209,8 @@ export function SongBankPanel({
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap gap-2 border-b border-border p-3">
+          {/* One row on every screen: search, then an icon-only Filters dropdown on its right. */}
+          <div className="flex items-center gap-2 border-b border-border p-3">
             <input
               ref={searchRef}
               type="search"
@@ -195,10 +218,12 @@ export function SongBankPanel({
               onChange={(e) => onQuery(e.target.value)}
               placeholder="Search songs or artists"
               aria-label="Search the song bank"
-              className={input}
+              // 40px tall, to match the Filters button beside it.
+              className={`${input.replace("h-9", "h-10")} min-w-0 flex-1`}
             />
             <FilterMenu
-              className="w-full"
+              iconOnly
+              className="shrink-0"
               groups={[
                 { id: "language", label: "Language", options: LANGUAGE_OPTIONS, value: language, onChange: setLanguage },
                 { id: "type", label: "Type", options: TYPE_OPTIONS, value: type, onChange: setType },

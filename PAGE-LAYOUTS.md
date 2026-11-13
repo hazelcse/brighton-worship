@@ -194,9 +194,20 @@ Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
-one "Name: address" per line, no bullets) (item cards, 2 → 4 field columns). Below 1024px
-the song bank is a floating "Song bank" pill that opens full screen. A song opened in the panel
-shows its details, then the songsheet preview card, then the "Open song page ↗" link.
+one "Name: address" per line, no bullets) (item cards, 2 → 4 field columns). In a song's sequence
+builder, steps drag to a new spot (mouse: press and move; touch: press and hold, then move), taking
+their tags, linked instruments and comment with them; "Use song's sequence" and "Clear" sit right of
+the own-element box from 640px, and on their own line on phones ("Use song's sequence" left, "Clear" right). Below 1024px
+the song bank is a floating "Song bank" pill that opens a bottom sheet over the page (no
+backdrop: the plan behind it still scrolls and takes taps; the pill hides while it's open). The
+sheet starts just under the nav; its 24px two-dash handle drags it taller or shorter, and let go
+near the bottom it shrinks to just that handle bar, which drags or taps back up. Its ✕ (in place of
+the desktop ">") is the only way to close it. The panel's list starts with
+one row at every width: search (fills the row, 40px tall), then an icon-and-arrow-only Filters
+dropdown (Language, Type) whose menu opens right-aligned. A song opened in the panel
+has a "← Song bank" back link (an arrow with a line) and shows its title (with an "In song N" badge beside it when it's already the chosen slot's song),
+pills and "Use for…" button, then the songsheet preview card, then its sequence,
+links and notes, then the "Open song page ↗" link.
 
 **`/sessions/tracking`** (root): **wider than the nav**, the same width as the roster editor
 (`data-wide-page`: max (window + 992px) ÷ 2), so more table columns show. Title "Tracking", dark **+** with a pending count

@@ -222,26 +222,154 @@ export function SequenceBuilder({
     setOwnTag("");
   }
 
-  // A thin spot between chips; the one in use shows as a bar.
-  const slot = (i: number) => (
-    <button
-      key={`slot-${i}`}
-      type="button"
-      onClick={() => {
-        setCaret(i);
-        setActiveId(null);
-      }}
-      aria-label={i === at ? "Insertion point" : `Insert here (position ${i + 1})`}
-      title="Add elements here"
-      className="group flex h-8 w-3 shrink-0 items-center justify-center"
-    >
-      <span className={`h-6 rounded-full transition-all ${i === at ? "w-1 bg-accent" : "w-px bg-transparent group-hover:w-1 group-hover:bg-accent/40"}`} />
-    </button>
-  );
+  // ---- drag and drop -------------------------------------------------------
+  // Drag a step (with its tags, linked instruments and comment, which are all part of it) to a gap
+  // between steps. Mouse: press and move. Touch: press and hold, then move (a quick swipe still
+  // scrolls the page).
+  const [drag, setDrag] = useState<{ id: string; label: string; x: number; y: number; target: number | null } | null>(null);
+  const pressed = useRef<{
+    id: string;
+    index: number;
+    x: number;
+    y: number;
+    touch: boolean;
+    timer: number | null;
+    el: HTMLElement;
+    pointerId: number;
+  } | null>(null);
+  const dragging = useRef(false);
+  const justDragged = useRef(false);
+
+  // While dragging by touch, stop the page scrolling under the finger.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const stop = (e: TouchEvent) => dragging.current && e.preventDefault();
+    strip.addEventListener("touchmove", stop, { passive: false });
+    return () => strip.removeEventListener("touchmove", stop);
+  }, []);
+
+  /** The gap nearest the pointer (rows count for more than columns). */
+  function nearestSlot(x: number, y: number): number | null {
+    let best: number | null = null;
+    let bestD = Infinity;
+    stripRef.current?.querySelectorAll<HTMLElement>("[data-slot]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const d = Math.abs(x - (r.left + r.width / 2)) + 3 * Math.abs(y - (r.top + r.height / 2));
+      if (d < bestD) {
+        bestD = d;
+        best = Number(el.dataset.slot);
+      }
+    });
+    return best;
+  }
+
+  function beginDrag(id: string, x: number, y: number) {
+    const step = steps.find((s) => s.id === id);
+    const p = pressed.current;
+    if (!step || !p) return;
+    // Captured only now, so a plain click still lands on the chip.
+    try {
+      p.el.setPointerCapture(p.pointerId);
+    } catch {
+      /* pointer already gone */
+    }
+    dragging.current = true;
+    setActiveId(null);
+    setDrag({ id, label: stepLabel(step), x, y, target: nearestSlot(x, y) });
+  }
+
+  /** Move the step at `from` into the gap before position `slot`. */
+  function moveTo(from: number, slot: number) {
+    if (slot === from || slot === from + 1) return;
+    const next = [...steps];
+    const [s] = next.splice(from, 1);
+    const to = slot > from ? slot - 1 : slot;
+    next.splice(to, 0, s);
+    onChange(next);
+    setCaret(to + 1);
+  }
+
+  function endDrag(drop: { x: number; y: number } | null) {
+    const p = pressed.current;
+    pressed.current = null;
+    if (p?.timer) window.clearTimeout(p.timer);
+    if (!dragging.current) return;
+    dragging.current = false;
+    // The click that follows letting go isn't a click on the chip.
+    justDragged.current = true;
+    window.setTimeout(() => (justDragged.current = false), 0);
+    setDrag(null);
+    const target = drop ? nearestSlot(drop.x, drop.y) : null;
+    if (p && target != null) moveTo(p.index, target);
+  }
+
+  const dragHandlers = (s: SeqStep, i: number) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const touch = e.pointerType !== "mouse";
+      const p = { id: s.id, index: i, x: e.clientX, y: e.clientY, touch, timer: null as number | null, el: e.currentTarget, pointerId: e.pointerId };
+      if (touch) {
+        p.timer = window.setTimeout(() => {
+          if (pressed.current !== p) return;
+          beginDrag(p.id, p.x, p.y);
+          navigator.vibrate?.(10);
+        }, 350);
+      }
+      pressed.current = p;
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      const p = pressed.current;
+      if (!p) return;
+      if (!dragging.current && e.buttons === 0) {
+        // Let go somewhere else before a drag began.
+        if (p.timer) window.clearTimeout(p.timer);
+        pressed.current = null;
+        return;
+      }
+      const x = e.clientX;
+      const y = e.clientY;
+      if (dragging.current) {
+        setDrag((d) => d && { ...d, x, y, target: nearestSlot(x, y) });
+        return;
+      }
+      if (Math.hypot(x - p.x, y - p.y) < 6) return;
+      if (p.touch) {
+        // Moved before the hold: it's a scroll, not a drag.
+        if (p.timer) window.clearTimeout(p.timer);
+        pressed.current = null;
+        return;
+      }
+      beginDrag(p.id, x, y);
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => endDrag({ x: e.clientX, y: e.clientY }),
+    onPointerCancel: () => endDrag(null),
+  });
+
+  // A thin spot between chips; the one in use (or, while dragging, the drop spot) shows as a bar.
+  const slot = (i: number) => {
+    const lit = drag ? drag.target === i : i === at;
+    return (
+      <button
+        key={`slot-${i}`}
+        type="button"
+        data-slot={i}
+        onClick={() => {
+          setCaret(i);
+          setActiveId(null);
+        }}
+        aria-label={i === at ? "Insertion point" : `Insert here (position ${i + 1})`}
+        title="Add elements here"
+        className="group flex h-8 w-3 shrink-0 items-center justify-center"
+      >
+        <span className={`h-6 rounded-full transition-all ${lit ? "w-1 bg-accent" : "w-px bg-transparent group-hover:w-1 group-hover:bg-accent/40"}`} />
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-3">
-      <div ref={stripRef} className="rounded-lg border border-border bg-surface p-2">
+      <div ref={stripRef} className="select-none rounded-lg border border-border bg-surface p-2 [-webkit-touch-callout:none]">
         {steps.length ? (
           <ol className="flex flex-wrap items-start gap-y-2">
             {steps.map((s, i) => (
@@ -249,14 +377,22 @@ export function SequenceBuilder({
                 {i > 0 && s.comment && <LineBreak />}
                 <li className="flex items-start">
                   {slot(i)}
-                  <StepColumn
-                    step={s}
-                    active={s.id === activeId}
-                    onClick={() => {
-                      setActiveId(s.id === activeId ? null : s.id);
-                      setCaret(i + 1);
-                    }}
-                  />
+                  {/* The whole column drags: the chip and its linked instruments. */}
+                  <div
+                    {...dragHandlers(s, i)}
+                    title="Drag to move"
+                    className={`${drag ? "cursor-grabbing" : "cursor-grab"} ${drag?.id === s.id ? "opacity-40" : ""}`}
+                  >
+                    <StepColumn
+                      step={s}
+                      active={s.id === activeId}
+                      onClick={() => {
+                        if (justDragged.current) return;
+                        setActiveId(s.id === activeId ? null : s.id);
+                        setCaret(i + 1);
+                      }}
+                    />
+                  </div>
                 </li>
                 {s.comment && <Comment text={s.comment} indent />}
               </Fragment>
@@ -269,6 +405,16 @@ export function SequenceBuilder({
           <p className="px-1 py-1 text-sm text-muted">Click elements below to build the sequence.</p>
         )}
       </div>
+      {/* What's being dragged, following the pointer. */}
+      {drag && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-[130%] rounded-full border border-accent bg-surface px-2.5 py-1 text-sm font-medium shadow-lg"
+          style={{ left: drag.x, top: drag.y }}
+        >
+          {drag.label}
+        </div>
+      )}
 
       {active && (
         <div ref={boxRef} className="space-y-2 rounded-lg border border-accent/40 bg-accent/5 p-3">
@@ -290,7 +436,8 @@ export function SequenceBuilder({
               <button type="button" onClick={() => move(1)} disabled={activeIndex === steps.length - 1} aria-label="Move later" className={smallBtn}>
                 →
               </button>
-              <button type="button" onClick={remove} className={`${smallBtn} hover:border-danger hover:text-danger`}>
+              {/* Red border always (not just on hover): it deletes the element. */}
+              <button type="button" onClick={remove} className="rounded-md border border-danger px-2 py-1 text-xs font-medium hover:bg-danger/5 hover:text-danger">
                 Remove
               </button>
             </span>
@@ -370,15 +517,18 @@ export function SequenceBuilder({
               key={name}
               type="button"
               onClick={() => add(name)}
-              className={`rounded-lg border px-2.5 py-1 text-sm hover:border-accent hover:text-accent ${
-                scanned.includes(name) ? "border-border bg-background" : "border-dashed border-border bg-surface"
+              // Light amber, like the app's other amber touches (the "unpublished changes" pill, notices).
+              // Solid border: on the songsheet; dashed: suggested or added for this session.
+              className={`rounded-lg border border-orange-300/80 bg-amber-50 px-2.5 py-1 text-sm text-amber-900 hover:border-orange-400 hover:bg-amber-100 ${
+                scanned.includes(name) ? "" : "border-dashed"
               }`}
             >
               + {name}
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Phones: more room between the own-element box and the buttons wrapped under it. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-4 sm:gap-y-2">
           <div className="flex items-center gap-1">
             <input
               value={ownElement}
@@ -397,7 +547,9 @@ export function SequenceBuilder({
               Add
             </button>
           </div>
-          <span className="ml-auto flex flex-wrap gap-2">
+          {/* Right-aligned from 640px; on phones they wrap to their own line: presets on the left,
+              Clear on the right. */}
+          <span className="flex flex-wrap gap-2 max-sm:w-full sm:ml-auto">
             {presets.map((p) => (
               <button
                 key={p.label}
@@ -423,7 +575,7 @@ export function SequenceBuilder({
                   setCaret(0);
                   setActiveId(null);
                 }}
-                className={`${smallBtn} hover:border-danger hover:text-danger`}
+                className={`${smallBtn} ml-auto hover:border-danger hover:text-danger`}
               >
                 Clear
               </button>

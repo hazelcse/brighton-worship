@@ -40,12 +40,15 @@ export function FilterMenu({
   className = "",
   align = "left",
   iconOnlyOnMobile = false,
+  iconOnly = false,
 }: {
   groups: FilterGroup[];
   className?: string;
   align?: "left" | "right";
   /** Below 768px the button shows only its icon and arrow (no "All songs" / picked text). */
   iconOnlyOnMobile?: boolean;
+  /** At every width the button shows only its icon and arrow, and the menu opens right-aligned. */
+  iconOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<string | null>(null);
@@ -85,15 +88,15 @@ export function FilterMenu({
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted">
             <path d="M3 5h18M6 12h12M10 19h4" />
           </svg>
-          <span className={`truncate ${iconOnlyOnMobile ? "hidden md:inline" : ""}`}>{summary}</span>
+          <span className={`truncate ${iconOnly ? "hidden" : iconOnlyOnMobile ? "hidden md:inline" : ""}`}>{summary}</span>
         </span>
         <Chevron open={open} />
       </button>
       {open && (
         <div
           role="menu"
-          className={`absolute top-full z-30 mt-1.5 w-60 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg ${
-            align === "right" ? "right-0" : iconOnlyOnMobile ? "right-0 md:left-0 md:right-auto" : "left-0"
+          className={`absolute top-full z-30 mt-1.5 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg ${
+            align === "right" || iconOnly ? "right-0" : iconOnlyOnMobile ? "right-0 md:left-0 md:right-auto" : "left-0"
           }`}
         >
           {groups.map((g) => {

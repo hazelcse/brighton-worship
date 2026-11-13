@@ -462,8 +462,22 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
         </label>
         <div className="flex gap-2">
           <input id={`title-${item.id}`} value={item.title} onChange={(e) => api.updateItem(item.id, { title: e.target.value })} placeholder="Song title" className={input} />
-          <button type="button" onClick={() => api.pickFromBank(item)} className="shrink-0 rounded-lg bg-ink px-3 text-sm font-medium text-ink-foreground hover:bg-ink/90">
-            {item.song_id ? "Change" : "Search song bank"}
+          <button
+            type="button"
+            onClick={() => api.pickFromBank(item)}
+            aria-label={item.song_id ? undefined : "Search song bank"}
+            title={item.song_id ? undefined : "Search song bank"}
+            className={`flex shrink-0 items-center justify-center rounded-lg bg-ink text-sm font-medium text-ink-foreground hover:bg-ink/90 ${item.song_id ? "px-3" : "w-10"}`}
+          >
+            {item.song_id ? (
+              "Change"
+            ) : (
+              // Just a magnifying glass; the label is for screen readers and the hover tooltip.
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+            )}
           </button>
         </div>
       </div>
