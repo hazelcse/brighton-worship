@@ -129,7 +129,8 @@ on this week's heavy top line, shows / hides them (▸ hidden, ▾ shown; `past-
 **`/roster/schedule`**: full width. From 1024px: calendar on the left, a **320px** side column on
 the right, the whole thing filling the window height. Calendar: month header with Today and
 arrows, 7-column grid (96px rows on phones, stretching at lg). Side column: cover panel (if any)
-and the scrolling **Absences** list (root: "Everyone / Only mine" switch), with "+ Create absence"
+and the scrolling **Absences** list (root and developers: a borderless filter icon opening a tick-box list, "Only me" and "Everyone" first,
+then each person with an absence, searchable; it filters the calendar too), with "+ Create absence"
 under it. Below 768px the create button floats bottom-right as a round 56px button, and swiping
 the calendar sideways changes month (left = next, right = previous; mostly-horizontal swipes of
 50px+ only, with a short slide-in).

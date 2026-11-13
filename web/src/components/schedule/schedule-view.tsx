@@ -165,6 +165,99 @@ export function layoutWeek(start: string, absences: Absence[], maxLanes: number)
   return { segments: segments.filter((g) => g.lane < maxLanes), hidden };
 }
 
+/**
+ * Root's "whose absences" filter: just a filter icon (no border) that opens a tick-box list. "Only me"
+ * and "Everyone" first, then everyone else with an absence (searchable). Nothing ticked = everyone.
+ */
+function WhoFilter({
+  who,
+  setWho,
+  userId,
+  people,
+}: {
+  who: string[];
+  setWho: (who: string[]) => void;
+  userId: string;
+  people: { id: string; name: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  const toggle = (id: string) => setWho(who.includes(id) ? who.filter((x) => x !== id) : [...who, id]);
+  const q = query.trim().toLowerCase();
+  const shown = q ? people.filter((p) => p.name.toLowerCase().includes(q)) : people;
+  const summary = who.length === 0 ? "Everyone" : who.length === 1 && who[0] === userId ? "Only me" : `${who.length} picked`;
+  const row = "flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-background";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={`Whose absences: ${summary}`}
+        title={`Showing: ${summary}`}
+        onClick={() => setOpen((o) => !o)}
+        // No border: just the icon, accent-coloured while it's narrowing things down.
+        className={`relative rounded-lg p-2 hover:bg-background ${who.length ? "text-accent" : "text-muted hover:text-foreground"}`}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M3 5h18M6 12h12M10 19h4" />
+        </svg>
+        {who.length > 0 && <span aria-hidden className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent" />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1.5 flex max-h-[60vh] w-64 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+          <div className="border-b border-border py-1">
+            <label className={row}>
+              <input type="checkbox" checked={who.includes(userId)} onChange={() => toggle(userId)} className="accent-accent" />
+              Only me
+            </label>
+            <label className={row}>
+              <input type="checkbox" checked={who.length === 0} onChange={() => setWho([])} className="accent-accent" />
+              Everyone
+            </label>
+          </div>
+          {people.length > 8 && (
+            <div className="border-b border-border p-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search people"
+                aria-label="Search people"
+                className="h-8 w-full rounded-md border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              />
+            </div>
+          )}
+          <div role="group" aria-label="People" className="min-h-0 flex-1 overflow-y-auto py-1">
+            {shown.map((p) => (
+              <label key={p.id} className={row}>
+                <input type="checkbox" checked={who.includes(p.id)} onChange={() => toggle(p.id)} className="accent-accent" />
+                <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${colourFor(p.id).dot}`} />
+                <span className="truncate">{p.name}</span>
+              </label>
+            ))}
+            {shown.length === 0 && <p className="px-3 py-2 text-sm text-muted">{people.length ? "No one matches" : "No one else has an absence"}</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Absences that include the given day. */
 function onDay(absences: Absence[], date: string) {
   return absences.filter((a) => a.startsOn <= date && a.endsOn >= date);
@@ -187,12 +280,23 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
   const [draftKey, setDraftKey] = useState(0);
   const [draftStart, setDraftStart] = useState(today);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  // Root sees everyone by default and can narrow it to their own. Members only ever get their own.
-  // Covering for someone: start on just your own absences and sessions.
-  const [showEveryone, setShowEveryone] = useState(!cover);
-  const absences = useMemo(() => (isRoot && showEveryone ? all : all.filter((a) => a.memberId === userId)), [all, isRoot, showEveryone, userId]);
-  // Services show only in root's Everyone view.
-  const showServices = isRoot && showEveryone;
+  // Root (and developers) pick whose absences show, in the list and the calendar: nobody picked =
+  // everyone. Members only ever get their own. Covering for someone: start on just your own.
+  const [who, setWho] = useState<string[]>(cover ? [userId] : []);
+  const onlyMe = who.length === 1 && who[0] === userId;
+  const absences = useMemo(
+    () => (!isRoot ? all.filter((a) => a.memberId === userId) : who.length ? all.filter((a) => who.includes(a.memberId)) : all),
+    [all, isRoot, who, userId],
+  );
+  // The calendar's event row: rostered services, except when looking at just your own absences
+  // (then your own sessions, as for members).
+  const showServices = isRoot && !onlyMe;
+  // Everyone else with an absence, A–Z, for the filter.
+  const people = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of all) if (a.memberId !== userId) m.set(a.memberId, a.memberName);
+    return [...m].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [all, userId]);
   const servicesByDate = useMemo(() => {
     const m = new Map<string, ServiceEvent[]>();
     for (const s of services) m.set(s.date, [...(m.get(s.date) ?? []), s]);
@@ -462,24 +566,7 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
         <section aria-label="Upcoming absences" className="flex max-h-[28rem] min-h-0 flex-1 flex-col rounded-xl border border-border bg-surface lg:max-h-none">
           <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
             <h2 className="text-lg font-semibold">Absences</h2>
-            {isRoot && (
-              <div role="group" aria-label="Whose absences to show" className="flex rounded-lg border border-border p-0.5 text-xs font-medium">
-                {[
-                  { value: true, label: "Everyone" },
-                  { value: false, label: "Only mine" },
-                ].map((o) => (
-                  <button
-                    key={o.label}
-                    type="button"
-                    aria-pressed={showEveryone === o.value}
-                    onClick={() => setShowEveryone(o.value)}
-                    className="rounded-md px-2.5 py-1 text-muted aria-pressed:bg-ink aria-pressed:text-ink-foreground"
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            {isRoot && <WhoFilter who={who} setWho={setWho} userId={userId} people={people} />}
           </div>
           {upcoming.length ? (
             <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
