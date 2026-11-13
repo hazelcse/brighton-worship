@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
     proxyClientMaxBodySize: "50mb",
   },
   partialPrefetching: true,
+  // The Absences page used to live at /roster/schedule; keep old bookmarks working (query strings carry over).
+  async redirects() {
+    return [{ source: "/roster/schedule", destination: "/roster/absences", permanent: true }];
+  },
   turbopack: {
     rules: {
       "*.css": {

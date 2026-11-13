@@ -322,7 +322,7 @@ export async function declineServe(input: {
   } catch (e) {
     return fail(e);
   }
-  revalidatePath("/roster/schedule");
+  revalidatePath("/roster/absences");
   return done("Sent. You'll see here if they say no.");
 }
 
@@ -688,7 +688,7 @@ export async function saveAbsenceWithCover(input: AbsenceInput & { covers: Cover
   } catch (e) {
     return fail(e);
   }
-  revalidatePath("/roster/schedule");
+  revalidatePath("/roster/absences");
   return done("Absence added, and your requests to cover are out.");
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition, type TouchEvent } from "react";
-import { deleteAbsence, getSessionDetail, saveAbsence } from "@/app/(app)/roster/schedule/actions";
+import { deleteAbsence, getSessionDetail, saveAbsence } from "@/app/(app)/roster/absences/actions";
 import { ROLE_SHORT, addDays, formatDate, formatTime, parseYmd, weekday, ymd } from "@/lib/roster";
 import { rehearsalTime, sessionTime } from "@/lib/reminder";
 import type { SessionDetail } from "@/lib/sessions";

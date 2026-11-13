@@ -7,6 +7,7 @@ import {
   acquireLock,
   dismissPlanChanges,
   getSongDetail,
+  leaveSessionOpen,
   publishSession,
   releaseLock,
   renewLock,
@@ -25,6 +26,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { ROLE_SHORT } from "@/lib/roster";
 import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanLink, type PlanSection } from "@/lib/session-plan";
 import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessions";
+import type { OpenEdit } from "@/lib/open-edits";
 
 const btn = "inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium disabled:opacity-60";
 
@@ -240,6 +242,9 @@ function BankSheet({
     </>
   );
 }
+
+/** "14 Nov, 18:05". */
+const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** Take an item out and put it at this position in this section. */
 function placeAt(plan: PlanSection[], id: string, sectionId: string, index: number): PlanSection[] {
@@ -465,16 +470,88 @@ function SavePrompt({ busy, onSave, onDiscard, onKeep }: { busy: boolean; onSave
   );
 }
 
+/**
+ * Leaving the page (e.g. "← Sessions") while still in edit mode: a reminder to save first. They can
+ * stay, save (or just stop editing) and go, or leave it open for editing: the edits are kept and
+ * Home reminds them to come back and save.
+ */
+function LeavePrompt({
+  busy,
+  dirty,
+  onSave,
+  onLeaveOpen,
+  onKeep,
+}: {
+  busy: boolean;
+  dirty: boolean;
+  onSave: () => void;
+  onLeaveOpen: () => void;
+  onKeep: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!ref.current?.open) ref.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onCancel={(e) => {
+        e.preventDefault();
+        onKeep();
+      }}
+      aria-labelledby="leave-prompt-title"
+      className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-surface p-0 text-foreground shadow-2xl"
+    >
+      <div className="relative space-y-4 p-6">
+        {/* Stay: close the popup and carry on editing. */}
+        <button
+          type="button"
+          onClick={onKeep}
+          disabled={busy}
+          aria-label="Stay"
+          title="Stay"
+          className="absolute right-3 top-3 rounded-full p-1.5 text-muted hover:bg-background hover:text-foreground disabled:opacity-50"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+        <div className="pr-6">
+          <h2 id="leave-prompt-title" className="text-lg font-semibold">
+            {dirty ? "Save before you go?" : "You're still editing"}
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            {dirty
+              ? "You haven't saved your edits to this session yet. If you leave anyway, the session stays open for editing and Home reminds you to come back and save."
+              : "This session is still in edit mode. If you leave anyway, it stays open for editing and Home reminds you to come back to it."}
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button type="button" onClick={onLeaveOpen} disabled={busy} className={`${btn} border border-border bg-surface hover:border-accent/50`}>
+            Leave anyway
+          </button>
+          <button type="button" onClick={onSave} disabled={busy} className={`${btn} bg-ink text-ink-foreground hover:bg-ink/90`}>
+            {busy ? (dirty ? "Saving…" : "Stopping…") : dirty ? "Save and leave" : "Stop editing and leave"}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
 export function Workbench({
   initial,
   canEdit,
   bank,
   canBrowse,
+  openEdit = null,
 }: {
   initial: WorkbenchData;
   canEdit: boolean;
   bank: BankSong[];
   canBrowse: boolean;
+  /** Edits this worship leader left open last time (they left in edit mode): picked back up on arrival. */
+  openEdit?: OpenEdit | null;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -489,6 +566,10 @@ export function Workbench({
   const [busy, setBusy] = useState(false);
   /** Leaving with unsaved changes: where to (null = just stop editing), while the save prompt is up. */
   const [leaving, setLeaving] = useState<{ href: string | null } | null>(null);
+  /** Edits left open last time, until they're picked back up (straight away on arrival, or the pencil). */
+  const [leftOpen, setLeftOpen] = useState<OpenEdit | null>(openEdit);
+  /** Editing edits picked back up from last time: when they were left, and whether someone saved since. */
+  const [resumed, setResumed] = useState<OpenEdit | null>(null);
   /** Worship leaders of a published session with a revision: which version they're looking at. */
   const [showPublished, setShowPublished] = useState(false);
   const [changesClosed, setChangesClosed] = useState(false);
@@ -524,10 +605,15 @@ export function Workbench({
   // Nothing saves until the floppy disk. Close the app (or lose the lock) and the edits are dropped.
   const latest = useRef(draft);
   const latestLinks = useRef(draftLinks);
+  // Whether we're editing, read when the page goes away. Set at once (not after the next render), so
+  // a save-then-navigate isn't mistaken for leaving mid-edit.
+  const editingRef = useRef(editing);
 
   const stopEditing = useCallback(
     (message: string | null) => {
+      editingRef.current = false;
       setEditing(false);
+      setResumed(null);
       setDirty(false);
       setSelectedId(null);
       setLinkDialog(null);
@@ -564,17 +650,29 @@ export function Workbench({
       router.refresh();
       return;
     }
-    // A published session's draft is its revision, or a fresh copy of the published plan.
-    const start = res.workbench.revision?.plan ?? res.workbench.plan;
+    // Edits left open last time carry on from where they were. Otherwise a published session's draft
+    // is its revision, or a fresh copy of the published plan.
+    const start = leftOpen?.plan ?? res.workbench.revision?.plan ?? res.workbench.plan;
     latest.current = start;
     setDraft(start);
-    const startLinks = res.workbench.revision?.links ?? res.workbench.links;
+    const startLinks = leftOpen?.links ?? res.workbench.revision?.links ?? res.workbench.links;
     latestLinks.current = startLinks;
     setDraftLinks(startLinks);
-    setDirty(false);
+    setDirty(Boolean(leftOpen));
+    setResumed(leftOpen);
+    setLeftOpen(null);
     setShowPublished(false);
+    editingRef.current = true;
     setEditing(true);
-  }, [initial.id, router]);
+  }, [initial.id, router, leftOpen]);
+
+  // Back to a session left open for editing: straight into edit mode with those edits.
+  const resumeTried = useRef(false);
+  useEffect(() => {
+    if (resumeTried.current || !openEdit || !canEdit) return;
+    resumeTried.current = true;
+    void startEditing();
+  }, [openEdit, canEdit, startEditing]);
 
   /** The floppy disk: save to the draft and go back to view mode. */
   const saveAndStop = useCallback(async (): Promise<boolean> => {
@@ -601,27 +699,42 @@ export function Workbench({
   useEffect(() => {
     if (!editing) return;
     const id = initial.id;
-    const lost = () => stopEditing("You were away long enough for the session to be unlocked, so your unsaved changes were dropped.");
+    const lost = () => {
+      // Dropped, so not open for editing any more either (Home stops saying so).
+      void releaseLock(id);
+      stopEditing("You were away long enough for the session to be unlocked, so your unsaved changes were dropped.");
+    };
     const beat = setInterval(async () => {
       if (!(await renewLock(id))) lost();
     }, LOCK_RENEW_MS);
     const onVisible = async () => {
       if (document.visibilityState === "visible" && !(await renewLock(id))) lost();
     };
-    // Closing the tab or app: nothing is saved, and the session is unlocked straight away.
-    const onHide = () => navigator.sendBeacon(`/api/sessions/${id}/release`);
+    // Closing the tab, reloading, or going to another site: the browser asks first.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    // Gone anyway: the session is unlocked straight away, and the edits are kept (not saved), so it
+    // stays open for editing. Home reminds them; coming back picks the edits up again.
+    const onHide = () => {
+      if (!editingRef.current) return;
+      navigator.sendBeacon(`/api/sessions/${id}/release`, JSON.stringify({ plan: latest.current, links: latestLinks.current }));
+    };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("pagehide", onHide);
     return () => {
       clearInterval(beat);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("pagehide", onHide);
     };
   }, [editing, initial.id, stopEditing]);
 
-  // Following a link elsewhere in the app with unsaved changes: ask about saving first.
+  // Following a link elsewhere in the app (e.g. "← Sessions") while editing: remind them to save first.
   useEffect(() => {
-    if (!editing || !dirty) return;
+    if (!editing) return;
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
@@ -634,17 +747,25 @@ export function Workbench({
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [editing, dirty]);
-
-  // Left the page some other way (e.g. the back button) while editing: drop the edits and unlock.
-  const editingRef = useRef(editing);
-  useEffect(() => {
-    editingRef.current = editing;
   }, [editing]);
+
+  /** "Leave anyway": keep the edits, unlock, and go. Home says the session is still open for editing. */
+  const leaveOpen = useCallback(
+    async (href: string) => {
+      editingRef.current = false;
+      setBusy(true);
+      await leaveSessionOpen(initial.id, latest.current, latestLinks.current);
+      setBusy(false);
+      router.push(href);
+    },
+    [initial.id, router],
+  );
+
+  // Left the page some other way (e.g. the browser's back button) while editing: as "Leave anyway".
   useEffect(() => {
     const id = initial.id;
     return () => {
-      if (editingRef.current) void releaseLock(id);
+      if (editingRef.current) void leaveSessionOpen(id, latest.current, latestLinks.current);
     };
   }, [initial.id]);
 
@@ -1002,6 +1123,20 @@ export function Workbench({
         {/* Republished: what changed, until they close it. */}
         {!editing && !changesClosed && initial.changes.length > 0 && <ChangesBox changes={initial.changes} onClose={closeChanges} />}
 
+        {/* Edits left open last time: picked back up, or waiting for the other worship leader to finish. */}
+        {editing && resumed && (
+          <p role="status" className="rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm">
+            You left this session open for editing on {when(resumed.leftAt)}, so your edits are back. Save them, or press × to drop them.
+            {resumed.changedSince && " Someone else has saved it since, and saving yours replaces their changes."}
+          </p>
+        )}
+        {!editing && leftOpen && (
+          <p role="status" className="rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm">
+            You left this session open for editing on {when(leftOpen.leftAt)}. Your edits are kept: press the pencil to pick them up
+            {otherEditor ? ` once ${otherEditor} is done` : ""}, then save them or press × to drop them.
+          </p>
+        )}
+
         {editing && published && (
           <p className="rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-muted">
             You&apos;re editing the revised draft. The band keeps seeing the published version until you publish your changes.
@@ -1061,17 +1196,28 @@ export function Workbench({
           </>
         )}
 
-        {leaving && (
+        {leaving?.href && (
+          <LeavePrompt
+            busy={busy}
+            dirty={dirty}
+            onSave={async () => {
+              const href = leaving.href!;
+              if (dirty) {
+                if (await saveAndStop()) router.push(href);
+              } else {
+                await discardAndStop();
+                router.push(href);
+              }
+            }}
+            onLeaveOpen={() => void leaveOpen(leaving.href!)}
+            onKeep={() => setLeaving(null)}
+          />
+        )}
+        {leaving && !leaving.href && (
           <SavePrompt
             busy={busy}
-            onSave={async () => {
-              if ((await saveAndStop()) && leaving.href) router.push(leaving.href);
-            }}
-            onDiscard={async () => {
-              const href = leaving.href;
-              await discardAndStop();
-              if (href) router.push(href);
-            }}
+            onSave={() => void saveAndStop()}
+            onDiscard={() => void discardAndStop()}
             onKeep={() => setLeaving(null)}
           />
         )}

@@ -7,7 +7,8 @@ import { markHomeBandSeen } from "@/app/(app)/home/actions";
 export type HomeNotice = { key: string; text: React.ReactNode; action: React.ReactNode; once?: string };
 
 /**
- * The landing page's notices (plans to publish, plans published, sessions to confirm, band changes),
+ * The landing page's notices (sessions left open for editing, plans to publish, plans published,
+ * sessions to confirm, band changes),
  * together in one box. Band changes are marked seen as soon as they're shown, but stay on screen
  * until the person leaves the page (the page refreshes itself every 30 seconds).
  */

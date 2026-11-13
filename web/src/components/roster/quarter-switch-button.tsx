@@ -9,7 +9,7 @@ const HOLD_MS = 450;
 const MOVE_TOLERANCE = 10;
 
 /**
- * One card for this quarter's roster (phones for everyone; every screen for root and developers).
+ * One card for this quarter's roster, on every screen, once next quarter's is published too.
  * Holding it (touch or mouse) flips it to next quarter's roster and back; a tap or click opens
  * whichever one it's showing.
  */

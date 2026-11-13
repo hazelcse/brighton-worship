@@ -19,7 +19,7 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 - **Nav bar** (`web/src/components/app-nav.tsx`): `sticky top-0 z-30 bg-ink`, 56px tall. Contents
   `mx-auto flex h-14 max-w-page px-4 sm:px-6`: "Brighton Worship", the menu (from md), and the
   **inbox** (36px icon with an orange unread count) + account icon pushed right. Below md:
-  hamburger + 288px slide-in sidebar. In the sidebar, Roster, Sessions and (developers) Develop
+  hamburger + 288px slide-in sidebar. In the sidebar, Schedule (Roster, Absences), Sessions and (developers) Develop
   open the same indented sub-list with a thin line on its left (16px items); Develop's "Reset app
   data" is in light red.
 - **Inbox** (`web/src/components/inbox.tsx`, for anyone who can see the roster): the roster
@@ -82,7 +82,11 @@ the dark countdown card (`rounded-xl bg-ink p-6`), then broadcasts and notices t
 (`space-y-3`: broadcast cards, then the accent-tinted notices list), then the next session's card
 (songs, then band in two columns once the card is wide enough). With no upcoming session: the
 dashed "not on any upcoming sessions" box, then broadcasts and notices.
-- Notices, in order: plans due to be published, "you haven't confirmed", plans published or
+- Notices, in order: "you haven't confirmed", **sessions left open for editing** (they left a
+  session's builder while still in edit mode: "(service) on (date) is still open for editing. Your
+  changes aren't saved yet." with "Go back and save" linking to `/sessions/<id>`; it stays until
+  they save or stop editing there, `worship_session_open_edits`, `web/src/lib/open-edits.ts`),
+  plans due to be published, plans published or
   updated, then **band changes** (someone else changed the band of an upcoming session they're on:
   roster edits, take-overs, swaps), worded as in the inbox, each with "See
   updates" (opens the inbox). A band change shows on one visit only: it's marked seen when shown and stays until
@@ -93,8 +97,8 @@ dashed "not on any upcoming sessions" box, then broadcasts and notices.
 **`/roster` (landing)**: full width, fills the window height (`min-h-[calc(100dvh-8.5rem)]`,
 `gap-4`). Top row: dark "This quarter's roster" card (max 576px) and, when published, a 224px
 "Next quarter" card; on the right (editors) "View past rosters" and a dark **+** menu (on phones
-they get their own row: View past rosters at the left, + at the right). On phones
-(and on every screen for root and developers, max 576px there), when both are published they're
+they get their own row: View past rosters at the left, + at the right). When both
+are published (every screen, everyone; max 576px from 640px up) they're
 one button (`quarter-switch-button.tsx`): press and hold (touch or mouse) flips it
 between this quarter (dark) and next quarter (light, like the desktop card), two dots show which,
 and a tap opens the one showing. Below,
@@ -126,7 +130,7 @@ week's rows are bold between two heavy lines; earlier weeks are faded (`opacity-
 hidden. A small triangle in the left side padding (16px wide, so it fits the phone gutter), centred
 on this week's heavy top line, shows / hides them (▸ hidden, ▾ shown; `past-rows-toggle.tsx`).
 
-**`/roster/schedule`**: full width. From 1024px: calendar on the left, a **320px** side column on
+**`/roster/absences`**: full width. From 1024px: calendar on the left, a **320px** side column on
 the right, the whole thing filling the window height. Calendar: month header with Today and
 arrows, 7-column grid (96px rows on phones, stretching at lg). Side column: cover panel (if any)
 and the scrolling **Absences** list (root and developers: a borderless filter icon opening a tick-box list, "Only me" and "Everyone" first,
@@ -191,11 +195,17 @@ otherwise as a row under it), a row of 36px icon buttons and "Publish". **Phones
 the date line moves under the title and badges, shortened to one line ("Sun, 15 Nov 2026 ·
 Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row the eye
 (simplified view) stays at the left and Undo / Edit / Publish sit at the right; while editing,
-× and save sit at the left and + at the right. Then
+× and save sit at the left and + at the right. **Leaving while editing**: any in-app link
+("← Sessions", the nav) opens a 384px dialog like the save prompt: "Save before you go?" (or "You're
+still editing" with nothing changed), an × in the top right corner to stay, and Leave anyway / Save
+and leave (Stop editing and leave) centred under the text; closing the tab, reloading or going to another site gets the browser's own "Leave site?"
+prompt. Leaving anyway (or by the browser's back button) keeps the edits unsaved, unlocks the
+session and puts a notice on Home; coming back picks the edits up in edit mode, with an
+accent-tinted note above the band ("You left this session open for editing on …"). Then
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
-one "Name: address" per line, no bullets) (item cards, 2 → 4 field columns). In a song's sequence
+one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns). In a song's sequence
 builder, steps drag to a new spot (mouse: press and move; touch: press and hold, then move), taking
 their tags, linked instruments and comment with them; "Use song's sequence" and "Clear" sit right of
 the own-element box from 640px, and on their own line on phones ("Use song's sequence" left, "Clear" right). Below 1024px

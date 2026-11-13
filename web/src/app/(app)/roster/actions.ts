@@ -71,6 +71,58 @@ export async function createRoster(quarterStart: string): Promise<ActionState> {
   redirect(`/roster/${id}/plan`);
 }
 
+/**
+ * Delete the session plans (session builder: sections, songs, revisions) made for a roster's
+ * sessions, before the roster itself goes. Plans only point at roster sessions loosely (the link is
+ * cleared when the session goes) and are found again by date, service and name, so without this a
+ * new roster for the same quarter would pick the old plans back up. Also takes plans for these
+ * sessions that have already lost their link, unless another roster still has that session. A
+ * revision's sessions are copies of the published roster's, so deleting a revision deletes no plans.
+ */
+async function deleteRosterPlans(db: ReturnType<typeof createAdminClient>, rosterId: string): Promise<number> {
+  const { data: rosters, error: rErr } = await db.from("rosters").select("id, status").or(`id.eq.${rosterId},revision_of.eq.${rosterId}`);
+  if (rErr) throw rErr;
+  if (rosters?.find((r) => r.id === rosterId)?.status === "revision") return 0;
+  const rosterIds = (rosters ?? []).map((r) => r.id);
+  const { data: sessions, error: sErr } = await db
+    .from("roster_sessions")
+    .select("id, date, kind, name")
+    .in("roster_id", rosterIds);
+  if (sErr) throw sErr;
+  if (!sessions?.length) return 0;
+  const ids = sessions.map((s) => s.id);
+  const dates = sessions.map((s) => s.date).sort();
+  const keys = new Set(sessions.map((s) => `${s.date}|${s.kind}|${s.name}`));
+  const [{ data: linked, error: lErr }, { data: loose, error: oErr }, { data: others, error: xErr }] = await Promise.all([
+    db.from("worship_sessions").select("id").in("roster_session_id", ids),
+    db
+      .from("worship_sessions")
+      .select("id, date, service, service_name")
+      .is("roster_session_id", null)
+      .gte("date", dates[0])
+      .lte("date", dates[dates.length - 1]),
+    db
+      .from("roster_sessions")
+      .select("date, kind, name")
+      .not("roster_id", "in", `(${rosterIds.join(",")})`)
+      .gte("date", dates[0])
+      .lte("date", dates[dates.length - 1]),
+  ]);
+  if (lErr) throw lErr;
+  if (oErr) throw oErr;
+  if (xErr) throw xErr;
+  for (const o of others ?? []) keys.delete(`${o.date}|${o.kind}|${o.name}`);
+  const planIds = [
+    ...(linked ?? []).map((p) => p.id),
+    ...(loose ?? []).filter((p) => keys.has(`${p.date}|${p.service}|${p.service_name}`)).map((p) => p.id),
+  ];
+  if (!planIds.length) return 0;
+  // Sections, items and published revisions go with them (ON DELETE CASCADE).
+  const { error } = await db.from("worship_sessions").delete().in("id", planIds);
+  if (error) throw error;
+  return planIds.length;
+}
+
 /** Delete a roster from the list: drafts by anyone who plans rosters, published ones by root only. */
 export async function deleteRoster(rosterId: string): Promise<ActionState> {
   try {
@@ -79,13 +131,15 @@ export async function deleteRoster(rosterId: string): Promise<ActionState> {
     const { data: r } = await db.from("rosters").select("status, starts_on").eq("id", rosterId).maybeSingle();
     if (!r) return { ok: false, message: "Roster not found." };
     if (r.status !== "draft" && !user.isRoot) return { ok: false, message: "Only root can delete a published roster." };
+    const plans = await deleteRosterPlans(db, rosterId);
     const { error } = await db.from("rosters").delete().eq("id", rosterId);
     if (error) throw error;
-    await audit(user.id, "roster.delete", rosterId, { status: r.status, quarter: quarterOf(r.starts_on).label });
+    await audit(user.id, "roster.delete", rosterId, { status: r.status, quarter: quarterOf(r.starts_on).label, plans });
   } catch (e) {
     return fail(e);
   }
   revalidatePath("/roster", "layout");
+  revalidatePath("/sessions", "layout");
   return { ok: true, message: null };
 }
 
@@ -96,6 +150,7 @@ export async function deleteDraft(rosterId: string): Promise<ActionState> {
     const { data: r } = await db.from("rosters").select("status").eq("id", rosterId).maybeSingle();
     if (!r) return { ok: false, message: "Roster not found." };
     if (r.status !== "draft") return { ok: false, message: "Only draft rosters can be deleted." };
+    await deleteRosterPlans(db, rosterId);
     const { error } = await db.from("rosters").delete().eq("id", rosterId);
     if (error) throw error;
     await audit(user.id, "roster.delete_draft", rosterId);

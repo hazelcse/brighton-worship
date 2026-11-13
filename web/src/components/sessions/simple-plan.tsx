@@ -136,10 +136,10 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
 /**
  * The whole set as one block of text, like a printed run sheet: each section's songs numbered,
  * with key, tempo and lead, and the sequence written out with short names (V1, C).
- * Transitions are left out.
+ * Transitions sit in their place between the songs, unnumbered, as in the full view.
  */
 export function SimplePlan({ plan, leadName, highlight }: { plan: PlanSection[]; leadName: (id: string | null) => string | null; highlight: string | null }) {
-  const sections = plan.map((s) => ({ ...s, songs: s.items.filter((i) => i.kind === "song") })).filter((s) => s.songs.length > 0);
+  const sections = plan.filter((s) => s.items.length > 0);
   if (!sections.length) return <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">Nothing planned yet.</p>;
   return (
     <article
@@ -151,9 +151,22 @@ export function SimplePlan({ plan, leadName, highlight }: { plan: PlanSection[];
         <section key={s.id} className="space-y-3">
           <h2 className="text-base font-bold underline underline-offset-4">{s.name}</h2>
           <ol className="space-y-4">
-            {s.songs.map((item, i) => (
-              <SongBlock key={item.id} item={item} n={i + 1} lead={leadName(item.lead_id)} highlight={highlight} />
-            ))}
+            {s.items.map((item, i) =>
+              item.kind === "transition" ? (
+                <li key={item.id} className="italic text-foreground/80">
+                  {"// Transition"}{item.notes ? `: ${item.notes}` : ""}
+                </li>
+              ) : (
+                // Songs are numbered on their own; transitions don't count.
+                <SongBlock
+                  key={item.id}
+                  item={item}
+                  n={s.items.slice(0, i + 1).filter((x) => x.kind === "song").length}
+                  lead={leadName(item.lead_id)}
+                  highlight={highlight}
+                />
+              ),
+            )}
           </ol>
         </section>
       ))}

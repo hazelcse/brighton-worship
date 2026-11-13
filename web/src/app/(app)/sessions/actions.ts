@@ -7,6 +7,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildsAnySession, loadWorkbench, normalisePlan, sessionAccess, sessionLinks, type Workbench } from "@/lib/sessions";
 import { prepareSessionSongsheets } from "@/lib/session-songsheets";
+import { clearOpenEdit, leaveOpen } from "@/lib/open-edits";
 import { describeLinkChanges, describePlanChanges } from "@/lib/plan-changes";
 import { LOCK_STALE_MS, cleanSteps, defaultPlan, majorKey, songSteps, type PlanItem, type PlanLink, type PlanSection, type SeqStep, type SongType } from "@/lib/session-plan";
 
@@ -152,13 +153,35 @@ export async function renewLock(id: string): Promise<boolean> {
   return Boolean(data?.length);
 }
 
-/** Stop editing without saving (the edits are thrown away). */
+/**
+ * Stop editing without saving (the edits are thrown away). Edits left open from an earlier visit go
+ * too, so Home stops saying the session is open for editing.
+ */
 export async function releaseLock(id: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) return;
-  await createAdminClient().from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id);
+  await Promise.all([
+    createAdminClient().from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id),
+    clearOpenEdit(user.id, id),
+  ]);
   revalidatePath(`/sessions/${id}`);
   revalidatePath("/sessions/build");
+  revalidatePath("/home");
+}
+
+/**
+ * Leaving the builder while still in edit mode ("Leave anyway", another page, the back button):
+ * keep the unsaved edits for next time and let go of the lock. Home says the session is still open
+ * for editing until they come back and save or stop editing.
+ */
+export async function leaveSessionOpen(id: string, rawPlan: unknown, rawLinks: unknown): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user || !UUID.test(id)) return;
+  if (await leaveOpen(user, id, rawPlan, rawLinks)) {
+    revalidatePath(`/sessions/${id}`);
+    revalidatePath("/sessions/build");
+    revalidatePath("/home");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +321,9 @@ export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown)
     const user = await signedIn();
     const row = await editablePlan(user, id);
     if (row.locked_by !== user.id) {
+      // The edits can't be saved now, so they aren't open any more either.
+      await clearOpenEdit(user.id, id);
+      revalidatePath("/home");
       return { ok: false, lostLock: true, message: "You were away long enough for the session to be unlocked, so these changes couldn't be saved." };
     }
     const plan = await tidyPlan(row, rawPlan);
@@ -324,8 +350,12 @@ export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown)
       const { error: linksErr } = await db.from("worship_sessions").update({ links }).eq("id", id);
       if (linksErr) throw linksErr;
     }
-    await db.from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id);
+    await Promise.all([
+      db.from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id),
+      clearOpenEdit(user.id, id),
+    ]);
     revalidateSession(id);
+    revalidatePath("/home");
     return { ok: true, savedAt: now };
   } catch (e) {
     return { ok: false, lostLock: false, message: message(e) };

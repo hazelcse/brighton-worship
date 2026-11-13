@@ -8,14 +8,14 @@ import { ScheduleView, type Absence, type ServiceEvent } from "@/components/sche
 import { loadCoverDetail, loadMySessions } from "@/lib/serving";
 import { AutoRefresh } from "@/components/auto-refresh";
 
-export const metadata: Metadata = { title: "Schedule · Brighton Worship" };
+export const metadata: Metadata = { title: "Absences · Brighton Worship" };
 
 async function Schedule({ searchParams }: { searchParams: Promise<{ cover?: string }> }) {
   const user = await requireUser();
   if (!user.can("roster.view")) {
     return (
       <p className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
-        You don&apos;t have access to the schedule yet. Ask a worship team admin.
+        You don&apos;t have access to absences yet. Ask a worship team admin.
       </p>
     );
   }
@@ -114,7 +114,7 @@ export default function SchedulePage({ searchParams }: { searchParams: Promise<{
   return (
     <>
       <AutoRefresh />
-      <Suspense fallback={<CalendarLoader label="Loading the schedule" className="py-24" />}>
+      <Suspense fallback={<CalendarLoader label="Loading absences" className="py-24" />}>
         <Schedule searchParams={searchParams} />
       </Suspense>
     </>

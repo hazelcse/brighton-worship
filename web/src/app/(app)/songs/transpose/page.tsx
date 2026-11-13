@@ -19,7 +19,9 @@ async function TransposeView({ searchParams }: { searchParams: Promise<{ song?: 
   }
   const [{ song }, { songs }] = await Promise.all([searchParams, loadSongCards()]);
   return (
+    // Keyed by song so opening the transposer from another song's card starts fresh, not with the last song still loaded.
     <Transposer
+      key={song ?? "none"}
       songs={songs
         .filter((s) => s.keys.length > 0)
         .map((s) => ({ id: s.id, title: s.title, key: s.keys[0], versionId: s.versionId, hasPreview: Boolean(s.previewPages) }))}

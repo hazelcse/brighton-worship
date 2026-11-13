@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ROLE_LABEL, ROLE_SHORT, formatDate } from "@/lib/roster";
-import { deleteAbsence } from "@/app/(app)/roster/schedule/actions";
+import { deleteAbsence } from "@/app/(app)/roster/absences/actions";
 import type {
   AwayAbsence,
   AwayClash,
@@ -538,7 +538,7 @@ function PendingRow({ r, onDecline }: { r: PendingRequest; onDecline: () => void
 function CoverLink({ c, title, note }: { c: CoverItem; title: string; note?: string }) {
   return (
     <li>
-      <Link href={`/roster/schedule?cover=${c.id}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 hover:bg-background">
+      <Link href={`/roster/absences?cover=${c.id}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 hover:bg-background">
         <span className="min-w-0">
           <span className="block text-sm font-medium">{title}</span>
           <span className="block text-xs text-muted">
@@ -937,8 +937,8 @@ function AwayFix({
         {!oneDay && (
           <p className="text-xs text-muted">
             This deletes the whole absence. To change only some days,{" "}
-            <Link href="/roster/schedule" className="underline underline-offset-2">
-              edit it in the schedule
+            <Link href="/roster/absences" className="underline underline-offset-2">
+              edit it in Absences
             </Link>
             .
           </p>

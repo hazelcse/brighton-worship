@@ -16,6 +16,7 @@ import { HomeNotices, type HomeNotice } from "@/components/home-notices";
 import { updateText } from "@/components/roster/updates-board";
 import { loadUpdates, type UpdateItem } from "@/lib/serving";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadMyOpenEdits } from "@/lib/open-edits";
 
 export const metadata: Metadata = { title: "Home · Brighton Worship" };
 
@@ -38,13 +39,14 @@ async function homeBandSeenAt(userId: string): Promise<string | null> {
 
 async function HomeView() {
   const user = await requireUser();
-  const [next, fresh, due, broadcasts, updates, bandSeenAt] = await Promise.all([
+  const [next, fresh, due, broadcasts, updates, bandSeenAt, openEdits] = await Promise.all([
     loadNextSession(user.id),
     loadNewlyPublished(user.id),
     loadPublishDue(user.id),
     loadMyBroadcasts(user),
     loadUpdates(user), // the nav's inbox loads these too: fetched once
     homeBandSeenAt(user.id),
+    loadMyOpenEdits(user.id),
   ]);
   const first = (user.fullName || "").split(" ")[0];
 
@@ -89,6 +91,23 @@ async function HomeView() {
       action: (
         <Link href={d.href} className={link}>
           {d.stage === "not_started" ? "Start building" : "Finish and publish"}
+        </Link>
+      ),
+    })),
+  );
+  // Sessions they left while still in edit mode: until they go back and save or stop editing. Near
+  // the top of the box, as their edits aren't saved anywhere the band or the other worship leader can see.
+  notices.unshift(
+    ...openEdits.map((o) => ({
+      key: `open-${o.id}`,
+      text: (
+        <>
+          <span className="font-semibold">{o.name}</span> on {day(o.date)} is still open for editing. Your changes aren&apos;t saved yet.
+        </>
+      ),
+      action: (
+        <Link href={`/sessions/${o.id}`} className={link}>
+          Go back and save
         </Link>
       ),
     })),
@@ -140,8 +159,8 @@ async function HomeView() {
       {!next && (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
           You&apos;re not on any upcoming sessions yet. Once a roster is published, your next one shows here.{" "}
-          <Link href="/roster/schedule" className="font-medium text-foreground underline underline-offset-2">
-            See the schedule
+          <Link href="/roster" className="font-medium text-foreground underline underline-offset-2">
+            See the roster
           </Link>
         </p>
       )}

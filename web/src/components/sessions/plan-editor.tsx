@@ -625,12 +625,6 @@ function ItemRow({ item, api, drag }: { item: PlanItem; api: EditorApi; drag: Dr
                 aria-label="Transition"
                 className="h-8 min-w-0 flex-1 bg-transparent text-sm italic outline-none"
               />
-              <KeySelect
-                label="Transition key"
-                value={item.key}
-                onChange={(key) => api.updateItem(item.id, { key })}
-                className="h-8 w-20 rounded-md border border-border bg-surface px-1 text-sm outline-none focus:border-accent"
-              />
               <button type="button" aria-label="Remove transition" onClick={() => api.removeItem(item.id)} className={`${smallBtn} hover:text-danger`}>
                 ✕
               </button>
@@ -638,7 +632,6 @@ function ItemRow({ item, api, drag }: { item: PlanItem; api: EditorApi; drag: Dr
           ) : (
             <p className="min-w-0 flex-1 py-1 text-sm italic text-muted">
               Transition{item.notes ? `: ${item.notes}` : ""}
-              {item.key ? ` (${item.key})` : ""}
             </p>
           )}
         </div>

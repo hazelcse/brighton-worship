@@ -50,8 +50,8 @@ export function RosterList({
   function remove(r: RosterItem) {
     const msg =
       r.stage === "published"
-        ? `Delete the published ${r.label} roster? Everyone will lose it and this can't be undone.`
-        : `Delete the ${r.label} ${r.stage === "draft" ? "draft" : "roster"}? Its sessions and assignments are removed. This can't be undone.`;
+        ? `Delete the published ${r.label} roster? Everyone will lose it, along with every session plan made for it. This can't be undone.`
+        : `Delete the ${r.label} ${r.stage === "draft" ? "draft" : "roster"}? Its sessions, assignments and any session plans are removed. This can't be undone.`;
     if (!window.confirm(msg)) return;
     setError(null);
     setBusyId(r.id);

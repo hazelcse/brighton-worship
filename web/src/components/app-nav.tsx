@@ -16,10 +16,10 @@ type NavItem = NavLink & { children?: readonly NavLink[] };
 const NAV_ITEMS: readonly NavItem[] = [
   {
     href: "/roster",
-    label: "Roster",
+    label: "Schedule",
     children: [
       { href: "/roster", label: "Roster" },
-      { href: "/roster/schedule", label: "Schedule" },
+      { href: "/roster/absences", label: "Absences" },
     ],
   },
   { href: "/team", label: "Team" },
