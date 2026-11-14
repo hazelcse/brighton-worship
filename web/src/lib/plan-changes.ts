@@ -162,6 +162,10 @@ function songChanges(a: PlanItem, b: PlanItem, song: string, names: (id: string)
   out.push(...sequenceChanges(a.sequence, b.sequence, song));
   if (a.notes.trim() !== b.notes.trim()) out.push(`The notes for ${song} have changed`);
   if (JSON.stringify(a.links ?? []) !== JSON.stringify(b.links ?? [])) out.push(`The links for ${song} have changed`);
+  if ((a.sheet?.id ?? null) !== (b.sheet?.id ?? null)) {
+    if (b.sheet) out.push(a.sheet ? `${cap(song)} has a new songsheet` : `${cap(song)} has its own songsheet now`);
+    else out.push(`${cap(song)}'s uploaded songsheet has been removed`);
+  }
   return out;
 }
 

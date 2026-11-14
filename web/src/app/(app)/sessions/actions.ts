@@ -9,7 +9,23 @@ import { buildsAnySession, loadWorkbench, normalisePlan, sessionAccess, sessionL
 import { prepareSessionSongsheets } from "@/lib/session-songsheets";
 import { clearOpenEdit, leaveOpen } from "@/lib/open-edits";
 import { describeLinkChanges, describePlanChanges } from "@/lib/plan-changes";
-import { LOCK_STALE_MS, cleanSteps, defaultPlan, majorKey, songSteps, type PlanItem, type PlanLink, type PlanSection, type SeqStep, type SongType } from "@/lib/session-plan";
+import {
+  LOCK_STALE_MS,
+  cleanSheet,
+  cleanSteps,
+  defaultPlan,
+  majorKey,
+  sessionSheetProblem,
+  songSteps,
+  type PlanItem,
+  type PlanLink,
+  type PlanSection,
+  type SeqStep,
+  type SheetScan,
+  type SongType,
+  type UploadedSheet,
+} from "@/lib/session-plan";
+import { storeSessionSheet, sweepSessionUploads } from "@/lib/session-uploads";
 
 const WL = "worship leader";
 
@@ -164,6 +180,7 @@ export async function releaseLock(id: string): Promise<void> {
     createAdminClient().from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id),
     clearOpenEdit(user.id, id),
   ]);
+  after(() => sweepSessionUploads(id));
   revalidatePath(`/sessions/${id}`);
   revalidatePath("/sessions/build");
   revalidatePath("/home");
@@ -246,6 +263,8 @@ function cleanPlan(raw: unknown): PlanSection[] {
             : [],
           links,
           notes: str(i.notes, 2000),
+          // An attached songsheet is for a typed-in song, not one from the bank.
+          sheet: i.kind !== "transition" && !i.song_id ? cleanSheet(i.sheet) : null,
         };
       }),
     };
@@ -278,7 +297,7 @@ async function tidyPlan(row: { roster_session_id: string | null }, rawPlan: unkn
 async function publishedPlan(id: string): Promise<PlanSection[]> {
   const { data } = await createAdminClient()
     .from("worship_session_sections")
-    .select("id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, artist, sequence, custom_elements, links, notes)")
+    .select("id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, artist, sequence, custom_elements, links, notes, sheet, transpose_to)")
     .eq("session_id", id);
   return normalisePlan(data ?? []);
 }
@@ -354,6 +373,7 @@ export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown)
       db.from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id),
       clearOpenEdit(user.id, id),
     ]);
+    after(() => sweepSessionUploads(id));
     revalidateSession(id);
     revalidatePath("/home");
     return { ok: true, savedAt: now };
@@ -409,7 +429,10 @@ export async function publishSession(id: string): Promise<SaveResult> {
     }
     // Transpose the songsheets once the response has gone, so publishing stays quick. Anything
     // not ready (or that fails) is made when someone opens it.
-    after(() => prepareSessionSongsheets(id));
+    after(async () => {
+      await sweepSessionUploads(id);
+      await prepareSessionSongsheets(id);
+    });
     revalidateSession(id);
     revalidatePath("/home");
     return { ok: true, savedAt: now };
@@ -429,6 +452,7 @@ export async function revertToPublished(id: string): Promise<SaveResult> {
       .update({ draft_plan: null, draft_links: null, draft_updated_at: null, draft_updated_by: null, locked_by: null, locked_at: null })
       .eq("id", id);
     if (error) throw error;
+    after(() => sweepSessionUploads(id));
     revalidateSession(id);
     return { ok: true, savedAt: new Date().toISOString() };
   } catch (e) {
@@ -517,4 +541,32 @@ export async function getSongDetail(songId: string): Promise<BankSongDetail | nu
     versionId: v?.id ?? null,
     previewPages: v?.preview_pages ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The worship leader's own songsheets
+// ---------------------------------------------------------------------------
+
+export type AttachResult = { ok: true; sheet: UploadedSheet; scan: SheetScan | null } | { ok: false; message: string };
+
+/**
+ * Attach a songsheet (PDF or .docx) to a song in this session, while editing it. It's stored with
+ * the session straight away (the band sees it once the plan is published); a .docx is scanned so
+ * the song's details can be filled in from it.
+ */
+export async function attachSessionSheet(id: string, formData: FormData): Promise<AttachResult> {
+  try {
+    const user = await signedIn();
+    if (!UUID.test(id)) throw new Error("This session doesn't exist any more.");
+    const row = await editablePlan(user, id);
+    if (row.locked_by !== user.id) throw new Error("You're not editing this session any more. Reload the page.");
+    const file = formData.get("file");
+    if (!(file instanceof File)) throw new Error("Choose a PDF or Word (.docx) songsheet.");
+    const problem = sessionSheetProblem(file);
+    if (problem) throw new Error(problem);
+    const { sheet, scan } = await storeSessionSheet(id, file);
+    return { ok: true, sheet, scan };
+  } catch (e) {
+    return { ok: false, message: message(e) };
+  }
 }

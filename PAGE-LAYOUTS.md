@@ -205,7 +205,14 @@ accent-tinted note above the band ("You left this session open for editing on �
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
-one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns). In a song's sequence
+one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns). In an open song
+while editing, the title field has two 40px buttons on its right: the song bank's magnifier (or
+"Change") and an outlined upload arrow, "Upload your own songsheet", which opens a 448px dialog (a
+dashed drop box for one PDF or .docx; for a PDF, Song title + a 96px Key select under it; Cancel /
+Attach bottom right). An attached sheet shows as a bordered row under the title (file icon and
+name, then View / Replace / Remove), with "Filled in from the songsheet: …" under it after a .docx.
+In view mode an unpublished song's attached sheet shows the same row (View only) at the bottom of
+the open song; once published it's a button among the set's Songsheets like a bank song's. In a song's sequence
 builder, steps drag to a new spot (mouse: press and move; touch: press and hold, then move), taking
 their tags, linked instruments and comment with them; "Use song's sequence" and "Clear" sit right of
 the own-element box from 640px, and on their own line on phones ("Use song's sequence" left, "Clear" right). Below 1024px

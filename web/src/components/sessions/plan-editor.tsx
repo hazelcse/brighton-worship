@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { BankSongDetail } from "@/app/(app)/sessions/actions";
 import { SequenceBuilder, SequenceView } from "@/components/sessions/sequence-builder";
 import { TypeBadge } from "@/components/sessions/song-bank-panel";
+import { SheetUploadDialog } from "@/components/sessions/sheet-upload-dialog";
 import { PdfViewerDialog } from "@/components/songs/pdf-viewer-dialog";
-import { MAJOR_KEYS, SONG_TYPE_LABEL, keyLabel, majorKey, type PlanItem, type PlanLink, type PlanSection, type SongType } from "@/lib/session-plan";
+import { MAJOR_KEYS, SONG_TYPE_LABEL, keyLabel, majorKey, stepsFrom, type PlanItem, type PlanLink, type PlanSection, type SongType } from "@/lib/session-plan";
 
 const input =
   "h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
@@ -25,6 +26,8 @@ const HOLD_MS = 700;
 export type Singer = { id: string; name: string; role: string };
 
 export type EditorApi = {
+  /** The session's id (for attaching and opening the worship leader's own songsheets). */
+  sessionId: string;
   editing: boolean;
   selectedId: string | null;
   onSelect: (item: PlanItem | null) => void;
@@ -445,9 +448,60 @@ function LeadSelect({ item, api, id }: { item: PlanItem; api: EditorApi; id: str
   );
 }
 
+/** Where an attached songsheet opens. */
+const uploadSrc = (sessionId: string, sheetId: string) => `/api/sessions/${sessionId}/uploads/${sheetId}`;
+
+function UploadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+/** The worship leader's own songsheet on a song: its file, to open, replace or take off. */
+function AttachedSheet({ item, api, onReplace }: { item: PlanItem; api: EditorApi; onReplace?: () => void }) {
+  const [viewing, setViewing] = useState(false);
+  if (!item.sheet) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
+        <SheetIcon />
+        <span className="truncate" title={item.sheet.file_name}>
+          {item.sheet.file_name}
+        </span>
+      </span>
+      <button type="button" onClick={() => setViewing(true)} className="text-xs font-medium text-accent hover:underline">
+        View
+      </button>
+      {onReplace && (
+        <>
+          <button type="button" onClick={onReplace} className="text-xs font-medium text-accent hover:underline">
+            Replace
+          </button>
+          <button type="button" onClick={() => api.updateItem(item.id, { sheet: null })} className="text-xs font-medium text-muted hover:text-danger">
+            Remove
+          </button>
+        </>
+      )}
+      {viewing && (
+        <PdfViewerDialog
+          src={uploadSrc(api.sessionId, item.sheet.id)}
+          title={`${item.title || "Songsheet"}${item.key ? ` (${keyLabel(item.key, item.transpose_to)})` : ""}`}
+          onClose={() => setViewing(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
   const detail = item.song_id ? api.details[item.song_id] : null;
   const n = api.numbers[item.id];
+  const [uploading, setUploading] = useState(false);
+  /** What the last .docx filled in, to say so under the song. */
+  const [filled, setFilled] = useState<string[]>([]);
+  const sheetSteps = item.sheet?.sequence?.length ? stepsFrom(item.sheet.sequence) : [];
   return (
     <div className="space-y-4 border-t border-border bg-background/60 p-4">
       <div className="max-w-xs">
@@ -479,10 +533,39 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
               </svg>
             )}
           </button>
+          {/* Not in the song bank: the worship leader's own songsheet (PDF or .docx). */}
+          <button
+            type="button"
+            onClick={() => setUploading(true)}
+            aria-label="Upload your own songsheet"
+            title="Upload your own songsheet (PDF or Word)"
+            className="flex w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-foreground hover:border-accent hover:text-accent"
+          >
+            <UploadIcon />
+          </button>
         </div>
       </div>
+      {uploading && (
+        <SheetUploadDialog
+          sessionId={api.sessionId}
+          item={item}
+          onClose={() => setUploading(false)}
+          onAttached={(patch, names) => {
+            api.updateItem(item.id, patch);
+            setFilled(names);
+          }}
+        />
+      )}
+      {item.sheet && (
+        <div className="-mt-2 space-y-1">
+          <AttachedSheet item={item} api={api} onReplace={() => setUploading(true)} />
+          {filled.length > 0 && <p className="text-xs text-muted">Filled in from the songsheet: {filled.join(", ")}. Check them below.</p>}
+        </div>
+      )}
       <p className="-mt-2 text-xs text-muted">
-        {item.song_id ? (
+        {item.sheet ? (
+          "Your own songsheet: the band sees this file, as it is, once the session is published."
+        ) : item.song_id ? (
           <>
             From the song bank. Change any detail below for this session.{" "}
             <button type="button" onClick={() => api.updateItem(item.id, { song_id: null })} className="underline underline-offset-2">
@@ -490,7 +573,7 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
             </button>
           </>
         ) : (
-          `Search the song bank to fill in song ${n ?? ""}'s details, or type them in.`
+          `Search the song bank to fill in song ${n ?? ""}'s details, upload your own songsheet, or type them in.`
         )}
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -541,8 +624,8 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
           key={item.id}
           steps={item.sequence ?? []}
           onChange={(sequence) => api.updateItem(item.id, { sequence })}
-          scanned={detail?.elements ?? []}
-          presets={[{ label: "Use song's sequence", steps: detail?.steps ?? [] }]}
+          scanned={detail?.elements ?? item.sheet?.sections ?? []}
+          presets={[{ label: item.sheet ? "Use songsheet's sequence" : "Use song's sequence", steps: detail?.steps ?? sheetSteps }]}
           custom={item.custom_elements}
           onCustom={(custom_elements) => api.updateItem(item.id, { custom_elements })}
           tagSuggestions={api.tags}
@@ -570,7 +653,8 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
 }
 
 /** An open song in view mode: everything apart from what the closed row already shows. */
-function SongDetails({ item, myRole }: { item: PlanItem; myRole: string | null }) {
+function SongDetails({ item, api }: { item: PlanItem; api: EditorApi }) {
+  const myRole = api.myRole;
   const facts = [
     item.artist && ["Artist", item.artist],
     item.bpm && ["BPM", String(item.bpm)],
@@ -593,6 +677,8 @@ function SongDetails({ item, myRole }: { item: PlanItem; myRole: string | null }
       </div>
       {item.links && item.links.length > 0 && <LinkList links={item.links} />}
       {item.notes && <p className="whitespace-pre-line">{item.notes}</p>}
+      {/* Once published it's with the set's songsheets; before then, the worship leaders can open it here. */}
+      {item.sheet && !api.sheetsFor && <AttachedSheet item={item} api={api} />}
     </div>
   );
 }
@@ -678,7 +764,7 @@ function ItemRow({ item, api, drag }: { item: PlanItem; api: EditorApi; drag: Dr
           </button>
         )}
       </div>
-      {open && (api.editing ? <SongEditor item={item} api={api} /> : <SongDetails item={item} myRole={api.myRole} />)}
+      {open && (api.editing ? <SongEditor item={item} api={api} /> : <SongDetails item={item} api={api} />)}
     </li>
   );
 }
@@ -697,9 +783,11 @@ function SectionSongsheets({ sessionId, items, sheetKeys }: { sessionId: string;
   // A song that changes key gets a second sheet (`to`) unless its songsheet already covers the change.
   type Sheet = { item: PlanItem; key: string | null; label: string | null; to: boolean };
   const [open, setOpen] = useState<Sheet | null>(null);
-  const songs = items.filter((i) => i.kind === "song" && i.song_id);
+  const songs = items.filter((i) => i.kind === "song" && (i.song_id || i.sheet));
   if (!songs.length) return null;
   const sheets: Sheet[] = songs.flatMap((i) => {
+    // The worship leader's own songsheet: one PDF, as it is.
+    if (!i.song_id) return [{ item: i, key: i.key, label: keyLabel(i.key, i.transpose_to), to: false }];
     const keys = sheetKeys[i.id];
     if (!keys) return [{ item: i, key: i.key, label: i.key, to: false }];
     // One sheet covering both keys is labelled "E→G"; otherwise one in E and one in G.
@@ -728,8 +816,12 @@ function SectionSongsheets({ sessionId, items, sheetKeys }: { sessionId: string;
       </div>
       {open && (
         <PdfViewerDialog
-          // The key is in the address so a changed key never shows the old sheet.
-          src={`/api/sessions/${sessionId}/songsheets/${open.item.id}?key=${encodeURIComponent(open.key ?? "")}${open.to ? "&to=1" : ""}`}
+          src={
+            open.item.sheet && !open.item.song_id
+              ? uploadSrc(sessionId, open.item.sheet.id)
+              : // The key is in the address so a changed key never shows the old sheet.
+                `/api/sessions/${sessionId}/songsheets/${open.item.id}?key=${encodeURIComponent(open.key ?? "")}${open.to ? "&to=1" : ""}`
+          }
           title={`${open.item.title}${open.label ? ` (${open.label})` : ""}`}
           onClose={() => setOpen(null)}
         />

@@ -934,12 +934,15 @@ export function Workbench({
       sequence: null,
       custom_elements: [],
       links: null,
+      // A song from the bank uses the library's songsheet instead of an uploaded one.
+      sheet: null,
     });
     showDetail(song.id);
     setMobileOpen(false);
   }
 
   const api: EditorApi = {
+    sessionId: initial.id,
     editing,
     selectedId,
     onSelect: select,

@@ -5,7 +5,7 @@ import { CACHE_LIFE, SONGS_TAG } from "@/lib/cache-tags";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_LABEL, addDays, defaultRehearsalTime, defaultStartTime, hhmm, todayYmd } from "@/lib/roster";
 import type { ReminderSession } from "@/lib/reminder";
-import { LOCK_STALE_MS, keyLabel, partCues, type BuildStage, type PartCue, type PlanLink, type PlanSection, type PlanStatus, type SeqStep, type SongType } from "@/lib/session-plan";
+import { LOCK_STALE_MS, cleanSheet, keyLabel, partCues, type BuildStage, type PartCue, type PlanLink, type PlanSection, type PlanStatus, type SeqStep, type SongType } from "@/lib/session-plan";
 import type { CurrentUser } from "@/lib/auth";
 import { sheetKeysFor } from "@/lib/session-songsheets";
 
@@ -317,6 +317,7 @@ export function normalisePlan(raw: unknown): PlanSection[] {
       custom_elements: i.custom_elements ?? [],
       links: i.links ?? null,
       notes: i.notes ?? "",
+      sheet: cleanSheet(i.sheet),
     })),
   }));
 }
@@ -337,7 +338,7 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
   const { data: s } = await db
     .from("worship_sessions")
     .select(
-      "id, date, service, service_name, roster_session_id, status, locked_by, locked_at, updated_at, updated_by, links, draft_plan, draft_links, draft_updated_at, draft_updated_by, worship_session_sections(id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, transpose_to, artist, sequence, custom_elements, links, notes))",
+      "id, date, service, service_name, roster_session_id, status, locked_by, locked_at, updated_at, updated_by, links, draft_plan, draft_links, draft_updated_at, draft_updated_by, worship_session_sections(id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, transpose_to, artist, sequence, custom_elements, links, notes, sheet))",
     )
     .eq("id", id)
     .maybeSingle();

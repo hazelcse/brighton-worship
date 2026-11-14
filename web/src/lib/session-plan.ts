@@ -39,9 +39,39 @@ export type PlanItem = {
   /** null = not set yet. */
   links: PlanLink[] | null;
   notes: string;
+  /** The worship leader's own songsheet for this song (null = none; a bank song uses the library's). */
+  sheet: UploadedSheet | null;
 };
 
 export type PlanSection = { id: string; name: string; items: PlanItem[] };
+
+/**
+ * A songsheet the worship leader attached to a song themselves (a PDF, or a .docx turned into one),
+ * instead of a song from the bank. Kept with the session only. For a .docx, the sections and
+ * sequence the scanner read from it, offered in the sequence builder.
+ */
+export type UploadedSheet = { id: string; file_name: string; format: "pdf" | "docx"; sections?: string[]; sequence?: string[] };
+
+/** What attaching a .docx read from it, to fill in the song's details. */
+export type SheetScan = {
+  title: string | null;
+  artist: string | null;
+  key: string | null;
+  bpm: number | null;
+  type: SongType | null;
+  sequence: string[];
+  youtube_links: string[];
+};
+
+/** Songsheets a worship leader can attach: up to 4 MB (under the host's request limit), PDF or .docx. */
+export const MAX_SESSION_SHEET_BYTES = 4 * 1024 * 1024;
+
+export function sessionSheetProblem(file: { name: string; size: number }): string | null {
+  if (!/\.(pdf|docx)$/i.test(file.name)) return "Choose a PDF or a Word (.docx) songsheet. For an older .doc, open it in Word and Save As .docx or PDF.";
+  if (file.size > MAX_SESSION_SHEET_BYTES) return "This file is larger than 4 MB.";
+  if (file.size === 0) return "This file is empty.";
+  return null;
+}
 
 export const SONG_TYPE_LABEL: Record<SongType, string> = {
   praise: "Praise",
@@ -80,6 +110,7 @@ export function blankSong(): PlanItem {
     custom_elements: [],
     links: null,
     notes: "",
+    sheet: null,
   };
 }
 
@@ -275,4 +306,20 @@ export function sheetIntervals(keyDisplay: string | null | undefined, keys: stri
   }
   out.delete(0);
   return [...out];
+}
+
+/** Check and tidy an attached songsheet sent from the browser (or read back from the database). */
+export function cleanSheet(raw: unknown): UploadedSheet | null {
+  const s = raw as Record<string, unknown> | null;
+  if (!s || typeof s !== "object" || typeof s.id !== "string" || !UUID_RE.test(s.id)) return null;
+  const names = (v: unknown) => (Array.isArray(v) ? v.map((x) => clip(x, 40)).filter(Boolean).slice(0, 60) : undefined);
+  const sections = names(s.sections);
+  const sequence = names(s.sequence);
+  return {
+    id: s.id.toLowerCase(),
+    file_name: clip(s.file_name, 200) || "Songsheet.pdf",
+    format: s.format === "docx" ? "docx" : "pdf",
+    ...(sections?.length ? { sections } : {}),
+    ...(sequence?.length ? { sequence } : {}),
+  };
 }

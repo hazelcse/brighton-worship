@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hmac
 import json
 import os
@@ -204,6 +205,31 @@ def transpose_song(
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return _transposed_response(data, name, tk, n, confirmed_key, format)
+
+
+@app.post("/session-sheet", dependencies=[Depends(require_token)])
+def session_sheet(file: UploadFile) -> dict:
+    """A worship leader's own songsheet for one session (not stored, not added to the library):
+    what the scanner reads from it, to fill in the song's details, and the sheet as a PDF for the
+    band to read (base64)."""
+    data = _read_docx(file)
+    r = scan_docx(data)
+    try:
+        pdf = docx_to_pdf(data)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="This songsheet couldn't be turned into a PDF. Try saving it as a PDF and uploading that.") from e
+    return {
+        "title": r.title,
+        "artist": r.artist,
+        "key": r.key_regions[0].key if r.key_regions else r.original_key,
+        "key_display": r.key_display,
+        "bpm": r.bpm,
+        "type": r.suggested_type,
+        "sections": r.sections,
+        "sequence": r.sequence or r.chart_sequence or r.lyric_sequence,
+        "youtube_links": r.youtube_links,
+        "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+    }
 
 
 # ---------------------------------------------------------------------------

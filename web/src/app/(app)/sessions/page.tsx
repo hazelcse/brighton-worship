@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { SessionLoader } from "@/components/session-loader";
+import { after } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { purgeExpiredUploads } from "@/lib/session-uploads";
 import { formatDate } from "@/lib/roster";
 import { buildsAnySession, loadBuildableSessions, loadNewlyPublished, loadUpcomingPlans } from "@/lib/sessions";
 import { MarkSessionsSeen } from "@/components/sessions/mark-sessions-seen";
@@ -22,6 +24,8 @@ function Pill({ className, children }: { className: string; children: ReactNode 
 
 async function SessionsView() {
   const user = await requireUser();
+  // Worship leaders' own songsheets go 30 days after their session (at most hourly, after the response).
+  after(() => purgeExpiredUploads());
   const all = buildsAnySession(user);
   const [plans, buildable, fresh] = await Promise.all([loadUpcomingPlans(user.id, { all }), loadBuildableSessions(user.id), loadNewlyPublished(user.id)]);
   const isNew = new Set(fresh.map((f) => f.planId));
