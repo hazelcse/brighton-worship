@@ -48,7 +48,7 @@ async function HomeView() {
     homeBandSeenAt(user.id),
     loadMyOpenEdits(user.id),
   ]);
-  const first = (user.fullName || "").split(" ")[0];
+  const name = (user.fullName || "").trim();
 
   // Everything needing their attention, in one box under the countdown.
   const pending = next?.serveStatus === "pending";
@@ -130,9 +130,12 @@ async function HomeView() {
   const today = todayYmd();
   const upcoming = (u: UpdateItem) => (u.session?.date ?? "") >= today || (u.otherSession?.date ?? "") >= today;
   if (bandSeenAt) {
+    // Compared as times, not text: the seen marker is saved to the millisecond, while created_at has
+    // microseconds, so as text the newest notice would always look unseen and never go away.
+    const seenMs = Date.parse(bandSeenAt);
     notices.push(
       ...updates
-        .filter((u) => BAND_CHANGES.has(u.kind) && u.concernsMe && !u.byMe && u.createdAt > bandSeenAt && upcoming(u))
+        .filter((u) => BAND_CHANGES.has(u.kind) && u.concernsMe && !u.byMe && Date.parse(u.createdAt) > seenMs && upcoming(u))
         .reverse() // oldest first, like the rest of the box
         .map((u) => ({
           key: `band-${u.id}`,
@@ -154,7 +157,7 @@ async function HomeView() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <h1 className="font-display text-3xl font-medium">{first ? `Hi ${first},` : "Welcome"}</h1>
+      <h1 className="font-display text-3xl font-medium">{name ? `Hi ${name},` : "Welcome"}</h1>
 
       {!next && (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
