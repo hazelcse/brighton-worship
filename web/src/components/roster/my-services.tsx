@@ -43,7 +43,7 @@ function ServiceBody({ s }: { s: MyService }) {
  * card on small phones. Extra cards are reached by scrolling / dragging the row sideways.
  */
 const WIDTH =
-  "w-[85%] min-[420px]:w-[calc((100%-0.75rem)/2)] lg:w-[calc((100%-1.5rem)/3)] xl:w-[calc((100%-2.25rem)/4)]";
+  "w-[75%] min-[420px]:w-[calc((100%-0.75rem)/2)] lg:w-[calc((100%-1.5rem)/3)] xl:w-[calc((100%-2.25rem)/4)]";
 
 /**
  * The viewer's confirmed upcoming services, one sideways-scrolling row, with no box around the

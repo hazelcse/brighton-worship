@@ -115,7 +115,7 @@ height equally (`flex-[1_1_0px]` each, so content doesn't skew the split; space 
 there are few services; with none, an animated wind-and-leaf picture, `wind-leaf.tsx`, sits
 centred in it over "No confirmed services coming up."). Your Services has no box or border: an `text-lg font-semibold` h2
 over **one sideways-scrolling row** of gallery-style cards (`drag-scroll.tsx`), as wide as the
-gallery grid's columns (4 per row from 1280px, 3 from 1024px, 2 from 420px, 85% on small phones so
+gallery grid's columns (4 per row from 1280px, 3 from 1024px, 2 from 420px, 75% on small phones so
 the next card peeks in). The row snaps to cards; touch and trackpads scroll natively, and a mouse
 can press-and-drag it (with a short glide, stopping at either end, never looping); fades show on
 whichever side has more. Cards: their confirmed upcoming services on any published roster, with
