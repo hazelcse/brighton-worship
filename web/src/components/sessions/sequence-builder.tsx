@@ -162,6 +162,31 @@ export function SequenceBuilder({
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [activeId]);
+  // ← and → move the insertion point (the bar) between elements. Only for the builder last clicked
+  // in (a page can hold several), and not while typing in a box.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const engaged = useRef(false);
+  useEffect(() => {
+    const press = (e: PointerEvent) => {
+      engaged.current = !!rootRef.current?.contains(e.target as Node);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (!engaged.current || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable='true']")) return;
+      e.preventDefault();
+      const dir = e.key === "ArrowLeft" ? -1 : 1;
+      setCaret((c) => Math.max(0, Math.min(steps.length, Math.min(c, steps.length) + dir)));
+      setActiveId(null);
+    };
+    document.addEventListener("pointerdown", press);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", press);
+      document.removeEventListener("keydown", key);
+    };
+  }, [steps.length]);
   const activeIndex = steps.findIndex((s) => s.id === activeId);
   const active = activeIndex >= 0 ? steps[activeIndex] : null;
 
@@ -368,7 +393,7 @@ export function SequenceBuilder({
   };
 
   return (
-    <div className="space-y-3">
+    <div ref={rootRef} className="space-y-3">
       <div ref={stripRef} className="select-none rounded-lg border border-border bg-surface p-2 [-webkit-touch-callout:none]">
         {steps.length ? (
           <ol className="flex flex-wrap items-start gap-y-2">

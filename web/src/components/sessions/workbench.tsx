@@ -866,12 +866,8 @@ export function Workbench({
   const toggleOpen = useCallback(
     (item: PlanItem) => {
       const opening = !openIds.has(item.id);
-      setOpenIds((o) => {
-        const next = new Set(o);
-        if (opening) next.add(item.id);
-        else next.delete(item.id);
-        return next;
-      });
+      // One open at a time: opening one closes the rest.
+      setOpenIds(opening ? new Set([item.id]) : new Set());
       if (opening) select(item);
       else if (selectedId === item.id) setSelectedId(null);
     },
@@ -902,7 +898,7 @@ export function Workbench({
         return { ...s, items: [...s.items.slice(0, at), item, ...s.items.slice(at)] };
       });
     });
-    setOpenIds((o) => new Set(o).add(item.id));
+    setOpenIds(new Set([item.id]));
     select(item);
   }
 
