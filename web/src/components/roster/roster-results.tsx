@@ -63,6 +63,7 @@ export function RosterTable({
   thisWeekOf,
   pastHidden,
   onTogglePast,
+  meId,
 }: {
   sessions: SessionRow[];
   assignments: AssignmentRow[];
@@ -88,6 +89,8 @@ export function RosterTable({
   pastHidden?: boolean;
   /** With `thisWeekOf`: show a triangle beside this week's top line that hides / shows past sessions. */
   onTogglePast?: () => void;
+  /** The viewer: an orange box around the date and the cells of the parts they're serving. */
+  meId?: string;
 }) {
   const active = sessions.filter((s) => !s.cancelled);
   const cell = new Map<string, AssignmentRow[]>();
@@ -135,6 +138,9 @@ export function RosterTable({
   const boundary = past.size > 0 ? active.find((s) => !past.has(s.id))?.id : undefined;
   const togglePast = onTogglePast && boundary ? onTogglePast : undefined;
   const rows = togglePast && pastHidden ? active.filter((s) => !past.has(s.id)) : active;
+  // The viewer's cells ("sessionId|role"), boxed in a soft orange.
+  const mine = new Set(meId ? assignments.filter((a) => a.member_id === meId).map((a) => `${a.session_id}|${a.role}`) : []);
+  const MINE = "inset-ring-2 inset-ring-orange-300/70";
 
   const table = (
     <div className="overflow-x-auto rounded-xl border border-border bg-surface">
@@ -218,7 +224,7 @@ export function RosterTable({
                 return (
                   <td
                     key={c}
-                    className={`px-2 py-1.5 ${problem ? "bg-red-50" : isEdited ? "bg-orange-50" : ""}`}
+                    className={`px-2 py-1.5 ${problem ? "bg-red-50" : isEdited ? "bg-orange-50" : ""} ${mine.has(`${s.id}|${c}`) ? MINE : ""}`}
                     title={problem ?? (isEdited ? "Changed by hand" : undefined)}
                   >
                     {need === 0 && people.length === 0 && gone.length === 0 ? (

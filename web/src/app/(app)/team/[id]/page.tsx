@@ -9,6 +9,7 @@ import { MemberForm } from "@/components/team/member-form";
 import { DeleteMemberButton } from "@/components/team/delete-member-button";
 import { ResetPasswordButton } from "@/components/team/reset-password-button";
 import { MemberRules } from "@/components/team/member-rules";
+import { PersonalRule } from "@/components/team/personal-rule";
 
 async function MemberView({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -41,6 +42,9 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
           ))}
         </div>
       </header>
+
+      {/* Root and developers: what this person shouldn't be rostered for. */}
+      {user.isRoot && !m.isDeveloper && <PersonalRule id={m.id} name={m.name} instruments={m.instruments} noRosterRoles={m.noRosterRoles} labels={INSTRUMENT_LABEL} />}
 
       {user.can("roster.edit") && <MemberRules member={m} />}
 

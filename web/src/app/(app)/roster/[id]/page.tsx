@@ -65,7 +65,7 @@ async function RosterDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
       )}
 
-      <FilteredRosterTable sessions={sessions} assignments={await loadAssignments(sessions.map((s) => s.id))} />
+      <FilteredRosterTable sessions={sessions} assignments={await loadAssignments(sessions.map((s) => s.id))} peopleFilter={user.isRoot} meId={user.id} />
     </div>
   );
 }

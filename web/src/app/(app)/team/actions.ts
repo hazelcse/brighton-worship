@@ -150,3 +150,23 @@ export async function deleteMember(id: string): Promise<MemberFormState> {
   revalidatePath("/team", "layout");
   redirect("/team");
 }
+
+/** Root and developers: a member's personal rule, the parts they play but shouldn't be rostered for. */
+export async function setNoRosterRoles(id: string, roles: string[]): Promise<MemberFormState> {
+  try {
+    const actor = await requireRoot();
+    const db = createAdminClient();
+    const { data: member } = await db.from("profiles").select("instruments").eq("id", id).maybeSingle();
+    if (!member) return { ok: false, message: "Member not found." };
+    // Only parts they actually play.
+    const plays = (member.instruments as string[] | null) ?? [];
+    const noRosterRoles = [...new Set(roles)].filter((r) => plays.includes(r));
+    const { error } = await db.from("profiles").update({ no_roster_roles: noRosterRoles, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) return { ok: false, message: error.message };
+    await db.from("audit_log").insert({ actor_id: actor.id, action: "member.no_roster_roles", target: id, details: { noRosterRoles } });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/team", "layout");
+  return { ok: true, message: "Saved." };
+}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ROLE_LABEL, ROLE_SHORT, formatDate } from "@/lib/roster";
 import type { SessionDetail } from "@/lib/sessions";
 import { PartCues } from "@/components/sessions/part-cues";
+import { BandName } from "@/components/sessions/band-name";
 
 const role = (r: string) => ROLE_LABEL[r] ?? r;
 const heading = "mb-1.5 text-xs font-medium uppercase tracking-wider text-muted";
@@ -125,7 +126,7 @@ export function SessionCard({ s }: { s: SessionDetail }) {
                 {members.map((m, i) => (
                   <span key={m.id}>
                     {i > 0 && ", "}
-                    {m.name}
+                    <BandName name={m.name} role={m.role} you={m.you} />
                     {m.also.map((r) => (
                       <span key={r} className="ml-1 text-xs font-semibold text-accent" title={ROLE_LABEL[r]}>
                         +{ROLE_SHORT[r] ?? r}

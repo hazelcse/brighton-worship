@@ -41,6 +41,8 @@ export type Member = {
   name: string;
   email: string;
   instruments: string[];
+  /** Their personal rule: parts they can play but shouldn't be rostered for. */
+  noRosterRoles: string[];
   emPercent: number | null;
   gender: Gender | null;
   serves: Serves;
@@ -56,6 +58,7 @@ type Row = {
   full_name: string;
   email: string;
   instruments: string[] | null;
+  no_roster_roles: string[] | null;
   em_percent: number | null;
   gender: Gender | null;
   serves: Serves | null;
@@ -72,6 +75,7 @@ function toMember(r: Row): Member {
     name: r.full_name || r.email,
     email: r.email,
     instruments: r.instruments ?? [],
+    noRosterRoles: r.no_roster_roles ?? [],
     emPercent: r.em_percent,
     gender: r.gender,
     serves: r.serves ?? "both",
@@ -82,7 +86,7 @@ function toMember(r: Row): Member {
   };
 }
 
-const SELECT = "id, uid, full_name, email, instruments, em_percent, gender, serves, is_root, is_developer, is_active, user_groups(groups(name))";
+const SELECT = "id, uid, full_name, email, instruments, no_roster_roles, em_percent, gender, serves, is_root, is_developer, is_active, user_groups(groups(name))";
 
 /**
  * The team. Developer accounts aren't team members: they're left out unless includeDevelopers

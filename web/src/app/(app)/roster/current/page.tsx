@@ -56,7 +56,7 @@ async function CurrentRoster({ searchParams }: { searchParams: Search }) {
           <span aria-hidden className="inline-block size-3 rounded bg-red-100 ring-1 ring-red-200" /> Can&apos;t serve, looking for cover
         </span>
       </div>
-      <FilteredRosterTable sessions={sessions} assignments={assignments} serveStatus={statuses} thisWeekOf={todayYmd()} />
+      <FilteredRosterTable sessions={sessions} assignments={assignments} serveStatus={statuses} thisWeekOf={todayYmd()} peopleFilter={user.isRoot} meId={user.id} />
     </div>
   );
 }

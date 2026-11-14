@@ -232,6 +232,12 @@ export const PART_ROLES: { role: string; label: string; color: string }[] = [
 
 export const partInfo = (role: string) => PART_ROLES.find((p) => p.role === role);
 
+/** Worship leader and vocalist colours, apart from the instruments', for roles that aren't parts. */
+const SINGER_COLORS: Record<string, string> = { "worship leader": "#b5852a", vocalist: "#c4692f" };
+
+/** Any rostered role's colour (singers or instruments); null for anything else. */
+export const roleColor = (role: string) => SINGER_COLORS[role] ?? partInfo(role)?.color ?? null;
+
 /** An instrument's colour, see-through: the tint behind its cards. */
 export const partTint = (color: string) => `${color}26`;
 

@@ -154,9 +154,10 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
               assignments={assignments}
               edit={tableEdit}
               published={{ sessions: publishedData.sessions, assignments: publishedAssignments }}
+              {...(user.isRoot ? { peopleFilter: true } : { meId: user.id })}
             />
           ) : (
-            <FilteredRosterTable sessions={sessions} assignments={assignments} edit={tableEdit} />
+            <FilteredRosterTable sessions={sessions} assignments={assignments} edit={tableEdit} {...(user.isRoot ? { peopleFilter: true } : { meId: user.id })} />
           )}
         </div>
         <aside className="space-y-3 text-sm">

@@ -174,7 +174,13 @@ export function RevisionRosterTable({ published, ...props }: TableProps & { publ
   );
   // Same table element either way, so the EM/CM and service filters stay as they are.
   return showPublished && !editing ? (
-    <FilteredRosterTable sessions={published.sessions} assignments={published.assignments} toolbarEnd={toggle} />
+    <FilteredRosterTable
+      sessions={published.sessions}
+      assignments={published.assignments}
+      peopleFilter={props.peopleFilter}
+      meId={props.meId}
+      toolbarEnd={toggle}
+    />
   ) : (
     <FilteredRosterTable {...props} locked={!editing} toolbarEnd={toggle} />
   );

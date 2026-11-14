@@ -246,7 +246,8 @@ export async function sessionAccess(
   return { canEdit, canView };
 }
 
-export type BandMember = { id: string; name: string; role: string; also: string[] };
+/** `you`: the viewer (cards highlight their name in their part's colour). */
+export type BandMember = { id: string; name: string; role: string; also: string[]; you?: boolean };
 
 export type Workbench = {
   id: string;
@@ -587,6 +588,7 @@ async function sessionDetail(db: Db, userId: string, sessionId: string): Promise
         name: people.get(b.member_id) ?? "Someone",
         role: b.role as string,
         also: (b.also_roles as string[] | null) ?? [],
+        you: b.member_id === userId,
       }))
       .sort((a, b) => (order.get(a.role) ?? 99) - (order.get(b.role) ?? 99) || a.name.localeCompare(b.name)),
     plan: plan
@@ -677,6 +679,7 @@ export async function loadMyServices(userId: string): Promise<MyService[]> {
             name: people.get(b.member_id) ?? "Someone",
             role: b.role as string,
             also: (b.also_roles as string[] | null) ?? [],
+            you: b.member_id === userId,
           }))
           .sort((a, b) => (order.get(a.role) ?? 99) - (order.get(b.role) ?? 99) || a.name.localeCompare(b.name)),
       };

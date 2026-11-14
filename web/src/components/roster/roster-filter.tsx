@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CellEditor, type EditPerson } from "./cell-editor";
 import { isHighlighted, useHighlight } from "./highlight";
 import { hhmm } from "@/lib/roster";
@@ -60,6 +60,141 @@ const TYPE_OPTIONS: { value: Type; label: string }[] = [
   { value: "adhoc", label: "Ad-hoc" },
 ];
 
+/**
+ * Root and developers: tick people to see only the sessions they're serving at (nothing ticked =
+ * every session). A chip-sized dropdown with a search box, shown at every width.
+ */
+function PeopleFilter({ people, value, onChange }: { people: { id: string; name: string }[]; value: string[]; onChange: (v: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const q = query.trim().toLowerCase();
+  const list = q ? people.filter((p) => p.name.toLowerCase().includes(q)) : people;
+  const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? "Someone";
+  const summary = value.length === 0 ? "Everyone" : value.length === 1 ? nameOf(value[0]) : `${value.length} people`;
+  return (
+    <div ref={ref} role="group" aria-label="People" className="relative flex min-w-0 items-center gap-1.5">
+      {/* Phones: just the dropdown, without the word. */}
+      <span className="hidden text-xs font-medium uppercase tracking-wide text-muted sm:inline">People</span>
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={`People: ${value.length ? value.map(nameOf).join(", ") : "everyone"}`}
+        onClick={() => setOpen((v) => !v)}
+        // Phones: the squarer 40px button, like the Filter dropdown beside it. From 640px: a chip like the others.
+        className={`flex h-10 min-w-0 max-w-48 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ink/20 sm:h-8 sm:gap-1.5 sm:rounded-full sm:font-medium ${
+          value.length ? "sm:border-ink sm:bg-ink sm:text-ink-foreground" : "sm:text-muted sm:hover:border-accent/50"
+        }`}
+      >
+        {/* Phones: a person icon stands in for the "People" label. */}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted sm:hidden">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21a8 8 0 0 1 16 0" />
+        </svg>
+        <span className="truncate">{summary}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-60 overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+          <div className="p-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people"
+              aria-label="Search people"
+              autoFocus
+              className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto border-t border-border py-1">
+            {list.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-muted">No one matches.</p>
+            ) : (
+              list.map((p) => {
+                const on = value.includes(p.id);
+                return (
+                  <label key={p.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-background">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => onChange(on ? value.filter((v) => v !== p.id) : [...value, p.id])}
+                      className="size-4 accent-ink"
+                    />
+                    {p.name}
+                  </label>
+                );
+              })
+            )}
+          </div>
+          {value.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange([]);
+                setOpen(false);
+              }}
+              className="w-full border-t border-border px-3 py-2.5 text-left text-sm text-muted hover:bg-background hover:text-foreground"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Shows or hides the orange box around the viewer's own cells (remembered in this browser). */
+function MineToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  const label = on ? "Hide the box around your cells" : "Show a box around your cells";
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={label}
+      title={label}
+      onClick={() => onChange(!on)}
+      className={`flex size-8 items-center justify-center rounded-full border ${on ? "border-ink bg-ink text-ink-foreground" : "border-ink bg-surface text-ink"}`}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+        <circle cx="12" cy="12" r="3" />
+        {!on && <path d="m3 3 18 18" />}
+      </svg>
+    </button>
+  );
+}
+
+// Whether the viewer has turned the box off, in this browser's localStorage (a per-viewer convenience).
+const MINE_KEY = "roster.showMine";
+const mineListeners = new Set<() => void>();
+function subscribeMine(l: () => void) {
+  mineListeners.add(l);
+  return () => mineListeners.delete(l);
+}
+function readMine(): boolean {
+  try {
+    return localStorage.getItem(MINE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 type Filters = {
   ministries: Ministry[];
   setMinistries: (v: Ministry[]) => void;
@@ -83,9 +218,16 @@ function toggle<T>(value: T[], v: T): T[] {
   return value.includes(v) ? (value.length > 1 ? value.filter((x) => x !== v) : value) : [...value, v];
 }
 
-/** Phones only: the Ministry and Service filters as one dropdown of checkboxes, the same size as the header buttons. */
+/** Phones only, on the roster editor: the shared filters' dropdown, at the left of the header's button row. */
 export function MobileRosterFilter() {
   const f = useContext(FilterContext);
+  if (!f) return null;
+  // mr-auto: the filter sits at the left of the header's button row, the buttons stay right-aligned.
+  return <FilterDropdown {...f} className="mr-auto sm:hidden" />;
+}
+
+/** Phones only: the Ministry and Service filters as one dropdown of checkboxes, the same size as the header buttons. */
+function FilterDropdown({ className, ...f }: Filters & { className: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -99,7 +241,6 @@ export function MobileRosterFilter() {
       document.removeEventListener("keydown", esc);
     };
   }, [open]);
-  if (!f) return null;
   const off = MINISTRY_OPTIONS.length - f.ministries.length + TYPE_OPTIONS.length - f.types.length;
   const group = <T extends string>(label: string, options: { value: T; label: string }[], value: T[], set: (v: T[]) => void) => (
     <fieldset className="space-y-0.5">
@@ -120,8 +261,7 @@ export function MobileRosterFilter() {
     </fieldset>
   );
   return (
-    // mr-auto: the filter sits at the left of the header's button row, the buttons stay right-aligned.
-    <div ref={ref} className="relative mr-auto sm:hidden" data-keep-highlight>
+    <div ref={ref} className={`relative ${className}`} data-keep-highlight>
       <button
         type="button"
         aria-expanded={open}
@@ -129,9 +269,7 @@ export function MobileRosterFilter() {
         onClick={() => setOpen((v) => !v)}
         aria-label={off ? "Filters: some sessions hidden" : "Filters: all sessions"}
         // Looks like the shared FilterMenu button (which only does one choice per group).
-        className={`flex h-10 items-center gap-2 rounded-lg border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 ${
-          off ? "border-accent/60" : "border-border"
-        }`}
+        className="flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ink/20"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-muted">
           <path d="M3 5h18M6 12h12M10 19h4" />
@@ -155,6 +293,8 @@ export function MobileRosterFilter() {
 export function FilteredRosterTable({
   sessions,
   assignments,
+  peopleFilter,
+  meId,
   edit,
   serveStatus,
   thisWeekOf,
@@ -171,6 +311,10 @@ export function FilteredRosterTable({
   locked?: boolean;
   /** Shown at the right end of the filter row (e.g. the edited / published toggle). */
   toolbarEnd?: React.ReactNode;
+  /** Root and developers: a People filter, to see only the sessions the people ticked are serving at. */
+  peopleFilter?: boolean;
+  /** Everyone else: the viewer, whose date and part cells get an orange box. */
+  meId?: string;
   /** Root on a generated draft: click a cell to change who's in it. */
   edit?: {
     rosterId: string;
@@ -219,8 +363,27 @@ export function FilteredRosterTable({
   const settingsOf = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
   // With `thisWeekOf`: sessions in earlier weeks start folded away (the triangle beside the table shows them).
   const [showPast, setShowPast] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  // The box around the viewer's own cells, on unless they've turned it off in this browser.
+  const showMine = useSyncExternalStore(subscribeMine, readMine, () => true);
+  const toggleMine = (v: boolean) => {
+    try {
+      localStorage.setItem(MINE_KEY, v ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+    mineListeners.forEach((l) => l());
+  };
+  const hasMine = Boolean(meId) && assignments.some((a) => a.member_id === meId);
+  // Everyone on this roster, for the People filter.
+  const people = [...new Map(assignments.map((a) => [a.member_id, { id: a.member_id, name: a.name }])).values()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  // Sessions with any of the ticked people on them (only while the filter is shown).
+  const withPicked =
+    peopleFilter && picked.length ? new Set(assignments.filter((a) => picked.includes(a.member_id)).map((a) => a.session_id)) : null;
   const shown = sessions.filter(
-    (s) => (s.ministry === "any" || ministries.includes(s.ministry)) && types.includes(typeOf(s)),
+    (s) => (s.ministry === "any" || ministries.includes(s.ministry)) && types.includes(typeOf(s)) && (!withPicked || withPicked.has(s.id)),
   );
   const ids = new Set(shown.map((s) => s.id));
   const active = shown.filter((s) => !s.cancelled).length;
@@ -228,11 +391,26 @@ export function FilteredRosterTable({
   return (
     // Clicks inside the roster keep a rule highlight; clicks elsewhere clear it.
     <div className="space-y-3" data-keep-highlight>
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <Chips label="Ministry" options={MINISTRY_OPTIONS} value={ministries} onChange={setMinistries} phonesHidden={!!shared} />
-        <Chips label="Service" options={TYPE_OPTIONS} value={types} onChange={setTypes} phonesHidden={!!shared} />
-        <span className="text-xs text-muted">{active} sessions</span>
-        {toolbarEnd && <div className="ml-auto">{toolbarEnd}</div>}
+      {/* Phones: one line (8px apart); the session count gives way when it doesn't fit. */}
+      <div className="flex items-center gap-x-2 gap-y-2 sm:flex-wrap sm:gap-x-5">
+        {/* Phones: one Ministry + Service dropdown instead of the chips (the roster editor has it in its header). */}
+        {!shared && <FilterDropdown ministries={ministries} setMinistries={setMinistries} types={types} setTypes={setTypes} className="shrink-0 sm:hidden" />}
+        <Chips label="Ministry" options={MINISTRY_OPTIONS} value={ministries} onChange={setMinistries} phonesHidden />
+        <Chips label="Service" options={TYPE_OPTIONS} value={types} onChange={setTypes} phonesHidden />
+        {peopleFilter && <PeopleFilter people={people} value={picked} onChange={setPicked} />}
+        {/* Phones: a 0-wide first item keeps line one, so a count too wide for the space left drops to a
+            second line that's clipped away. From 640px the row wraps as usual and the count always shows. */}
+        <div className="flex h-10 min-w-0 flex-1 flex-wrap items-center overflow-hidden sm:h-auto sm:flex-none sm:overflow-visible">
+          <span aria-hidden className="h-10 w-0 sm:hidden" />
+          <span className="whitespace-nowrap text-xs text-muted">{active} sessions</span>
+        </div>
+        {/* Right end of the row: the eye (only when the viewer is on this roster; every width), then e.g. the edited / published toggle. */}
+        {(hasMine || toolbarEnd) && (
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {hasMine && <MineToggle on={showMine} onChange={toggleMine} />}
+            {toolbarEnd}
+          </div>
+        )}
       </div>
       {active === 0 ? (
         <p className="rounded-xl border border-border bg-surface p-4 text-sm text-muted">No sessions match these filters.</p>
@@ -250,6 +428,7 @@ export function FilteredRosterTable({
           thisWeekOf={thisWeekOf}
           pastHidden={!showPast}
           onTogglePast={thisWeekOf ? () => setShowPast((v) => !v) : undefined}
+          meId={showMine ? meId : undefined}
           isMarked={hl?.highlight ? (memberId, date) => isHighlighted(hl.highlight, memberId, date) : undefined}
         />
       )}

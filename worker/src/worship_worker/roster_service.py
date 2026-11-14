@@ -32,10 +32,13 @@ def _load(db: Client, roster_id: str):
     # From the earliest rehearsal, which can be before the quarter starts.
     absent = _absent_dates(db, min([roster["starts_on"], *(s.rehearsal for s in sessions if s.rehearsal)]), roster["ends_on"])
     people = [
-        Person(p["id"], p["full_name"] or p["email"], p["instruments"] or [], p["em_percent"], p.get("serves") or "both",
+        # A personal rule can keep someone off parts they play: the generator treats those as not theirs.
+        Person(p["id"], p["full_name"] or p["email"],
+               [i for i in (p["instruments"] or []) if i not in (p.get("no_roster_roles") or [])],
+               p["em_percent"], p.get("serves") or "both",
                absent.get(p["id"], set()), p.get("gender"))
         # developer accounts are never rostered
-        for p in db.table("profiles").select("id, full_name, email, instruments, em_percent, serves, gender")
+        for p in db.table("profiles").select("id, full_name, email, instruments, no_roster_roles, em_percent, serves, gender")
         .eq("is_active", True).eq("is_developer", False).execute().data
     ]
     rules = [

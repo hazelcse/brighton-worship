@@ -61,8 +61,16 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 - **FilterMenu** (`web/src/components/filter-menu.tsx`): 40px trigger with funnel icon; width set
   by the page (`w-36` on Songs); popover 240px.
 - **Roster table** (`roster-filter.tsx`, `roster-results.tsx`): chip filters
-  (`h-8 rounded-full`), then `overflow-x-auto rounded-xl border` table, `text-[13px]`, sticky
-  header. Scrolls sideways (one column per role); below 640px the Date column stays frozen at the
+  (`h-8 rounded-full`; root and developers also get a "People" chip-sized dropdown, searchable
+  tick boxes, that keeps only the sessions those people serve at, shown at every width; below 640px
+  without its "People" label, as an `h-10 rounded-lg` button with a person icon like the Filter dropdown), then
+  `overflow-x-auto rounded-xl border` table (the viewer's own part cells, not the date, get a 2px
+  soft orange (orange-300 at 70%) inset border; root and developers get it only on published rosters, not the roster editor; a 32px round eye button at the right end of
+  the filter row (black with a white eye when on, white with a black border and eye when off), shown at every width when the viewer is on the roster, turns it off and on, remembered per browser), `text-[13px]`, sticky
+  header. **Phones (below 640px)**: the Ministry and Service chips are one `h-10` "Filter"
+  dropdown (tick boxes under Ministry and Service, at least one on in each; plain border, never
+  orange) at the left of the filter row; the roster editor has it in its header instead. The filter
+  row stays on one line on phones (8px gaps), and the "N sessions" count is left out when it doesn't fit. Scrolls sideways (one column per role); below 640px the Date column stays frozen at the
   left (opaque, thin line on its right) while the rest scrolls under it.
 
 ## Pages
@@ -355,7 +363,7 @@ nothing ticked = no filter, plus Clear; opens right-aligned to the button), then
 and "Manage permissions" (menu opens right-aligned). Count line, then the **gallery cards** grid (4 per row on desktop)
 with instrument chips.
 
-**`/team/[id]`**: full width. Back link; label, name title, chip row. Member rules card. Root sees
+**`/team/[id]`**: full width. Back link; label, name title, chip row. Root and developers: a Personal rule card ("can serve A, B, C, but should not be rostered for A, B", Edit → a full-width-on-phones, 288px-from-640px tick-box dropdown of their instruments, Save / Cancel). Member rules card. Root sees
 two columns from 1024px (3 : 2): "Edit member" left; permissions, password and delete cards
 right. Others see one details card.
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ROLE_LABEL, ROLE_SHORT, formatDate } from "@/lib/roster";
 import type { MyService } from "@/lib/sessions";
+import { BandName } from "@/components/sessions/band-name";
 import { DragScroll } from "./drag-scroll";
 import { WindLeaf } from "./wind-leaf";
 
@@ -23,7 +24,7 @@ function ServiceBody({ s }: { s: MyService }) {
               {ROLE_SHORT[m.role] ?? m.role}
             </span>
             <span className="min-w-0 flex-1 truncate">
-              {m.name}
+              <BandName name={m.name} role={m.role} you={m.you} />
               {m.also.map((r) => (
                 <span key={r} className="ml-1 text-xs font-semibold text-accent" title={ROLE_LABEL[r]}>
                   +{ROLE_SHORT[r] ?? r}
