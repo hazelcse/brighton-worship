@@ -280,9 +280,21 @@ columns from 640px, two link fields).
   Code asks the owner before an edit that would change them.
 
 **`/songs/[id]`**: full width. Back link; title 36px → 48px (sm) with a round raise-issue button
-beside it; artist; fact pills. Optional "Missing from Drive" and issues boxes. Then two columns
-from 1024px (3 : 2): **Details** card on the left; songsheet preview, links, versions and delete
-on the right (the right column comes first on phones).
+beside it; artist (no fact pills). Optional "Missing from Drive" and issues boxes. Then two columns
+from 1024px (3 : 2): **Details** card on the left; songsheet preview, versions and delete on the
+right (Details spans both rows; the preview sits above the rest). On phones: preview, then
+Details, then the songsheet card and delete. Details always opens read-only, two columns on every screen: Type | Tempo, Language |
+Original key, Time signature (if set), then full width: standard sequence
+(drawn as in the session builder's full view, `SequenceView`: || Intro | Verse x2 (High) [Drums] ||),
+themes, Reference links (`SongLinks`; no separate Edit), then notes (no Sections
+list). In the edit form the links also come just before Additional notes: each shows as a plain
+link with a small faded pencil; the pencil opens it as a white card with a light grey
+border (`border-border bg-surface`) with labelled white inputs (Link title, Link), Up/Down, Done and Remove. New links open as cards straight away. For people who can edit songs or links, a borderless,
+faded pencil follows the title (underlined on hover; no hover on phones). It opens the edit form
+(`?edit=1`; on phones the page scrolls down to it) with the details and/or the Reference links
+rows, whichever they may change, and one Save for both (links are checked first, so a bad link
+saves nothing). Saving goes back to the read-only view, and while editing the back link reads "← Back to song"
+and does the same (dropping the edits). Leaving the page drops the edits without asking, and there's no cancel button.
 
 **Songsheet views** (the Preview card here and in the session song bank, its Full size popup, the
 song cards' eye popup, and the session PDF popup): each page is shown zoomed in on its white

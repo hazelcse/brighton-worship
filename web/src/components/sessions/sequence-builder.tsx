@@ -112,7 +112,7 @@ function StepChip({ step, active, onClick }: { step: SeqStep; active?: boolean; 
       onClick={onClick}
       aria-pressed={active}
       aria-label={`${stepLabel(step)}: edit`}
-      className={`${chipBase} ${active ? "border-accent bg-accent/10" : "border-border bg-surface hover:border-accent/60"}`}
+      className={`${chipBase} ${active ? "border-accent bg-accent/10" : "border-accent/45 bg-surface hover:border-accent/70"}`}
     >
       {body}
     </button>
@@ -510,7 +510,8 @@ export function SequenceBuilder({
         </div>
       )}
 
-      <div className="space-y-2">
+      {/* A little room between the element buttons and the own-element row under them. */}
+      <div className="space-y-3.5">
         <div className="flex flex-wrap gap-1.5">
           {palette.map((name) => (
             <button
@@ -527,7 +528,8 @@ export function SequenceBuilder({
             </button>
           ))}
         </div>
-        {/* Phones: more room between the own-element box and the buttons wrapped under it. */}
+        {/* Own element and Clear share a row on every screen (Clear on the right). Presets sit just
+            before Clear from 640px; on phones they wrap to their own line underneath. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-4 sm:gap-y-2">
           <div className="flex items-center gap-1">
             <input
@@ -547,40 +549,40 @@ export function SequenceBuilder({
               Add
             </button>
           </div>
-          {/* Right-aligned from 640px; on phones they wrap to their own line: presets on the left,
-              Clear on the right. */}
-          <span className="flex flex-wrap gap-2 max-sm:w-full sm:ml-auto">
-            {presets.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                disabled={!p.steps.length}
-                title={p.steps.length ? p.steps.map(stepLabel).join(" → ") : "Nothing to use yet"}
-                onClick={() => {
-                  const next = copySteps(p.steps);
-                  onChange(next);
-                  setCaret(next.length);
-                  setActiveId(null);
-                }}
-                className={smallBtn}
-              >
-                {p.label}
-              </button>
-            ))}
-            {steps.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  onChange([]);
-                  setCaret(0);
-                  setActiveId(null);
-                }}
-                className={`${smallBtn} ml-auto hover:border-danger hover:text-danger`}
-              >
-                Clear
-              </button>
-            )}
-          </span>
+          {presets.length > 0 && (
+            <span className="flex flex-wrap gap-2 max-sm:order-last max-sm:w-full sm:ml-auto">
+              {presets.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  disabled={!p.steps.length}
+                  title={p.steps.length ? p.steps.map(stepLabel).join(" → ") : "Nothing to use yet"}
+                  onClick={() => {
+                    const next = copySteps(p.steps);
+                    onChange(next);
+                    setCaret(next.length);
+                    setActiveId(null);
+                  }}
+                  className={smallBtn}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </span>
+          )}
+          {steps.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange([]);
+                setCaret(0);
+                setActiveId(null);
+              }}
+              className={`${smallBtn} ${presets.length > 0 ? "max-sm:ml-auto" : "ml-auto"} hover:border-danger hover:text-danger`}
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
     </div>
