@@ -22,12 +22,30 @@ function Pill({ className, children }: { className: string; children: ReactNode 
   );
 }
 
-async function SessionsView() {
-  const user = await requireUser();
+/** Two arrows pointing opposite ways: switches between the viewer's sessions and everyone's. */
+function SwitchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2.5 5h10M10 2.5 12.5 5 10 7.5" />
+      <path d="M13.5 11h-10M6 8.5 3.5 11 6 13.5" />
+    </svg>
+  );
+}
+
+type View = { view?: string };
+
+async function SessionsView({ searchParams }: { searchParams: Promise<View> }) {
+  const [user, { view }] = await Promise.all([requireUser(), searchParams]);
   // Worship leaders' own songsheets go 30 days after their session (at most hourly, after the response).
   after(() => purgeExpiredUploads());
   const all = buildsAnySession(user);
-  const [plans, buildable, fresh] = await Promise.all([loadUpcomingPlans(user.id, { all }), loadBuildableSessions(user.id), loadNewlyPublished(user.id)]);
+  // Root (and the developer) can switch to every upcoming published session.
+  const everyone = user.isRoot && view === "all";
+  const [plans, buildable, fresh] = await Promise.all([
+    loadUpcomingPlans(user.id, { all, everyone }),
+    loadBuildableSessions(user.id),
+    loadNewlyPublished(user.id),
+  ]);
   const isNew = new Set(fresh.map((f) => f.planId));
   const isUpdated = new Set(fresh.filter((f) => f.updated).map((f) => f.planId));
   const leads = all || buildable.sessions.length > 0 || buildable.unconfirmed > 0;
@@ -40,19 +58,34 @@ async function SessionsView() {
         <div>
           <h1 className="font-display text-3xl font-semibold">Sessions</h1>
           <p className="text-sm text-muted">
-            Upcoming sessions you&apos;re serving at, once their plan is published.
+            {everyone ? "Every upcoming session, once its plan is published." : "Upcoming sessions you're serving at, once their plan is published."}
             {hasDrafts && " Drafts are only visible to their worship leaders."}
           </p>
         </div>
-        {/* From 640px; phones get a "+" under the cards instead. */}
-        {leads && (
-          <Link
-            href="/sessions/build"
-            className="hidden h-10 items-center rounded-lg bg-ink px-4 text-sm font-medium text-ink-foreground hover:bg-ink/90 sm:inline-flex"
-          >
-            + Build session
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {user.isRoot && (
+            <Link
+              href={everyone ? "/sessions" : "/sessions?view=all"}
+              aria-label={everyone ? "Show my sessions" : "Show all sessions"}
+              title={everyone ? "Showing all sessions: switch to mine" : "Showing my sessions: switch to all"}
+              className={`inline-flex h-10 items-center gap-1.5 rounded-lg px-1 text-sm font-medium ${
+                everyone ? "text-accent" : "text-muted hover:text-foreground"
+              }`}
+            >
+              <span>{everyone ? "Team" : "Me"}</span>
+              <SwitchIcon />
+            </Link>
+          )}
+          {/* From 640px; phones get a "+" under the cards instead. */}
+          {leads && (
+            <Link
+              href="/sessions/build"
+              className="hidden h-10 items-center rounded-lg bg-ink px-4 text-sm font-medium text-ink-foreground hover:bg-ink/90 sm:inline-flex"
+            >
+              + Build session
+            </Link>
+          )}
+        </div>
       </div>
 
       {plans.length === 0 ? (
@@ -125,12 +158,12 @@ async function SessionsView() {
   );
 }
 
-export default function SessionsPage() {
+export default function SessionsPage({ searchParams }: { searchParams: Promise<View> }) {
   return (
     <>
       <AutoRefresh />
       <Suspense fallback={<SessionLoader label="Loading sessions" className="py-24" />}>
-        <SessionsView />
+        <SessionsView searchParams={searchParams} />
       </Suspense>
     </>
   );

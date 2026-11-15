@@ -180,10 +180,17 @@ export const loadPublishDue = cache(async (userId: string): Promise<PublishDueNo
  * Published plans of upcoming sessions the person serves on and has confirmed, plus the drafts of
  * the ones they lead worship at (`draft: true`). `all` (the developer): every upcoming draft too.
  */
-export async function loadUpcomingPlans(userId: string, { all = false }: { all?: boolean } = {}): Promise<UpcomingPlan[]> {
+/**
+ * `all`: the viewer builds any session (the developer), so sees every draft.
+ * `everyone`: root's "all sessions" view: every upcoming published plan, not just the viewer's.
+ */
+export async function loadUpcomingPlans(
+  userId: string,
+  { all = false, everyone = false }: { all?: boolean; everyone?: boolean } = {},
+): Promise<UpcomingPlan[]> {
   const db = createAdminClient();
   const [sessions, confirmed] = await Promise.all([upcomingPublishedSessions(), confirmedSessions(db, userId)]);
-  const ids = all ? [...sessions.keys()] : [...confirmed.keys()].filter((id) => sessions.has(id));
+  const ids = all || everyone ? [...sessions.keys()] : [...confirmed.keys()].filter((id) => sessions.has(id));
   if (!ids.length) return [];
   const { data: rows } = await db
     .from("worship_sessions")
@@ -194,7 +201,9 @@ export async function loadUpcomingPlans(userId: string, { all = false }: { all?:
     .in("status", ["published", "draft"]);
   // Leads it (or is the developer): sees its draft, and unpublished changes to its published plan.
   const builds = (id: string) => all || confirmed.get(id) === WL;
-  const plans = (rows ?? []).filter((p) => (p.status === "published" ? confirmed.has(p.roster_session_id!) : builds(p.roster_session_id!)));
+  const plans = (rows ?? []).filter((p) =>
+    p.status === "published" ? everyone || confirmed.has(p.roster_session_id!) : builds(p.roster_session_id!),
+  );
   type Sec = { position: number; worship_session_items: { position: number; kind: string; title: string; key: string | null; transpose_to: string | null }[] };
   return plans
     .map((p) => {
