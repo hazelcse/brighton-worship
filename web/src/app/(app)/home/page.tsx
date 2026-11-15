@@ -16,7 +16,6 @@ import { HomeNotices, type HomeNotice } from "@/components/home-notices";
 import { updateText } from "@/components/roster/updates-board";
 import { loadUpdates, type UpdateItem } from "@/lib/serving";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { loadMyOpenEdits } from "@/lib/open-edits";
 
 export const metadata: Metadata = { title: "Home · Brighton Worship" };
 
@@ -39,14 +38,13 @@ async function homeBandSeenAt(userId: string): Promise<string | null> {
 
 async function HomeView() {
   const user = await requireUser();
-  const [next, fresh, due, broadcasts, updates, bandSeenAt, openEdits] = await Promise.all([
+  const [next, fresh, due, broadcasts, updates, bandSeenAt] = await Promise.all([
     loadNextSession(user.id),
     loadNewlyPublished(user.id),
     loadPublishDue(user.id),
     loadMyBroadcasts(user),
     loadUpdates(user), // the nav's inbox loads these too: fetched once
     homeBandSeenAt(user.id),
-    loadMyOpenEdits(user.id),
   ]);
   const name = (user.fullName || "").trim();
 
@@ -91,23 +89,6 @@ async function HomeView() {
       action: (
         <Link href={d.href} className={link}>
           {d.stage === "not_started" ? "Start building" : "Finish and publish"}
-        </Link>
-      ),
-    })),
-  );
-  // Sessions they left while still in edit mode: until they go back and save or stop editing. Near
-  // the top of the box, as their edits aren't saved anywhere the band or the other worship leader can see.
-  notices.unshift(
-    ...openEdits.map((o) => ({
-      key: `open-${o.id}`,
-      text: (
-        <>
-          <span className="font-semibold">{o.name}</span> on {day(o.date)} is still open for editing. Your changes aren&apos;t saved yet.
-        </>
-      ),
-      action: (
-        <Link href={`/sessions/${o.id}`} className={link}>
-          Go back and save
         </Link>
       ),
     })),

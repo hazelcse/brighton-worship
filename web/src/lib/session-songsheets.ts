@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { majorKey, semitonesBetween, sheetIntervals } from "@/lib/session-plan";
+import { cleanSheet, majorKey, ownSheetKeys, semitonesBetween, sheetIntervals } from "@/lib/session-plan";
+import { loadSessionSheet } from "@/lib/session-uploads";
 import { workerFetch } from "@/lib/worker";
 
 /**
@@ -110,15 +111,19 @@ export async function sheetKeysFor(items: { id: string; song_id: string | null; 
   return out;
 }
 
-/** Make every sheet a published session needs, so they open straight away. Failures are left for on-demand. */
+/**
+ * Make every sheet a published session needs, so they open straight away: bank songs' in their
+ * keys, and worship leaders' own Word sheets transposed to theirs. Failures are left for on-demand.
+ */
 export async function prepareSessionSongsheets(sessionId: string): Promise<void> {
   const db = createAdminClient();
   const { data } = await db
     .from("worship_session_sections")
-    .select("worship_session_items(id, kind, song_id, key, transpose_to)")
+    .select("worship_session_items(id, kind, song_id, key, transpose_to, sheet)")
     .eq("session_id", sessionId);
-  type Item = { id: string; kind: string; song_id: string | null; key: string | null; transpose_to: string | null };
-  const songs = (data ?? []).flatMap((sec) => (sec.worship_session_items as Item[]).filter((i) => i.kind === "song" && i.song_id));
+  type Item = { id: string; kind: string; song_id: string | null; key: string | null; transpose_to: string | null; sheet: unknown };
+  const all = (data ?? []).flatMap((sec) => (sec.worship_session_items as Item[]).filter((i) => i.kind === "song"));
+  const songs = all.filter((i) => i.song_id);
   const extra = await sheetKeysFor(songs);
   const wanted = new Map<string, { songId: string; key: string | null }>();
   for (const i of songs) {
@@ -130,6 +135,18 @@ export async function prepareSessionSongsheets(sessionId: string): Promise<void>
       await songsheetInKey(w.songId, w.key);
     } catch (e) {
       console.warn(`Session ${sessionId}: songsheet for ${w.songId} in ${w.key ?? "its own key"} not made:`, e);
+    }
+  }
+  for (const i of all) {
+    const sheet = i.song_id ? null : cleanSheet(i.sheet);
+    if (!sheet) continue;
+    for (const key of ownSheetKeys({ key: i.key, transpose_to: i.transpose_to, sheet })) {
+      if (key === majorKey(sheet.key)) continue;
+      try {
+        await loadSessionSheet(sessionId, sheet, key);
+      } catch (e) {
+        console.warn(`Session ${sessionId}: attached songsheet ${sheet.id} in ${key} not made:`, e);
+      }
     }
   }
 }

@@ -90,11 +90,7 @@ the dark countdown card (`rounded-xl bg-ink p-6`), then broadcasts and notices t
 (`space-y-3`: broadcast cards, then the accent-tinted notices list), then the next session's card
 (songs, then band in two columns once the card is wide enough). With no upcoming session: the
 dashed "not on any upcoming sessions" box, then broadcasts and notices.
-- Notices, in order: "you haven't confirmed", **sessions left open for editing** (they left a
-  session's builder while still in edit mode: "(service) on (date) is still open for editing. Your
-  changes aren't saved yet." with "Go back and save" linking to `/sessions/<id>`; it stays until
-  they save or stop editing there, `worship_session_open_edits`, `web/src/lib/open-edits.ts`),
-  plans due to be published, plans published or
+- Notices, in order: "you haven't confirmed", plans due to be published, plans published or
   updated, then **band changes** (someone else changed the band of an upcoming session they're on:
   roster edits, take-overs, swaps), worded as in the inbox, each with "See
   updates" (opens the inbox). A band change shows on one visit only: it's marked seen when shown and stays until
@@ -207,19 +203,32 @@ Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row
 ("← Sessions", the nav) opens a 384px dialog like the save prompt: "Save before you go?" (or "You're
 still editing" with nothing changed), an × in the top right corner to stay, and Leave anyway / Save
 and leave (Stop editing and leave) centred under the text; closing the tab, reloading or going to another site gets the browser's own "Leave site?"
-prompt. Leaving anyway (or by the browser's back button) keeps the edits unsaved, unlocks the
-session and puts a notice on Home; coming back picks the edits up in edit mode, with an
-accent-tinted note above the band ("You left this session open for editing on …"). Then
+prompt. Leaving anyway (or by the browser's back button, or closing the tab) throws the edits away
+and unlocks the session. If the editing lock lapses instead (2 minutes without the page renewing
+it, e.g. the phone slept), coming back autosaves the edits, unless the other worship leader is
+editing or saved in the meantime: then they're dropped, and the alert says why. Then
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
-one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns). In an open song
+one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns).
+In a sequence you read (both views), a step comment of up to 24 characters sits beside its step;
+a step with a longer one starts a line of its own ("| Chorus (Bass) (Drums)", no bar after it) and
+the next step starts a new line after its comment. The full view puts that comment on the line
+under the step; the simplified view starts it beside the step and wraps it onto the lines under.
+Either way it's left-aligned with the sequence (no indent) and ends in "||" if it's the song's
+last step. In an open song
 while editing, the title field has two 40px buttons on its right: the song bank's magnifier (or
 "Change") and an outlined upload arrow, "Upload your own songsheet", which opens a 448px dialog (a
-dashed drop box for one PDF or .docx; for a PDF, Song title + a 96px Key select under it; Cancel /
+dashed drop box for one PDF or .docx; under it a "Written in" key select, beside Song title (112px)
+for a PDF, or on its own (160px, "Reading key…" while the scanner reads a .docx); Cancel /
 Attach bottom right). An attached sheet shows as a bordered row under the title (file icon and
-name, then View / Replace / Remove), with "Filled in from the songsheet: …" under it after a .docx.
-In view mode an unpublished song's attached sheet shows the same row (View only) at the bottom of
+name, a small "Written in" key select, then View / Replace / Remove), with "Filled in from the
+songsheet: …" under it after a .docx. A .docx is shown transposed to the song's key (a song that
+changes key gets "View in C" / "View in E", unless the sheet already has that key change written
+in, as with bank songs); a PDF whose
+key isn't the song's gets an amber note under the row ("The songsheet is in E, but the song is in
+F.", in view mode too) and an amber "sheet in E" chip after the key in the closed song row.
+In view mode an unpublished song's attached sheet shows the same row (View only, with its key) at the bottom of
 the open song; once published it's a button among the set's Songsheets like a bank song's. In a song's sequence
 builder, steps drag to a new spot (mouse: press and move; touch: press and hold, then move), taking
 their tags, linked instruments and comment with them; "Use song's sequence" and "Clear" sit right of

@@ -1,13 +1,41 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
-import { PART_ROLES, SUGGESTED_ELEMENTS, SUGGESTED_TAGS, copySteps, insertElement, partInfo, partTint, stepLabel, type SeqStep } from "@/lib/session-plan";
+import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { PART_ROLES, SUGGESTED_ELEMENTS, SUGGESTED_TAGS, copySteps, insertElement, isLongComment, partInfo, partTint, stepLabel, type SeqStep } from "@/lib/session-plan";
 
 const chipBase = "inline-flex h-8 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 text-sm";
 const smallBtn = "rounded-md border border-border px-2 py-1 text-xs font-medium hover:border-accent hover:text-accent disabled:opacity-40";
-// These "add" boxes sit inside the song's Details form. Pointing them at a form id that doesn't exist
-// detaches them from it, so Enter in them can't save the Details form (and they aren't sent with it).
-const NO_FORM = "sequence-builder-no-form";
+const noSubscribe = () => () => {};
+
+/**
+ * Enter in an "add" box (own element, own tag) adds what's typed. The boxes sit inside the song's
+ * Details form, and forms can't nest, so each gets a little form of its own outside the page's
+ * (in <body>), joined to it by the box's form attribute. Enter in a form's only box submits it: the
+ * browser does that for every keyboard, phones' too (whose Enter often comes while a word is still
+ * being composed, which a keydown check would skip), and holds it back while a Chinese or Japanese
+ * keyboard is still choosing characters. It also keeps Enter from saving the Details form.
+ */
+function useEnterToAdd(onEnter: () => void): { formId: string; form: ReactNode } {
+  const formId = `add-${useId().replace(/:/g, "")}`;
+  const mounted = useSyncExternalStore(noSubscribe, () => true, () => false);
+  const form = mounted
+    ? createPortal(
+        <form
+          id={formId}
+          hidden
+          onSubmit={(e) => {
+            e.preventDefault();
+            // Portalled events still reach React parents: keep it from the Details form.
+            e.stopPropagation();
+            onEnter();
+          }}
+        />,
+        document.body,
+      )
+    : null;
+  return { formId, form };
+}
 const input =
   "h-8 rounded-md border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
@@ -28,34 +56,56 @@ export function SequenceView({ steps, highlight }: { steps: SeqStep[]; highlight
       {steps.map((s, i) => {
         const parts = (s.parts ?? []).map((r) => partInfo(r)).filter((p) => p !== undefined);
         const last = i === steps.length - 1;
+        // A step with a long comment has a line of its own ("| Chorus"), with the comment on the line
+        // under it (wrapping), and the next step starts a new line after that.
+        const long = Boolean(s.comment) && isLongComment(s.comment);
         return (
-          // A step keeps its bar (and the closing ||) with it when the line wraps.
-          <li key={s.id} className="inline-flex flex-wrap items-baseline gap-x-2">
-            {bar(i === 0)}
-            <span>
-              <span className="font-medium">{s.name}</span>
-              {s.repeat > 1 && <span className="font-semibold text-accent"> x{s.repeat}</span>}
-              {s.tags.length > 0 && <span className="text-muted"> ({s.tags.join(", ")})</span>}
-              {parts.map((p) => {
-                const mine = p.role === highlight;
-                return (
-                  <span
-                    key={p.role}
-                    title={`${p.label} featured here`}
-                    className="ml-1.5 inline-block whitespace-nowrap rounded-full border px-1.5 align-[1px] text-[11px] font-semibold leading-4"
-                    style={{ borderColor: p.color, color: mine ? "#fff" : p.color, background: mine ? p.color : partTint(p.color) }}
-                  >
-                    {p.label}
-                  </span>
-                );
-              })}
-              {s.comment && <span className="ml-1.5 text-xs italic text-muted">{s.comment}</span>}
-            </span>
-            {last && bar(true)}
-          </li>
+          <Fragment key={s.id}>
+            {long && i > 0 && <LineBreak />}
+            {/* A step keeps its bar (and the closing ||) with it when the line wraps. */}
+            <li className="inline-flex min-w-0 max-w-full items-baseline gap-x-2">
+              {bar(i === 0)}
+              <span className="min-w-0">
+                <span className="font-medium">{s.name}</span>
+                {s.repeat > 1 && <span className="font-semibold text-accent"> x{s.repeat}</span>}
+                {s.tags.length > 0 && <span className="text-muted"> ({s.tags.join(", ")})</span>}
+                {parts.map((p) => {
+                  const mine = p.role === highlight;
+                  return (
+                    <span
+                      key={p.role}
+                      title={`${p.label} featured here`}
+                      className="ml-1.5 inline-block whitespace-nowrap rounded-full border px-1.5 align-[1px] text-[11px] font-semibold leading-4"
+                      style={{ borderColor: p.color, color: mine ? "#fff" : p.color, background: mine ? p.color : partTint(p.color) }}
+                    >
+                      {p.label}
+                    </span>
+                  );
+                })}
+                {s.comment && !long && <span className="ml-1.5 text-xs italic text-muted">{s.comment}</span>}
+              </span>
+              {last && !long && bar(true)}
+            </li>
+            {long && (
+              <ReadComment text={s.comment!}>
+                {/* The song's last step: its closing || ends the comment. */}
+                {last && <> {bar(true)}</>}
+              </ReadComment>
+            )}
+          </Fragment>
         );
       })}
     </ol>
+  );
+}
+
+/** A long step comment in a sequence you read: its own line under the step, wrapping if need be. */
+function ReadComment({ text, children }: { text: string; children?: ReactNode }) {
+  return (
+    <li className="basis-full -mt-1 break-words text-muted">
+      <span className="text-xs italic">{text}</span>
+      {children}
+    </li>
   );
 }
 
@@ -246,6 +296,9 @@ export function SequenceBuilder({
     if (!active.tags.some((x) => x.toLowerCase() === t.toLowerCase())) patch(active.id, { tags: [...active.tags, t] });
     setOwnTag("");
   }
+
+  const elementEnter = useEnterToAdd(addOwn);
+  const tagEnter = useEnterToAdd(addTag);
 
   // ---- drag and drop -------------------------------------------------------
   // Drag a step (with its tags, linked instruments and comment, which are all part of it) to a gap
@@ -482,19 +535,16 @@ export function SequenceBuilder({
                 </button>
               );
             })}
-            {/* Not a <form>: this builder sits inside the song's Details form, and forms can't nest. */}
+            {/* Enter adds the tag: see useEnterToAdd. */}
             <div className="flex items-center gap-1">
+              {tagEnter.form}
               <input
                 value={ownTag}
                 onChange={(e) => setOwnTag(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" || e.nativeEvent.isComposing) return; // not while typing Chinese etc.
-                  e.preventDefault(); // add the tag, don't submit the form around this builder
-                  addTag();
-                }}
                 placeholder="New tag"
                 aria-label="New tag"
-                form={NO_FORM}
+                form={tagEnter.formId}
+                enterKeyHint="enter"
                 className={`${input} h-7 w-28 text-xs`}
               />
               <button type="button" onClick={addTag} disabled={!ownTag.trim()} className={smallBtn}>
@@ -557,17 +607,14 @@ export function SequenceBuilder({
             before Clear from 640px; on phones they wrap to their own line underneath. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-4 sm:gap-y-2">
           <div className="flex items-center gap-1">
+            {elementEnter.form}
             <input
               value={ownElement}
               onChange={(e) => setOwnElement(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.nativeEvent.isComposing) return; // not while typing Chinese etc.
-                e.preventDefault(); // add the element, don't submit the form around this builder
-                addOwn();
-              }}
               placeholder="Own element, e.g. Tag"
               aria-label="Add your own element"
-              form={NO_FORM}
+              form={elementEnter.formId}
+              enterKeyHint="enter"
               className={`${input} w-44`}
             />
             <button type="button" onClick={addOwn} disabled={!ownElement.trim()} className={smallBtn}>

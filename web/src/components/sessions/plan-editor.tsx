@@ -6,7 +6,7 @@ import { SequenceBuilder, SequenceView } from "@/components/sessions/sequence-bu
 import { TypeBadge } from "@/components/sessions/song-bank-panel";
 import { SheetUploadDialog } from "@/components/sessions/sheet-upload-dialog";
 import { PdfViewerDialog } from "@/components/songs/pdf-viewer-dialog";
-import { MAJOR_KEYS, SONG_TYPE_LABEL, keyLabel, majorKey, stepsFrom, type PlanItem, type PlanLink, type PlanSection, type SongType } from "@/lib/session-plan";
+import { MAJOR_KEYS, SONG_TYPE_LABEL, keyLabel, majorKey, ownSheetKeys, ownSheetShownKey, sheetKeyMismatch, stepsFrom, type PlanItem, type PlanLink, type PlanSection, type SongType } from "@/lib/session-plan";
 
 const input =
   "h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
@@ -448,8 +448,17 @@ function LeadSelect({ item, api, id }: { item: PlanItem; api: EditorApi; id: str
   );
 }
 
-/** Where an attached songsheet opens. */
-const uploadSrc = (sessionId: string, sheetId: string) => `/api/sessions/${sessionId}/uploads/${sheetId}`;
+/**
+ * Where an attached songsheet opens. A Word sheet comes transposed to the song's key (or `key`, the
+ * key a song that changes key goes to), so that key (as on the page, maybe not saved yet) and the key
+ * it's written in go in the address.
+ */
+function uploadSrc(sessionId: string, item: PlanItem, key: string | null = item.key): string {
+  const sheet = item.sheet!;
+  const base = `/api/sessions/${sessionId}/uploads/${sheet.id}`;
+  if (!sheet.transposable || !sheet.key || !key) return base;
+  return `${base}?key=${encodeURIComponent(key)}&from=${encodeURIComponent(sheet.key)}`;
+}
 
 function UploadIcon() {
   return (
@@ -459,21 +468,69 @@ function UploadIcon() {
   );
 }
 
-/** The worship leader's own songsheet on a song: its file, to open, replace or take off. */
+/**
+ * The key a worship leader's own songsheet shows as (a Word sheet: the song's key, as it's
+ * transposed), or for a sheet uploaded before sheets had their own key, the song's key.
+ */
+const ownSheetKey = (item: PlanItem) =>
+  // A Word sheet covering the song's key change in one copy (written E→F#, sung F→G) shows as "F→G".
+  ownSheetKeys(item).length === 1 ? keyLabel(item.key, item.transpose_to) : (ownSheetShownKey(item) ?? keyLabel(item.key, item.transpose_to));
+
+/** A worship leader's own songsheet in another key than the song (e.g. a sheet in E, sung in F). */
+function SheetKeyNote({ item }: { item: PlanItem }) {
+  const sheetKey = sheetKeyMismatch(item);
+  if (!sheetKey) return null;
+  return (
+    <p role="note" className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-900">
+      The songsheet is in {sheetKey}, but the song is in {keyLabel(item.key, item.transpose_to)}.
+    </p>
+  );
+}
+
+/** The worship leader's own songsheet on a song: its file and key, to open, replace or take off. */
 function AttachedSheet({ item, api, onReplace }: { item: PlanItem; api: EditorApi; onReplace?: () => void }) {
-  const [viewing, setViewing] = useState(false);
+  /** The key being viewed in ("" for the one key a PDF comes in), while the viewer's open. */
+  const [viewing, setViewing] = useState<string | null>(null);
   if (!item.sheet) return null;
+  const sheet = item.sheet;
+  const shownKey = ownSheetKey(item);
+  // A Word sheet for a song that changes key (C→E) comes in both keys.
+  const keys = ownSheetKeys(item);
+  const views = keys.length > 1 ? keys : [""];
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
       <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
         <SheetIcon />
-        <span className="truncate" title={item.sheet.file_name}>
-          {item.sheet.file_name}
+        <span className="truncate" title={sheet.file_name}>
+          {sheet.file_name}
         </span>
+        {!onReplace && shownKey && keys.length < 2 && <span className="shrink-0 rounded bg-background px-1.5 text-xs font-medium">{shownKey}</span>}
       </span>
-      <button type="button" onClick={() => setViewing(true)} className="text-xs font-medium text-accent hover:underline">
-        View
-      </button>
+      {onReplace && (
+        // The key the sheet is written in (a Word sheet is transposed from it to the song's key; a PDF
+        // is shown in it). Changeable in case it was read or typed wrong.
+        <label className="inline-flex items-center gap-1 text-xs text-muted">
+          Written in
+          <select
+            aria-label="Key the songsheet is written in"
+            value={sheet.key ?? ""}
+            onChange={(e) => api.updateItem(item.id, { sheet: { ...sheet, key: e.target.value || null } })}
+            className="h-7 rounded-md border border-border bg-surface px-1 text-xs text-foreground outline-none focus:border-accent"
+          >
+            <option value="">—</option>
+            {MAJOR_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {views.map((k) => (
+        <button key={k} type="button" onClick={() => setViewing(k)} className="text-xs font-medium text-accent hover:underline">
+          {k ? `View in ${k}` : "View"}
+        </button>
+      ))}
       {onReplace && (
         <>
           <button type="button" onClick={onReplace} className="text-xs font-medium text-accent hover:underline">
@@ -484,11 +541,11 @@ function AttachedSheet({ item, api, onReplace }: { item: PlanItem; api: EditorAp
           </button>
         </>
       )}
-      {viewing && (
+      {viewing !== null && (
         <PdfViewerDialog
-          src={uploadSrc(api.sessionId, item.sheet.id)}
-          title={`${item.title || "Songsheet"}${item.key ? ` (${keyLabel(item.key, item.transpose_to)})` : ""}`}
-          onClose={() => setViewing(false)}
+          src={uploadSrc(api.sessionId, item, viewing || item.key)}
+          title={`${item.title || "Songsheet"}${(viewing || shownKey) ? ` (${viewing || shownKey})` : ""}`}
+          onClose={() => setViewing(null)}
         />
       )}
     </div>
@@ -559,6 +616,7 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
       {item.sheet && (
         <div className="-mt-2 space-y-1">
           <AttachedSheet item={item} api={api} onReplace={() => setUploading(true)} />
+          <SheetKeyNote item={item} />
           {filled.length > 0 && <p className="text-xs text-muted">Filled in from the songsheet: {filled.join(", ")}. Check them below.</p>}
         </div>
       )}
@@ -679,6 +737,7 @@ function SongDetails({ item, api }: { item: PlanItem; api: EditorApi }) {
       {item.notes && <p className="whitespace-pre-line">{item.notes}</p>}
       {/* Once published it's with the set's songsheets; before then, the worship leaders can open it here. */}
       {item.sheet && !api.sheetsFor && <AttachedSheet item={item} api={api} />}
+      <SheetKeyNote item={item} />
     </div>
   );
 }
@@ -726,6 +785,7 @@ function ItemRow({ item, api, drag }: { item: PlanItem; api: EditorApi; drag: Dr
   }
 
   const lead = item.lead_id ? api.singers.find((s) => s.id === item.lead_id)?.name : null;
+  const sheetOff = sheetKeyMismatch(item);
   const selected = api.selectedId === item.id;
   return (
     <li ref={ref} className={`overflow-hidden rounded-lg border bg-surface transition-shadow ${selected && api.editing ? "border-accent" : "border-border"} ${lift}`}>
@@ -748,6 +808,11 @@ function ItemRow({ item, api, drag }: { item: PlanItem; api: EditorApi; drag: Dr
           <span className="min-w-0 flex-1 truncate">
             <span className={`font-medium ${item.title ? "" : "text-muted"}`}>{item.title || (api.editing ? "Choose a song" : "Song to be chosen")}</span>
             {item.key && <span className="font-medium"> ({keyLabel(item.key, item.transpose_to)})</span>}
+            {sheetOff && (
+              <span title={`The songsheet is in ${sheetOff}`} className="ml-1.5 rounded bg-amber-100 px-1 text-xs font-medium text-amber-900">
+                sheet in {sheetOff}
+              </span>
+            )}
             {lead && <span className="hidden text-muted sm:inline"> - {lead}</span>}
           </span>
           {lead && <span className="max-w-[35%] shrink-0 truncate text-xs text-muted sm:hidden">{lead}</span>}
@@ -786,8 +851,13 @@ function SectionSongsheets({ sessionId, items, sheetKeys }: { sessionId: string;
   const songs = items.filter((i) => i.kind === "song" && (i.song_id || i.sheet));
   if (!songs.length) return null;
   const sheets: Sheet[] = songs.flatMap((i) => {
-    // The worship leader's own songsheet: one PDF, as it is.
-    if (!i.song_id) return [{ item: i, key: i.key, label: keyLabel(i.key, i.transpose_to), to: false }];
+    // The worship leader's own songsheet: a PDF as it is, labelled with the key it's written in; a
+    // Word sheet in the song's key, plus a second copy in the key it changes to (C→E), like a bank song's.
+    if (!i.song_id) {
+      const own = ownSheetKeys(i);
+      if (own.length > 1) return own.map((k, n) => ({ item: i, key: k, label: k, to: n > 0 }));
+      return [{ item: i, key: i.key, label: ownSheetKey(i), to: false }];
+    }
     const keys = sheetKeys[i.id];
     if (!keys) return [{ item: i, key: i.key, label: i.key, to: false }];
     // One sheet covering both keys is labelled "E→G"; otherwise one in E and one in G.
@@ -818,7 +888,7 @@ function SectionSongsheets({ sessionId, items, sheetKeys }: { sessionId: string;
         <PdfViewerDialog
           src={
             open.item.sheet && !open.item.song_id
-              ? uploadSrc(sessionId, open.item.sheet.id)
+              ? uploadSrc(sessionId, open.item, open.key)
               : // The key is in the address so a changed key never shows the old sheet.
                 `/api/sessions/${sessionId}/songsheets/${open.item.id}?key=${encodeURIComponent(open.key ?? "")}${open.to ? "&to=1" : ""}`
           }

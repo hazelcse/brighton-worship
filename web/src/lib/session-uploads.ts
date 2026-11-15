@@ -1,6 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { cleanSheet, majorKey, type SheetScan, type SongType, type UploadedSheet } from "@/lib/session-plan";
+import { cleanSheet, majorKey, semitonesBetween, sheetIntervals, type SheetScan, type SongType, type UploadedSheet } from "@/lib/session-plan";
 import { workerFetch } from "@/lib/worker";
 
 /**
@@ -11,7 +11,8 @@ import { workerFetch } from "@/lib/worker";
  *
  * Stored in the private songsheets bucket as session-uploads/<session id>/<sheet id>.pdf. A .docx
  * is turned into a PDF by the worker when it's attached (and scanned to fill in the details), so the
- * band always gets a PDF, the same as for bank songs.
+ * band always gets a PDF, the same as for bank songs. Its original is kept as <sheet id>.docx, so it
+ * can be shown transposed to the song's key (<sheet id>.<key>.pdf, made when first opened).
  */
 
 const BUCKET = "songsheets";
@@ -30,22 +31,36 @@ type WorkerSheet = {
   sections: string[];
   sequence: string[];
   youtube_links: string[];
+  /** The sheet's key, or its key changes ("E→F#"). */
+  key_display?: string | null;
   pdf_base64: string;
 };
 
 const TYPES: SongType[] = ["praise", "worship", "praise_worship"];
 
+/** The key the worker reads from a .docx songsheet, before it's attached (nothing is stored). */
+export async function readSheetKey(file: File): Promise<string | null> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const r = await workerFetch<{ key: string | null }>("/analyze", { method: "POST", body }, 60_000);
+  return majorKey(r.key);
+}
+
 /**
  * Store a worship leader's songsheet for a session. A PDF is kept as it is (not scanned); a .docx
  * is scanned and converted. Throws with a message fit to show.
+ *
+ * fromKey: the key the worship leader says the sheet is written in (a PDF's, or a .docx's when the
+ * scanner read it wrong: theirs wins). A .docx's original is kept too, so it can be shown
+ * transposed to the song's key (see loadSessionSheet).
  */
-export async function storeSessionSheet(sessionId: string, file: File): Promise<{ sheet: UploadedSheet; scan: SheetScan | null }> {
+export async function storeSessionSheet(sessionId: string, file: File, fromKey: string | null = null): Promise<{ sheet: UploadedSheet; scan: SheetScan | null }> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const isPdf = /\.pdf$/i.test(file.name);
   const head = new TextDecoder().decode(bytes.slice(0, 5));
   let pdf: Uint8Array;
   let scan: SheetScan | null = null;
-  let extra: Pick<UploadedSheet, "sections" | "sequence"> = {};
+  let extra: Pick<UploadedSheet, "key" | "transposable" | "changes" | "sections" | "sequence"> = { key: majorKey(fromKey) };
 
   if (isPdf) {
     if (head !== "%PDF-") throw new Error("This doesn't look like a PDF. Try exporting it as a PDF again.");
@@ -73,21 +88,79 @@ export async function storeSessionSheet(sessionId: string, file: File): Promise<
       sequence: r.sequence ?? [],
       youtube_links: (r.youtube_links ?? []).filter((u) => /^https?:\/\//i.test(u)).slice(0, 5),
     };
-    extra = { sections: r.sections ?? [], sequence: r.sequence ?? [] };
+    // Key changes written in the sheet ("E→F#"): the first one is the song's key change, and
+    // transposing keeps them all, so the sheet covers a song changing key by any of them.
+    const written = (r.key_display ?? "").split(/\s*(?:→|->|-|–|—|,|\/)\s*/).filter((k) => majorKey(k));
+    if (written.length > 1) scan.key_change = semitonesBetween(written[0], written[1]) || null;
+    // Their key wins over the scanner's.
+    extra = {
+      key: majorKey(fromKey) ?? scan.key,
+      transposable: true,
+      changes: sheetIntervals(r.key_display, [r.key ?? ""], []),
+      sections: r.sections ?? [],
+      sequence: r.sequence ?? [],
+    };
   }
 
   const sheet = cleanSheet({ id: crypto.randomUUID(), file_name: file.name, format: isPdf ? "pdf" : "docx", ...extra })!;
-  const { error } = await createAdminClient()
-    .storage.from(BUCKET)
-    .upload(sheetPath(sessionId, sheet.id), pdf, { contentType: "application/pdf", upsert: true });
+  const store = createAdminClient().storage.from(BUCKET);
+  const { error } = await store.upload(sheetPath(sessionId, sheet.id), pdf, { contentType: "application/pdf", upsert: true });
   if (error) throw new Error("The songsheet couldn't be saved. Please try again.");
+  if (!isPdf) {
+    // The original, to transpose from. Without it the sheet just isn't transposed.
+    const { error: docErr } = await store.upload(`${folder(sessionId)}/${sheet.id}.docx`, bytes, { contentType: DOCX_MIME, upsert: true });
+    if (docErr) delete sheet.transposable;
+  }
   return { sheet, scan };
 }
 
-/** An attached songsheet as a PDF, or null if it's gone. */
-export async function loadSessionSheet(sessionId: string, sheetId: string): Promise<Blob | null> {
-  const { data } = await createAdminClient().storage.from(BUCKET).download(sheetPath(sessionId, sheetId));
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/**
+ * An attached songsheet as a PDF, or null if it's gone. For a Word sheet with its original kept,
+ * `key` (the song's key) other than the key it's written in gives it transposed to that key: made
+ * by the worker the first time and kept next to it (<sheet id>.<key>.pdf). Throws with a message
+ * fit to show if transposing fails.
+ */
+export async function loadSessionSheet(sessionId: string, sheet: UploadedSheet, key: string | null = null): Promise<Blob | null> {
+  const store = createAdminClient().storage.from(BUCKET);
+  const target = majorKey(key);
+  if (sheet.transposable && sheet.key && target && target !== majorKey(sheet.key)) {
+    const path = `${folder(sessionId)}/${sheet.id}.${target.replace("#", "sharp")}.pdf`;
+    const { data: cached } = await store.download(path);
+    if (cached) return cached;
+    const { data: original } = await store.download(`${folder(sessionId)}/${sheet.id}.docx`);
+    if (original) {
+      const body = new FormData();
+      body.append("file", new Blob([original], { type: DOCX_MIME }), sheet.file_name);
+      body.append("from_key", sheet.key);
+      body.append("target_key", target);
+      body.append("format", "pdf");
+      const bytes = await workerFile("/transpose/upload", body);
+      await store.upload(path, bytes, { contentType: "application/pdf", upsert: true });
+      return new Blob([bytes], { type: "application/pdf" });
+    }
+  }
+  const { data } = await store.download(sheetPath(sessionId, sheet.id));
   return data ?? null;
+}
+
+/** A file from the worker (workerFetch is for JSON). */
+async function workerFile(path: string, body: FormData): Promise<ArrayBuffer> {
+  const url = process.env.WORKER_URL;
+  const token = process.env.WORKER_TOKEN;
+  if (!url || !token) throw new Error("The songsheet worker isn't configured.");
+  let res: Response;
+  try {
+    res = await fetch(`${url}${path}`, { method: "POST", body, headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(90_000), cache: "no-store" });
+  } catch {
+    throw new Error("The transposer isn't reachable right now. Please try again in a minute.");
+  }
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(err?.detail ?? "The transposer couldn't transpose this songsheet.");
+  }
+  return res.arrayBuffer();
 }
 
 /** Every attached songsheet id in a stored plan (tables, a revision, or open edits). */
@@ -102,8 +175,8 @@ function sheetIds(plan: unknown, out: Set<string>) {
 }
 
 /**
- * Remove a session's attached songsheets that nothing uses any more: not the plan, its revision,
- * or anyone's edits left open. Recent ones are kept (they may be in unsaved edits). Never throws.
+ * Remove a session's attached songsheets that nothing uses any more: not the plan or its revision.
+ * Recent ones are kept (they may be in unsaved edits). Never throws.
  */
 export async function sweepSessionUploads(sessionId: string): Promise<void> {
   try {
@@ -111,19 +184,20 @@ export async function sweepSessionUploads(sessionId: string): Promise<void> {
     const store = db.storage.from(BUCKET);
     const { data: files } = await store.list(folder(sessionId), { limit: 1000 });
     if (!files?.length) return;
-    const [{ data: s }, { data: open }] = await Promise.all([
-      db.from("worship_sessions").select("draft_plan, worship_session_sections(worship_session_items(sheet))").eq("id", sessionId).maybeSingle(),
-      db.from("worship_session_open_edits").select("plan").eq("session_id", sessionId),
-    ]);
+    const { data: s } = await db
+      .from("worship_sessions")
+      .select("draft_plan, worship_session_sections(worship_session_items(sheet))")
+      .eq("id", sessionId)
+      .maybeSingle();
     const used = new Set<string>();
     if (s) {
       sheetIds(s.worship_session_sections, used);
       sheetIds(s.draft_plan, used);
     }
-    for (const e of open ?? []) sheetIds(e.plan, used);
     const cutoff = Date.now() - GRACE_MS;
     const stale = files
-      .filter((f) => !used.has(f.name.replace(/\.pdf$/i, "")))
+      // <sheet id>.pdf, its original <sheet id>.docx and transposed copies <sheet id>.<key>.pdf.
+      .filter((f) => !used.has(f.name.split(".")[0]))
       .filter((f) => !f.created_at || new Date(f.created_at).getTime() < cutoff)
       .map((f) => `${folder(sessionId)}/${f.name}`);
     if (stale.length) await store.remove(stale);

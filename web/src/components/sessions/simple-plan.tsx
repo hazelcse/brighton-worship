@@ -1,20 +1,45 @@
 "use client";
 
 import { Fragment } from "react";
-import { keyLabel, partInfo, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
+import { isLongComment, keyLabel, partInfo, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 const isChorus = (s: SeqStep | undefined) => Boolean(s && /^chorus\b/i.test(s.name.trim()));
 
-/** How much room a step takes on a line, roughly in characters (with its " | "). */
+/** How much room a step takes on a line, roughly in characters (with its " | "). A long comment has a line of its own. */
 const width = (s: SeqStep) =>
-  shortName(s.name).length + (s.repeat > 1 ? 3 : 0) + (s.tags.length ? s.tags.join(", ").length + 3 : 0) + (s.comment ? s.comment.length + 1 : 0) + 3;
+  shortName(s.name).length +
+  (s.repeat > 1 ? 3 : 0) +
+  (s.tags.length ? s.tags.join(", ").length + 3 : 0) +
+  (s.comment && !isLongComment(s.comment) ? s.comment.length + 1 : 0) +
+  3;
 
 /**
- * The sequence split into lines of about the same length (the last can be shorter), about four
+ * The sequence split into lines. A step with a long comment has a line of its own (the comment goes
+ * under it); the steps in between are evened out into lines (see balanced).
+ */
+function lines(steps: SeqStep[]): SeqStep[][] {
+  const out: SeqStep[][] = [];
+  let run: SeqStep[] = [];
+  const flush = () => {
+    if (run.length) out.push(...balanced(run));
+    run = [];
+  };
+  for (const s of steps) {
+    if (isLongComment(s.comment)) {
+      flush();
+      out.push([s]);
+    } else run.push(s);
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Steps split into lines of about the same length (the last can be shorter), about four
  * steps or 32 characters each. Lines prefer to end on a chorus that's followed by something new
  * (a verse, the bridge), so each line reads as one pass of the song.
  */
-function lines(steps: SeqStep[]): SeqStep[][] {
+function balanced(steps: SeqStep[]): SeqStep[][] {
   const n = steps.length;
   if (n <= 3) return [steps];
   const w = steps.map(width);
@@ -57,12 +82,17 @@ function lines(steps: SeqStep[]): SeqStep[][] {
 
 /**
  * One line of a sequence: || Intro x2 | V1 | C |, with the viewer's instrument picked out. Each step
- * keeps its closing bar with it, so a line that wraps on a narrow screen still ends in |.
+ * keeps its closing bar with it, so a line that wraps on a narrow screen still ends in |. A comment
+ * sits beside its step; a step with a long one starts a line of its own (see lines), with no bar
+ * after it, and the comment wraps onto the lines under it.
  */
 function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: boolean; last: boolean; highlight: string | null }) {
   const mine = highlight ? partInfo(highlight) : undefined;
+  // A step with a long comment is on a line of its own: "| Chorus" with no bar after it, then the
+  // comment, wrapping (ending in || if it's the song's last step).
+  const longComment = steps.length === 1 && isLongComment(steps[0].comment) ? steps[0].comment : null;
   return (
-    <p className="leading-7">
+    <p className="break-words leading-7">
       {steps.map((s, i) => {
         const featured = mine && s.parts?.includes(mine.role);
         const label = (
@@ -76,6 +106,7 @@ function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: b
         return (
           <Fragment key={s.id}>
             {i > 0 && " "}
+            {/* The step, its instruments and a short comment on one line, never split. */}
             <span className="whitespace-nowrap">
               {i === 0 && <span className="text-muted">{first ? "|| " : "| "}</span>}
               {featured ? (
@@ -85,12 +116,19 @@ function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: b
               ) : (
                 label
               )}
-              {s.comment && <span className="text-xs italic text-muted"> {s.comment}</span>}
-              <span className="text-muted"> {closing}</span>
+              {s.comment && !isLongComment(s.comment) && <span className="text-xs italic text-muted"> {s.comment}</span>}
+              {!longComment && <span className="text-muted"> {closing}</span>}
             </span>
           </Fragment>
         );
       })}
+      {longComment && (
+        <>
+          {" "}
+          <span className="text-xs italic text-muted">{longComment}</span>
+          {last && <span className="text-muted">{" ||"}</span>}
+        </>
+      )}
     </p>
   );
 }

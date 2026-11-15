@@ -50,7 +50,19 @@ export type PlanSection = { id: string; name: string; items: PlanItem[] };
  * instead of a song from the bank. Kept with the session only. For a .docx, the sections and
  * sequence the scanner read from it, offered in the sequence builder.
  */
-export type UploadedSheet = { id: string; file_name: string; format: "pdf" | "docx"; sections?: string[]; sequence?: string[] };
+export type UploadedSheet = {
+  id: string;
+  file_name: string;
+  format: "pdf" | "docx";
+  /** The key the songsheet is written in. The song's own key can differ. */
+  key?: string | null;
+  /** A Word sheet whose original is kept: it's shown transposed to the song's key. */
+  transposable?: boolean;
+  /** Key changes written in the sheet, in semitones up (e.g. [2] for "E→F#"): transposing keeps them. */
+  changes?: number[];
+  sections?: string[];
+  sequence?: string[];
+};
 
 /** What attaching a .docx read from it, to fill in the song's details. */
 export type SheetScan = {
@@ -61,6 +73,8 @@ export type SheetScan = {
   type: SongType | null;
   sequence: string[];
   youtube_links: string[];
+  /** A key change written in the sheet: semitones up from its first key to the next (e.g. 2 for "E→F#"). */
+  key_change?: number | null;
 };
 
 /** Songsheets a worship leader can attach: up to 4 MB (under the host's request limit), PDF or .docx. */
@@ -321,11 +335,58 @@ export function cleanSheet(raw: unknown): UploadedSheet | null {
   const names = (v: unknown) => (Array.isArray(v) ? v.map((x) => clip(x, 40)).filter(Boolean).slice(0, 60) : undefined);
   const sections = names(s.sections);
   const sequence = names(s.sequence);
+  const key = majorKey(typeof s.key === "string" ? s.key : null);
+  const changes = Array.isArray(s.changes) ? [...new Set(s.changes.filter((n): n is number => Number.isInteger(n) && n > 0 && n < 12))].slice(0, 10) : [];
   return {
     id: s.id.toLowerCase(),
     file_name: clip(s.file_name, 200) || "Songsheet.pdf",
     format: s.format === "docx" ? "docx" : "pdf",
+    ...(key ? { key } : {}),
+    ...(s.transposable === true && s.format === "docx" ? { transposable: true } : {}),
+    ...(changes.length ? { changes } : {}),
     ...(sections?.length ? { sections } : {}),
     ...(sequence?.length ? { sequence } : {}),
   };
+}
+
+/**
+ * The key a worship leader's own songsheet is shown in: a Word sheet is transposed to the song's
+ * key; a PDF stays in the key it's written in.
+ */
+export function ownSheetShownKey(item: Pick<PlanItem, "key" | "sheet">): string | null {
+  if (!item.sheet) return null;
+  return item.sheet.transposable && item.key ? majorKey(item.key) : (item.sheet.key ?? null);
+}
+
+/**
+ * The keys a worship leader's own Word songsheet comes in: the song's key, and for a song that
+ * changes key (C→E) a second copy in the key it changes to, as for a bank song. A PDF, or a sheet
+ * without its original, comes in one key: empty here.
+ */
+export function ownSheetKeys(item: Pick<PlanItem, "key" | "transpose_to" | "sheet">): string[] {
+  if (!item.sheet?.transposable || !item.sheet.key) return [];
+  const from = majorKey(item.key);
+  const to = majorKey(item.transpose_to);
+  if (!from) return [];
+  // The sheet already has that key change written in (E→F# for a song going F→G): one copy covers it.
+  if (to && to !== from && !item.sheet.changes?.includes(semitonesBetween(from, to)!)) return [from, to];
+  return [from];
+}
+
+/**
+ * A step comment too long to sit beside the step in a sequence you read: it goes on its own line
+ * under the step instead, and the next step starts a new line.
+ */
+export const isLongComment = (comment: string | null | undefined) => (comment?.trim().length ?? 0) > 24;
+
+/** The key `n` semitones up from `key` (one of MAJOR_KEYS), or null if it isn't a key. */
+export function keyUp(key: string | null | undefined, n: number): string | null {
+  const pc = pitchClass(key);
+  return pc === null ? null : MAJOR_KEYS[(((pc + n) % 12) + 12) % 12];
+}
+
+/** The key of a worship leader's own songsheet when it's shown in another key than the song's (null when they match or either is unknown). */
+export function sheetKeyMismatch(item: Pick<PlanItem, "key" | "sheet">): string | null {
+  const shown = ownSheetShownKey(item);
+  return shown && item.key && majorKey(shown) !== majorKey(item.key) ? shown : null;
 }

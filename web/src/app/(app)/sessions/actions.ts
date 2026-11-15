@@ -7,7 +7,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildsAnySession, loadWorkbench, normalisePlan, sessionAccess, sessionLinks, type Workbench } from "@/lib/sessions";
 import { prepareSessionSongsheets } from "@/lib/session-songsheets";
-import { clearOpenEdit, leaveOpen } from "@/lib/open-edits";
+import { createHash } from "node:crypto";
 import { describeLinkChanges, describePlanChanges } from "@/lib/plan-changes";
 import {
   LOCK_STALE_MS,
@@ -25,7 +25,7 @@ import {
   type SongType,
   type UploadedSheet,
 } from "@/lib/session-plan";
-import { storeSessionSheet, sweepSessionUploads } from "@/lib/session-uploads";
+import { readSheetKey, storeSessionSheet, sweepSessionUploads } from "@/lib/session-uploads";
 
 const WL = "worship leader";
 
@@ -114,8 +114,19 @@ export async function startSession(rosterSessionId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export type LockResult =
-  | { ok: true; workbench: Workbench }
+  /** version: a fingerprint of the saved draft being edited, sent back when saving. */
+  | { ok: true; workbench: Workbench; version: string }
   | { ok: false; lockedBy: string | null; message: string };
+
+/**
+ * A fingerprint of the saved draft (a published session's revision, or the published plan if there's
+ * none): if it's changed by the time the edits are saved, someone else saved in between.
+ */
+function draftVersion(w: Workbench): string {
+  const plan = w.revision?.plan ?? w.plan;
+  const links = w.revision?.links ?? w.links;
+  return createHash("sha256").update(canonical(normalisePlan(plan))).update(canonical(links)).digest("hex");
+}
 
 /** Take the lock if it's free, stale, or already ours. */
 async function takeLock(userId: string, id: string): Promise<boolean> {
@@ -150,7 +161,7 @@ export async function acquireLock(id: string): Promise<LockResult> {
       const name = loaded.workbench.lockedBy?.name ?? "The other worship leader";
       return { ok: false, lockedBy: name, message: `${name} is editing this session. You can edit once they're done.` };
     }
-    return { ok: true, workbench: loaded.workbench };
+    return { ok: true, workbench: loaded.workbench, version: draftVersion(loaded.workbench) };
   } catch (e) {
     return { ok: false, lockedBy: null, message: message(e) };
   }
@@ -170,41 +181,23 @@ export async function renewLock(id: string): Promise<boolean> {
 }
 
 /**
- * Stop editing without saving (the edits are thrown away). Edits left open from an earlier visit go
- * too, so Home stops saying the session is open for editing.
+ * Stop editing without saving (the × , "Don't save", or leaving the page mid-edit): the edits are
+ * thrown away and the session is unlocked.
  */
 export async function releaseLock(id: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) return;
-  await Promise.all([
-    createAdminClient().from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id),
-    clearOpenEdit(user.id, id),
-  ]);
+  await createAdminClient().from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id);
   after(() => sweepSessionUploads(id));
   revalidatePath(`/sessions/${id}`);
   revalidatePath("/sessions/build");
-  revalidatePath("/home");
-}
-
-/**
- * Leaving the builder while still in edit mode ("Leave anyway", another page, the back button):
- * keep the unsaved edits for next time and let go of the lock. Home says the session is still open
- * for editing until they come back and save or stop editing.
- */
-export async function leaveSessionOpen(id: string, rawPlan: unknown, rawLinks: unknown): Promise<void> {
-  const user = await getCurrentUser();
-  if (!user || !UUID.test(id)) return;
-  if (await leaveOpen(user, id, rawPlan, rawLinks)) {
-    revalidatePath(`/sessions/${id}`);
-    revalidatePath("/sessions/build");
-    revalidatePath("/home");
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Saving and publishing
 // ---------------------------------------------------------------------------
 
+/** lostLock: the edits couldn't be saved because the other worship leader is editing or saved since. */
 export type SaveResult = { ok: true; savedAt: string } | { ok: false; lostLock: boolean; message: string };
 
 const TYPES: SongType[] = ["praise", "worship", "praise_worship"];
@@ -334,16 +327,26 @@ const revalidateSession = (id: string) => {
  * The floppy disk: save the edits to the draft and stop editing (the lock is let go). For a
  * session never published, the draft is the plan itself. For a published one it's the revision:
  * the band keeps seeing the published plan until it's published again.
+ *
+ * Also the autosave when the lock lapsed (e.g. the phone slept past the 2-minute timeout): if
+ * nobody else took it, it's taken back and the edits are saved. If the other worship leader is
+ * editing now, or saved while they were away (version: the draft they started from, from
+ * acquireLock), saving would overwrite that work, so the edits are dropped instead.
  */
-export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown): Promise<SaveResult> {
+export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown, version: string | null): Promise<SaveResult> {
   try {
     const user = await signedIn();
     const row = await editablePlan(user, id);
-    if (row.locked_by !== user.id) {
-      // The edits can't be saved now, so they aren't open any more either.
-      await clearOpenEdit(user.id, id);
-      revalidatePath("/home");
-      return { ok: false, lostLock: true, message: "You were away long enough for the session to be unlocked, so these changes couldn't be saved." };
+    if (!(await takeLock(user.id, id))) {
+      const loaded = await loadWorkbench(id, user.id);
+      const name = loaded?.workbench.lockedBy?.name ?? "The other worship leader";
+      return { ok: false, lostLock: true, message: `${name} started editing while you were away, so your changes couldn't be saved.` };
+    }
+    const current = await loadWorkbench(id, user.id, { withRevision: true });
+    if (!current || draftVersion(current.workbench) !== version) {
+      await createAdminClient().from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id);
+      revalidateSession(id);
+      return { ok: false, lostLock: true, message: "Someone else saved this session while you were away, so your changes couldn't be saved." };
     }
     const plan = await tidyPlan(row, rawPlan);
     const links = cleanSessionLinks(rawLinks);
@@ -369,10 +372,7 @@ export async function saveDraft(id: string, rawPlan: unknown, rawLinks: unknown)
       const { error: linksErr } = await db.from("worship_sessions").update({ links }).eq("id", id);
       if (linksErr) throw linksErr;
     }
-    await Promise.all([
-      db.from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id),
-      clearOpenEdit(user.id, id),
-    ]);
+    await db.from("worship_sessions").update({ locked_by: null, locked_at: null }).eq("id", id).eq("locked_by", user.id);
     after(() => sweepSessionUploads(id));
     revalidateSession(id);
     revalidatePath("/home");
@@ -564,8 +564,25 @@ export async function attachSessionSheet(id: string, formData: FormData): Promis
     if (!(file instanceof File)) throw new Error("Choose a PDF or Word (.docx) songsheet.");
     const problem = sessionSheetProblem(file);
     if (problem) throw new Error(problem);
-    const { sheet, scan } = await storeSessionSheet(id, file);
+    const fromKey = formData.get("from_key");
+    const { sheet, scan } = await storeSessionSheet(id, file, typeof fromKey === "string" ? fromKey : null);
     return { ok: true, sheet, scan };
+  } catch (e) {
+    return { ok: false, message: message(e) };
+  }
+}
+
+/** The key the scanner reads from a Word songsheet, to show before it's attached (null if it can't tell). */
+export async function readSessionSheetKey(id: string, formData: FormData): Promise<{ ok: true; key: string | null } | { ok: false; message: string }> {
+  try {
+    const user = await signedIn();
+    if (!UUID.test(id)) throw new Error("This session doesn't exist any more.");
+    await editablePlan(user, id);
+    const file = formData.get("file");
+    if (!(file instanceof File) || /\.pdf$/i.test(file.name)) throw new Error("Choose a Word (.docx) songsheet.");
+    const problem = sessionSheetProblem(file);
+    if (problem) throw new Error(problem);
+    return { ok: true, key: await readSheetKey(file) };
   } catch (e) {
     return { ok: false, message: message(e) };
   }
