@@ -172,7 +172,10 @@ result, rules, weights) sits to its right, otherwise it drops below the table.
 
 **`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right; on
 **phones (below 640px)** that button is hidden and a 40px dark "+" (like the roster's New button,
-named "Build session") sits centred under the cards instead. Link cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, songs with key chips.
+named "Build session") sits centred under the cards instead. Root (and the developer) also get a
+40px-tall switch button (the word "Me" or "Team" for the current view, 14px medium, then two
+opposite arrows; no border or background; muted, accent on "Team") left of "+ Build session", on phones too: it toggles `/sessions?view=all` (every upcoming
+published session) and `/sessions` (their own), and the subtitle says which. Link cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, songs with key chips.
 Worship leaders also see their sessions' drafts here, mixed in by date: white, with a dashed
 amber border (`amber-400`) and a small amber "Draft" pill after the date (9px text, 14px tall,
 just under the date's line) in place of "Just published". A published plan with unpublished
