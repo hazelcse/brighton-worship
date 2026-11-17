@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { importMembersJson, importSessionsFile, populatePastSessions, populateRandomAbsences } from "@/app/actions/dev";
+import { importMembersJson, importSessionsFile, populatePastSessions, populateRandomAbsences, populateTeams } from "@/app/actions/dev";
+
+/** Absences can also go to everyone on every team. */
+const EVERY_TEAM = "";
 
 /** The quarter today falls in (1–4) and the current year. */
 function thisQuarter() {
@@ -73,6 +76,9 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
   const [quarter, setQuarter] = useState(() => thisQuarter().quarter);
   const [year, setYear] = useState(() => thisQuarter().year);
   const [file, setFile] = useState<File | null>(null);
+  // Which team to fill: every team, picked here (starts on the one the developer is in).
+  const [teams, setTeams] = useState<{ slug: string; name: string }[]>([]);
+  const [team, setTeam] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -80,6 +86,19 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
   // Past sessions: three years back through this one. Absences: last year through three ahead.
   const years = what === "sessions" ? Array.from({ length: 4 }, (_, i) => baseYear - 3 + i) : Array.from({ length: 5 }, (_, i) => baseYear - 1 + i);
   const needsFile = what === "members" || (what === "sessions" && sessionSource === "csv");
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    populateTeams().then((r) => {
+      if (!live || !r) return;
+      setTeams(r.teams);
+      setTeam((t) => t ?? r.current);
+    });
+    return () => {
+      live = false;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (open && !ref.current?.open) ref.current?.showModal();
@@ -97,6 +116,8 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
     onClose();
   };
 
+  // "Every team" is only offered for absences; elsewhere it falls back to the developer's team.
+  const target = team === EVERY_TEAM && what !== "absences" ? undefined : (team ?? undefined);
   const run = () =>
     start(async () => {
       let r: { ok: boolean; message: string | null };
@@ -105,14 +126,15 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
           setMessage({ ok: false, text: what === "members" ? "Choose a JSON file." : "Choose an Excel or CSV file." });
           return;
         }
-        if (what === "members") r = await importMembersJson(await file.text());
+        if (what === "members") r = await importMembersJson(await file.text(), target);
         else {
           const form = new FormData();
           form.set("file", file);
+          if (target) form.set("team", target);
           r = await importSessionsFile(form);
         }
       } else {
-        r = what === "sessions" ? await populatePastSessions(quarter, shownYear) : await populateRandomAbsences(quarter, shownYear);
+        r = what === "sessions" ? await populatePastSessions(quarter, shownYear, target) : await populateRandomAbsences(quarter, shownYear, target ?? EVERY_TEAM);
       }
       setMessage({ ok: r.ok, text: r.message ?? (r.ok ? "Done." : "That didn't go through.") });
       if (r.ok) router.refresh();
@@ -153,10 +175,34 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
           ))}
         </div>
 
+        <label className="block space-y-1 text-sm">
+          <span>Team</span>
+          <select
+            value={team === EVERY_TEAM && what !== "absences" ? "" : (team ?? "")}
+            onChange={(e) => {
+              setTeam(e.target.value);
+              setMessage(null);
+            }}
+            disabled={pending || !teams.length}
+            className={select}
+          >
+            {what === "absences" ? (
+              <option value={EVERY_TEAM}>Every team</option>
+            ) : (
+              team === EVERY_TEAM && <option value="" disabled>Choose a team</option>
+            )}
+            {teams.map((t) => (
+              <option key={t.slug} value={t.slug}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         {what === "members" && (
           <>
             <p className="text-sm text-muted">
-              Adds the team members in a JSON file. Anyone whose email or name is already in the team is skipped. Members with a password in the file sign in with it; the rest get the
+              Adds the members in a JSON file to the team above. Anyone whose email or name is already in the team is skipped. Members with a password in the file sign in with it; the rest get the
               default password.
             </p>
             <input ref={fileRef} type="file" accept=".json,application/json" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className={fileInput} />
@@ -210,7 +256,7 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
 
         {what === "absences" && (
           <>
-            <p className="text-sm text-muted">Gives every active team member 1–5 absences in the quarter: single days and leave of 4–14 days.</p>
+            <p className="text-sm text-muted">Gives every active member of the team above (or of every team) 1–5 absences in the quarter: single days and leave of 4–14 days.</p>
             <QuarterYear quarter={quarter} year={shownYear} years={years} onQuarter={setQuarter} onYear={setYear} />
           </>
         )}
@@ -223,7 +269,7 @@ export function PopulateDialog({ open, onClose }: { open: boolean; onClose: () =
         <div className="flex items-center gap-3 border-t border-border pt-4">
           <button
             type="submit"
-            disabled={pending || (needsFile && !file)}
+            disabled={pending || (needsFile && !file) || (team === EVERY_TEAM && what !== "absences")}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
           >
             {pending ? "Working…" : needsFile ? "Import" : "Populate"}

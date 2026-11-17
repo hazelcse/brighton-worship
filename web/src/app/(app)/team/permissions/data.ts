@@ -6,20 +6,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export type PermissionRow = { key: string; category: string; description: string };
 export type GroupRow = { id: string; name: string; description: string };
 
-/** Gate for the permissions area: root only. */
+/** Gate for the permissions area: the team's lead (or root, a developer, or the group's observer if it manages permissions) only. */
 export async function requireAdminViewer(): Promise<CurrentUser> {
   const user = await requireUser();
-  if (!user.isRoot) notFound();
+  if (!user.isLead && !user.observerManagesPermissions) notFound();
   return user;
 }
 
-export async function loadPermissionCatalogue(): Promise<PermissionRow[]> {
-  const { data, error } = await createAdminClient()
-    .from("permissions")
-    .select("key, category, description")
-    .order("key");
+/** Every permission this team may use (its ceiling), so leads only hand out what the team has. */
+export async function loadPermissionCatalogue(teamId: string): Promise<PermissionRow[]> {
+  const db = createAdminClient();
+  const [{ data, error }, { data: team }] = await Promise.all([
+    db.from("permissions").select("key, category, description").order("key"),
+    db.from("teams").select("permission_ceiling").eq("id", teamId).maybeSingle(),
+  ]);
   if (error) throw error;
-  return data;
+  const ceiling = (team?.permission_ceiling as string[] | null) ?? null;
+  return ceiling ? data.filter((p) => ceiling.includes(p.key)) : data;
 }
 
 export function byCategory(perms: PermissionRow[]): [string, PermissionRow[]][] {
@@ -28,10 +31,12 @@ export function byCategory(perms: PermissionRow[]): [string, PermissionRow[]][] 
   return [...map.entries()];
 }
 
-export async function loadGroups(): Promise<GroupRow[]> {
+/** One team's permission groups. */
+export async function loadGroups(teamId: string): Promise<GroupRow[]> {
   const { data, error } = await createAdminClient()
     .from("groups")
     .select("id, name, description")
+    .eq("team_id", teamId)
     .order("name");
   if (error) throw error;
   return data;

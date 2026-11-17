@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/actions/auth";
+import { TeamSwitcher } from "@/components/team-switcher";
 import { ViewAsMenu } from "@/components/view-as";
 import { Inbox } from "@/components/inbox";
 import type { UpdateItem } from "@/lib/serving";
@@ -30,13 +31,32 @@ const NAV_ITEMS: readonly NavItem[] = [
 type NavUser = {
   name: string;
   email: string;
-  isRoot: boolean;
+  isLead: boolean;
+  /** The app-wide root account. */
+  isRoot?: boolean;
+  /** A read-only observer of one group's teams (e.g. Youth): root's view, limited to that group. */
+  isObserver?: boolean;
+  /** An observer that sees absences; one that doesn't (e.g. Main's) gets "Calendar" for Absences. */
+  observerSeesAbsences?: boolean;
   canAdmin: boolean;
+  /** Root and developers: the Manage teams page (create teams, set their maximum permissions). */
+  canManageTeams?: boolean;
+  /** The name at the left of the bar: "Brighton Worship", "Brighton Media", or root's "Brighton Serving". */
+  brand?: string;
+  /** Youth teams: a small orange "YF" superscript after the name. */
+  brandTag?: string;
+  /** The teams this person is on (e.g. Main Worship, Youth Media), shown in the profile menu; with more than one, a dropdown switches between them. */
+  memberOf?: { slug: string; name: string }[];
+  /** The team they're signed into now. */
+  currentTeam?: string;
   isDeveloper?: boolean;
   viewAs?: string | null;
   viewAsKey?: string | null;
   groups?: string[];
-  people?: { id: string; name: string }[];
+  /** Developers' "View as": everyone on every team, once per team they're on. */
+  people?: { id: string; name: string; team: string; teamName: string }[];
+  /** The team the developer is working in (whose people are "the same team" in View as). */
+  viewTeam?: string;
   profileId?: string | null;
   /** Counts shown next to top-level links, e.g. new song library updates on Songs. */
   badges?: Record<string, number>;
@@ -44,20 +64,45 @@ type NavUser = {
   inbox?: UpdateItem[];
 };
 
-/** Root also gets Tracking (past sessions) under Sessions. */
-function navItemsFor(isRoot: boolean): readonly NavItem[] {
-  if (!isRoot) return NAV_ITEMS;
-  return NAV_ITEMS.map((item) =>
+/**
+ * The lead also gets Tracking (past sessions) under Sessions. Root (on no team) gets no Songs, and
+ * Team lists every team instead of one team's members.
+ */
+function navItemsFor(isLead: boolean, isRoot: boolean, isObserver = false, seesAbsences = false): readonly NavItem[] {
+  // An observer: no Songs, and Services (its group's sessions, bands and media crews) for Sessions.
+  // One that can't see absences gets "Calendar" for Absences (its page shows only the services).
+  if (isObserver)
+    return NAV_ITEMS.filter((item) => item.href !== "/songs").map((item) =>
+      item.href === "/sessions"
+        ? { ...item, label: "Services" }
+        : item.children && !seesAbsences
+          ? { ...item, children: item.children.map((c) => (c.href === "/roster/absences" ? { ...c, label: "Calendar" } : c)) }
+          : item,
+    );
+  if (!isLead) return NAV_ITEMS;
+  // Root: no Songs, and Team is one link to the Teams overview (each team's page opens its members).
+  const items = isRoot
+    ? NAV_ITEMS.filter((item) => item.href !== "/songs").map((item) => (item.href === "/team" ? { href: "/teams", label: "Team" } : item))
+    : NAV_ITEMS;
+  // Root sees services (every team's: session, band, media crew), not one team's sessions.
+  const sessionsLabel = isRoot ? "Services" : "Sessions";
+  return items.map((item) =>
     item.href === "/sessions"
       ? {
           ...item,
+          label: sessionsLabel,
           children: [
-            { href: "/sessions", label: "Sessions" },
+            { href: "/sessions", label: sessionsLabel },
             { href: "/sessions/tracking", label: "Tracking" },
           ],
         }
       : item,
   );
+}
+
+/** Youth teams' mark after the bar's name: a small orange superscript (same font as the name). */
+export function BrandTag({ tag }: { tag: string }) {
+  return <sup className="ml-0.5 text-[0.55em] tracking-normal text-orange-400">{tag}</sup>;
 }
 
 /** A small count next to a nav link (nothing when 0). */
@@ -149,7 +194,8 @@ export function AppNav({ user: given }: { user: NavUser }) {
     return () => window.removeEventListener(BADGE_SEEN_EVENT, onSeen);
   }, []);
   const user = { ...given, badges: Object.fromEntries(Object.entries(given.badges ?? {}).filter(([href]) => !seen.includes(href))) };
-  const navItems = navItemsFor(user.isRoot);
+  const navItems = navItemsFor(user.isLead, Boolean(user.isRoot), Boolean(user.isObserver), Boolean(user.observerSeesAbsences));
+  const brand = user.brand ?? "Brighton Worship";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -220,7 +266,8 @@ export function AppNav({ user: given }: { user: NavUser }) {
           </button>
 
           <Link href="/home" className="mr-4 font-display text-xl font-medium tracking-tight">
-            Brighton Worship
+            {brand}
+            {user.brandTag && <BrandTag tag={user.brandTag} />}
           </Link>
 
           <ul className="hidden items-center gap-1 md:flex">
@@ -323,17 +370,30 @@ export function AppNav({ user: given }: { user: NavUser }) {
                   {user.viewAs ?? "Dev"}
                 </span>
               )}
+              {/* Root and the observer: a pill next to the profile button, like a developer's "Dev". */}
+              {!user.isDeveloper && (user.isRoot || user.isObserver) && (
+                <span
+                  title={user.isRoot ? "Root: every team" : "Observer: read-only"}
+                  className="rounded-full border border-accent/70 bg-accent/10 px-2 py-0.5 text-xs font-semibold text-orange-200"
+                >
+                  {user.isRoot ? "Root" : "Observer"}
+                </span>
+              )}
               {menuOpen && (
                 <div className="absolute right-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-surface text-foreground shadow-lg">
                   <div className="border-b border-border px-4 py-3">
                     <p className="truncate text-sm font-medium">{user.name}</p>
                     <p className="truncate text-xs text-muted">
                       {user.email || "developer"}
-                      {user.email && (user.isDeveloper ? " · developer" : user.isRoot && " · root")}
+                      {user.email && (user.isDeveloper ? " · developer" : user.isRoot ? " · root" : user.isObserver ? " · observer" : user.isLead && " · lead")}
                     </p>
+                    {user.memberOf?.length === 1 && <p className="mt-1 text-xs text-muted">{user.memberOf[0].name}</p>}
+                    {user.memberOf && user.memberOf.length > 1 && (
+                      <TeamSwitcher teams={user.memberOf} current={user.currentTeam ?? user.memberOf[0].slug} className="mt-2" />
+                    )}
                   </div>
                   {user.isDeveloper && (
-                    <ViewAsMenu viewAs={user.viewAsKey ?? null} groups={user.groups ?? []} people={user.people ?? []} onPicked={() => setMenuOpen(false)} />
+                    <ViewAsMenu viewAs={user.viewAsKey ?? null} groups={user.groups ?? []} people={user.people ?? []} team={user.viewTeam ?? ""} onPicked={() => setMenuOpen(false)} />
                   )}
                   {user.profileId && (
                     <Link href={`/team/${user.profileId}`} className="block px-4 py-2.5 text-sm hover:bg-background">
@@ -343,6 +403,11 @@ export function AppNav({ user: given }: { user: NavUser }) {
                   {user.canAdmin && (
                     <Link href="/team/permissions" className="block px-4 py-2.5 text-sm hover:bg-background">
                       Manage permissions
+                    </Link>
+                  )}
+                  {user.canManageTeams && (
+                    <Link href="/teams" className="block px-4 py-2.5 text-sm hover:bg-background">
+                      Manage teams
                     </Link>
                   )}
                   <form action={signOut}>
@@ -378,7 +443,8 @@ export function AppNav({ user: given }: { user: NavUser }) {
       >
         <div className="flex h-14 items-center justify-between px-4">
           <Link href="/home" onClick={() => setSidebarOpen(false)} className="font-display text-xl font-medium">
-            Brighton Worship
+            {brand}
+            {user.brandTag && <BrandTag tag={user.brandTag} />}
           </Link>
           <button
             type="button"

@@ -6,13 +6,15 @@ export type RosterCheck = {
   checked_at: string;
   edited_cells: string[]; // "sessionId|role"
   hard: {
-    kind: "unfilled" | "hard_rule" | "skill" | "ministry" | "serves" | "two_roles" | "double_date" | "attached_singer" | "extra" | "inactive" | "absent" | "absent_rehearsal";
+    kind: "unfilled" | "hard_rule" | "skill" | "ministry" | "serves" | "two_roles" | "double_date" | "attached_singer" | "extra" | "inactive" | "absent" | "absent_rehearsal" | "other_team";
     session?: string;
     member?: string | null;
     role?: string;
     rule?: string;
     count?: number;
     other?: string;
+    /** other_team: the team they already serve in that day. */
+    team?: string;
   }[];
   soft: {
     kind: "score" | "fairness" | "spacing" | "split" | "variety" | "soft_rule" | "back_to_back";
@@ -64,6 +66,8 @@ export function describeCheck(
         return { id, text: `${who(h.member)} is marked absent that day (${where(h.session)}).` };
       case "absent_rehearsal":
         return { id, text: `${who(h.member)} is marked absent on the rehearsal day (${where(h.session)}).` };
+      case "other_team":
+        return { id, text: `${who(h.member)} already serves with ${h.team ?? "another team"} that day (${where(h.session)}).` };
       case "two_roles":
         return { id, text: `${who(h.member)} has two parts in ${where(h.session)}.` };
       case "double_date":

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { formatDate } from "@/lib/roster";
 import { MAX_MAIN_SET, MAX_SONGS, MINISTRY_TEXT, isSunday, type PendingSession } from "@/lib/tracking";
-import { confirmSession } from "@/app/(app)/sessions/tracking/actions";
+import { confirmSession, deletePending } from "@/app/(app)/sessions/tracking/actions";
 import { RecordForm } from "@/components/tracking/record-form";
 import type { BankSong } from "@/components/sessions/song-bank-panel";
 
@@ -81,6 +81,12 @@ export function PendingList({ sessions, bank }: { sessions: PendingSession[]; ba
                   bank={bank}
                   submitLabel="Save to tracking"
                   onSubmit={(input) => confirmSession(s.rosterSessionId, input)}
+                  // Not wanted in tracking: off Pending for good (the next one opens as it leaves).
+                  onDelete={async () => {
+                    const r = await deletePending(s.rosterSessionId);
+                    if (r.ok) setOpen(sessions[i + 1]?.rosterSessionId ?? null);
+                    return r;
+                  }}
                   // Saved: it leaves this list; open the next one.
                   onSaved={() => setOpen(sessions[i + 1]?.rosterSessionId ?? null)}
                 />

@@ -13,8 +13,8 @@ export const metadata: Metadata = { title: "Tracking · Brighton Worship" };
 
 async function Tracking() {
   const user = await requireUser();
-  if (!user.isRoot) notFound();
-  const [records, pending, bank] = await Promise.all([loadRecords(), countPending(), loadSongBank()]);
+  if (!user.isLead) notFound();
+  const [records, pending, bank] = await Promise.all([loadRecords(user.team.id), countPending(user.team.id), loadSongBank()]);
 
   return (
     <div className="space-y-5">

@@ -1059,7 +1059,7 @@ function HandoverMineRow({ h }: { h: HandoverItem }) {
             </button>
           </div>
         ) : (
-          <p className="text-xs text-orange-800">Nobody else in this band can do it. Root and admins have been told.</p>
+          <p className="text-xs text-orange-800">Nobody else in this band can do it. The lead and admins have been told.</p>
         ))}
       {result && !result.ok && <p className="text-xs text-danger">{result.message}</p>}
     </li>

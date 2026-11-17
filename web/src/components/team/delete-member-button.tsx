@@ -3,8 +3,12 @@
 import { useRef, useState, useTransition } from "react";
 import { deleteMember } from "@/app/(app)/team/actions";
 
-/** Delete with a confirmation step: type the member's name and press Enter. */
-export function DeleteMemberButton({ id, name }: { id: string; name: string }) {
+/**
+ * Delete with a confirmation step: type the member's name and press Enter. Someone also on other
+ * teams is only removed from this one (their login and other profiles stay).
+ */
+export function DeleteMemberButton({ id, name, team, otherTeams = [] }: { id: string; name: string; team: string; otherTeams?: string[] }) {
+  const linked = otherTeams.length > 0;
   const ref = useRef<HTMLDialogElement>(null);
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +26,7 @@ export function DeleteMemberButton({ id, name }: { id: string; name: string }) {
         }}
         className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-danger hover:bg-red-50"
       >
-        Delete member
+        {linked ? `Remove from ${team}` : "Delete member"}
       </button>
       <dialog
         ref={ref}
@@ -41,10 +45,13 @@ export function DeleteMemberButton({ id, name }: { id: string; name: string }) {
           }}
         >
           <h2 id="delete-title" className="text-lg font-semibold">
-            Delete {name}?
+            {linked ? `Remove ${name} from ${team}?` : `Delete ${name}?`}
           </h2>
           <p className="text-sm text-muted">
-            Their login, card and permission groups are removed permanently. Type <b className="text-foreground">{name}</b> and press Enter to confirm.
+            {linked
+              ? `Their ${team} profile, permission groups and allows/denies are removed. Their login and their ${otherTeams.join(" and ")} profile stay as they are.`
+              : "Their login, card and permission groups are removed permanently."}{" "}
+            Type <b className="text-foreground">{name}</b> and press Enter to confirm.
           </p>
           <input
             value={typed}

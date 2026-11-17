@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { createRoster, deleteRoster } from "@/app/(app)/roster/actions";
 import { useCloseOnLeave } from "@/lib/use-close-on-leave";
+import { regularSessionsBlurb, type TeamConfig } from "@/lib/team-config";
 
 export type RosterItem = {
   id: string;
@@ -24,15 +25,18 @@ const QUARTER_MONTHS = ["Jan – Mar", "Apr – Jun", "Jul – Sep", "Oct – De
 /** Current rosters as bars (click to open), each deletable; + opens a quarter/year picker. */
 export function RosterList({
   rosters,
-  isRoot,
+  isLead,
   existing,
   defaultQuarter,
+  teamConfig,
 }: {
   rosters: RosterItem[];
-  isRoot: boolean;
+  isLead: boolean;
   /** "YYYY-Qn" -> what already exists for that quarter, to warn in the picker. */
   existing: Record<string, "start" | "draft" | "published">;
   defaultQuarter: { year: number; q: number };
+  /** The signed-in team: which regular sessions a new roster starts with. */
+  teamConfig?: TeamConfig;
 }) {
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -80,7 +84,7 @@ export function RosterList({
         <ul className="space-y-2">
           {rosters.map((r) => {
             const s = STAGE[r.stage];
-            const canDelete = r.stage !== "published" || isRoot;
+            const canDelete = r.stage !== "published" || isLead;
             return (
               <li key={r.id} className={`flex items-stretch gap-2 ${busyId === r.id ? "opacity-50" : ""}`}>
                 <button
@@ -196,7 +200,7 @@ export function RosterList({
                 : `Q${q} ${y} already has a ${already === "draft" ? "draft" : "roster that hasn't been generated"}. You'll carry on with it.`}
             </p>
           )}
-          <p className="text-xs text-muted">Every EM and CM Sunday service and P&amp;P in the quarter is added for you.</p>
+          <p className="text-xs text-muted">{regularSessionsBlurb(teamConfig)}</p>
           <div className="flex justify-end gap-3 border-t border-border pt-4">
             <button type="button" onClick={() => dialogRef.current?.close()} className="rounded-lg px-4 py-2 text-sm text-muted">
               Cancel

@@ -1,20 +1,20 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { transferRoot, type ActionResult } from "@/app/(app)/team/permissions/actions";
+import { transferLead, type ActionResult } from "@/app/(app)/team/permissions/actions";
 
 const input =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
-/** Root only: hand the root role to someone else. Needs root's password. */
-export function TransferRoot({
+/** The lead (or root): hand the team's lead to someone else. Needs your password. */
+export function TransferLead({
   people,
   groups,
 }: {
   people: { id: string; name: string }[];
   groups: { id: string; name: string }[];
 }) {
-  const [state, formAction, pending] = useActionState<ActionResult, FormData>(transferRoot, { ok: false, message: null });
+  const [state, formAction, pending] = useActionState<ActionResult, FormData>(transferLead, { ok: false, message: null });
   const [to, setTo] = useState("");
   const toName = people.find((p) => p.id === to)?.name;
 
@@ -22,14 +22,14 @@ export function TransferRoot({
     <form
       action={formAction}
       onSubmit={(e) => {
-        if (!window.confirm(`Make ${toName ?? "this person"} root? You'll lose root access straight away. Only the new root can give it back.`)) {
+        if (!window.confirm(`Make ${toName ?? "this person"} the lead? The current lead loses lead access straight away.`)) {
           e.preventDefault();
         }
       }}
       className="grid gap-4 sm:grid-cols-2"
     >
       <label className="space-y-1 text-sm font-medium">
-        New root
+        New lead
         <select name="new_root" required value={to} onChange={(e) => setTo(e.target.value)} className={input}>
           <option value="" disabled>
             Choose a member…
@@ -63,7 +63,7 @@ export function TransferRoot({
           disabled={pending || !to}
           className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-50"
         >
-          {pending ? "Checking…" : "Transfer root"}
+          {pending ? "Checking…" : "Transfer lead"}
         </button>
         {state.message && (
           <p role="alert" className={`text-sm ${state.ok ? "text-emerald-700" : "text-danger"}`}>

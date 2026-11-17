@@ -684,7 +684,7 @@ function ConfirmDelete({ ids, onClose, onDeleted }: { ids: string[]; onClose: ()
         <h2 id="delete-sessions-title" className="text-base font-semibold">
           Are you sure you want to delete {n} session{n === 1 ? "" : "s"}?
         </h2>
-        <p className="text-sm text-muted">They&apos;re removed from tracking. Sessions from a roster go back to Pending.</p>
+        <p className="text-sm text-muted">They&apos;re removed from tracking for good, and sessions from a roster don&apos;t go back to Pending.</p>
         {error && <p className="text-sm text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <button

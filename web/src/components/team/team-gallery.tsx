@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createMember } from "@/app/(app)/team/actions";
 import { MemberForm } from "@/components/team/member-form";
 import { useCloseOnLeave } from "@/lib/use-close-on-leave";
+import { ROLE_LABEL, rolesNoun, splitsMinistry, teamRoles, type TeamConfig } from "@/lib/team-config";
 
 type Member = {
   id: string;
@@ -15,17 +16,14 @@ type Member = {
   emPercent: number | null;
   gender: "male" | "female" | null;
   serves: "both" | "sunday" | "pnp";
-  isRoot: boolean;
+  isLead: boolean;
   isActive: boolean;
+  /** An observer account (root only sees it): not on the team, so not counted. */
+  isObserver?: boolean;
   groups: string[];
 };
 
-const INSTRUMENTS = [
-  ["keys", "Keys"], ["synth/pads", "Synth/Pads"], ["electric guitar", "Electric Guitar"],
-  ["acoustic guitar", "Acoustic Guitar"], ["bass", "Bass"], ["drums", "Drums"],
-  ["worship leader", "Worship Leader"], ["vocalist", "Vocalist"], ["band leader", "BL/TB"],
-] as const;
-const LABEL: Record<string, string> = Object.fromEntries(INSTRUMENTS);
+const LABEL = ROLE_LABEL;
 const MINISTRIES = [["EM", "EM"], ["CM", "CM"]] as const;
 
 /** Which ministries a member serves: EM/CM members serve both. */
@@ -138,15 +136,22 @@ function MultiSelect({
  * Instrument and Ministry (nothing ticked in a group = no filter, like the desktop dropdowns).
  */
 function MobileFilter({
+  roleOptions,
+  roleNoun,
   instruments,
   setInstruments,
   ministries,
   setMinistries,
+  showMinistry = true,
 }: {
+  /** The team's instruments (worship) or roles (media), and what it calls them ("Instrument"/"Role"). */
+  roleOptions: readonly (readonly [string, string])[];
+  roleNoun: string;
   instruments: string[];
   setInstruments: (v: string[]) => void;
   ministries: string[];
   setMinistries: (v: string[]) => void;
+  showMinistry?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -204,8 +209,8 @@ function MobileFilter({
       {open && (
         // Right-aligned to the button (it sits right of the search box), and never wider than the screen.
         <div className="absolute right-0 z-20 mt-2 max-h-[70vh] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-surface pb-1 shadow-lg">
-          {group("Instrument", INSTRUMENTS, instruments, setInstruments)}
-          {group("Ministry", MINISTRIES, ministries, setMinistries)}
+          {group(roleNoun, roleOptions, instruments, setInstruments)}
+          {showMinistry && group("Ministry", MINISTRIES, ministries, setMinistries)}
           {picked > 0 && (
             <button
               type="button"
@@ -281,13 +286,21 @@ function MobileActions({ onNewUser }: { onNewUser: () => void }) {
 
 export function TeamGallery({
   members,
-  isRoot,
+  isLead,
   groups,
+  teamConfig,
 }: {
   members: Member[];
-  isRoot: boolean;
+  isLead: boolean;
   groups: string[];
+  /** The signed-in team: Youth has no EM/CM, so no ministry filter. */
+  teamConfig?: TeamConfig;
 }) {
+  const showMinistry = splitsMinistry(teamConfig);
+  // This team's instruments (worship) or roles (media).
+  const roleOptions = useMemo(() => teamRoles(teamConfig).map((r) => [r.value, r.label] as const), [teamConfig]);
+  const nouns = rolesNoun(teamConfig).toLowerCase(); // "instruments" or "roles"
+  const noun = nouns.slice(0, -1);
   const [query, setQuery] = useState("");
   const [instruments, setInstruments] = useState<string[]>([]);
   const [ministries, setMinistries] = useState<string[]>([]);
@@ -313,16 +326,17 @@ export function TeamGallery({
         {/* Phones: one row of search, Filter dropdown and (root) the "+" actions dropdown; from 640px the two
             filter dropdowns, then search, with root's buttons on the right. */}
         <div className="flex flex-wrap items-center gap-2">
-          <MobileFilter instruments={instruments} setInstruments={setInstruments} ministries={ministries} setMinistries={setMinistries} />
+          <MobileFilter roleOptions={roleOptions} roleNoun={noun[0].toUpperCase() + noun.slice(1)} instruments={instruments} setInstruments={setInstruments} ministries={ministries} setMinistries={setMinistries} showMinistry={showMinistry} />
           <MultiSelect
-            options={INSTRUMENTS}
+            options={roleOptions}
             selected={instruments}
             onChange={setInstruments}
-            allLabel="All instruments"
-            pluralNoun="instruments"
-            groupLabel="Filter by instrument"
+            allLabel={`All ${nouns}`}
+            pluralNoun={nouns}
+            groupLabel={`Filter by ${noun}`}
             className="hidden sm:block"
           />
+          {showMinistry && (
           <MultiSelect
             options={MINISTRIES}
             selected={ministries}
@@ -333,6 +347,7 @@ export function TeamGallery({
             groupLabel="Filter by ministry"
             className="hidden sm:block"
           />
+          )}
           <input
             type="search"
             value={query}
@@ -341,9 +356,9 @@ export function TeamGallery({
             aria-label="Search members by name"
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 max-sm:order-first sm:w-56 sm:flex-none"
           />
-          {isRoot && <MobileActions onNewUser={() => dialogRef.current?.showModal()} />}
+          {isLead && <MobileActions onNewUser={() => dialogRef.current?.showModal()} />}
         </div>
-        {isRoot && (
+        {isLead && (
           // From 640px; phones get these from MobileActions.
           <div className="hidden flex-wrap gap-2 sm:flex">
             <button
@@ -364,8 +379,9 @@ export function TeamGallery({
       </div>
 
       <p className="text-sm text-muted">
-        {filtered.length} of {members.length} members
-        {instruments.length > 0 && <> · playing {instruments.map((i) => LABEL[i]).join(" or ")}</>}
+        {/* Observer accounts aren't on the team: not counted. */}
+        {filtered.filter((m) => !m.isObserver).length} of {members.filter((m) => !m.isObserver).length} members
+        {instruments.length > 0 && <> · {nouns === "roles" ? "doing" : "playing"} {instruments.map((i) => LABEL[i]).join(" or ")}</>}
         {ministries.length > 0 && <> · serving {ministries.length === 2 ? "both EM and CM" : ministries[0]}</>}
       </p>
 
@@ -383,16 +399,20 @@ export function TeamGallery({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h2 className="truncate font-medium group-hover:text-accent">{m.name}</h2>
+                      <h2 className="truncate font-medium group-hover:text-accent">
+                        {m.name}
+                        {m.isObserver && <span className="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-800">observer</span>}
+                      </h2>
                       <p className="text-xs text-muted">
                         {[
                           m.gender ? (m.gender === "male" ? "Male" : "Female") : null,
                           m.serves === "sunday" ? "Sunday only" : m.serves === "pnp" ? "P&P only" : null,
                           !m.isActive ? "Inactive" : null,
+                          m.isObserver ? "Not on the team" : null,
                         ]
                           .filter(Boolean)
                           .join(" · ")}
-                        {isRoot && m.email.endsWith("@placeholder.invalid") && (
+                        {isLead && m.email.endsWith("@placeholder.invalid") && (
                           <span className="text-amber-700" title="This member has a placeholder email">
                             {m.gender || !m.isActive || m.serves !== "both" ? " · " : ""}Needs email
                           </span>
@@ -401,8 +421,8 @@ export function TeamGallery({
                     </div>
                     {min && <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[min]}`}>{min}</span>}
                   </div>
-                  <ul className="flex flex-wrap gap-1.5" aria-label="Instruments">
-                    {m.instruments.length === 0 && <li className="text-xs text-muted">No instruments yet</li>}
+                  <ul className="flex flex-wrap gap-1.5" aria-label={rolesNoun(teamConfig)}>
+                    {m.instruments.length === 0 && <li className="text-xs text-muted">No {nouns} yet</li>}
                     {m.instruments.map((i) => (
                       <li key={i} className={`rounded-full px-2 py-0.5 text-xs ${instruments.includes(i) ? "bg-accent/15 text-accent" : "bg-background text-foreground"}`}>
                         {LABEL[i] ?? i}
@@ -416,7 +436,7 @@ export function TeamGallery({
         </ul>
       )}
 
-      {isRoot && (
+      {isLead && (
         <dialog
           ref={dialogRef}
           aria-labelledby="create-member-title"
@@ -434,7 +454,7 @@ export function TeamGallery({
                 </svg>
               </button>
             </div>
-            <MemberForm mode="create" action={createMember} groups={groups} />
+            <MemberForm mode="create" action={createMember} groups={groups} teamConfig={teamConfig} />
           </div>
         </dialog>
       )}

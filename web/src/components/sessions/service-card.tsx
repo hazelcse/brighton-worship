@@ -1,0 +1,58 @@
+import { SessionCard } from "@/components/sessions/session-card";
+import { ROLE_LABEL } from "@/lib/team-config";
+import type { CrewMember, Service } from "@/lib/sessions";
+
+const heading = "mb-1.5 text-xs font-medium uppercase tracking-wider text-muted";
+
+/** A media crew: one line per role (lined up with the band), under "team · session" when there's more than one. */
+export function Crew({ crew }: { crew: CrewMember[] }) {
+  const groups = new Map<string, CrewMember[]>();
+  for (const c of crew) {
+    const key = `${c.team} · ${c.session}`;
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return (
+    <section aria-label="Media crew">
+      <p className={heading}>Media crew</p>
+      {groups.size ? (
+        <div className="space-y-3">
+          {[...groups].map(([key, members]) => {
+            const roles = new Map<string, string[]>();
+            for (const c of members) roles.set(c.role, [...(roles.get(c.role) ?? []), c.name]);
+            return (
+              <div key={key}>
+                {groups.size > 1 && <p className="mb-1 text-xs text-muted">{key}</p>}
+                <dl className="text-sm">
+                  {[...roles].map(([role, people]) => (
+                    <div key={role} className="flex gap-3 py-0.5">
+                      <dt className="w-24 shrink-0 text-xs leading-5 text-muted">{ROLE_LABEL[role] ?? role}</dt>
+                      <dd className="min-w-0 flex-1">{people.join(", ")}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-muted">No media crew on a published roster yet.</p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * A service as root sees it: its session (plan and band) and, for services that have one (EM Sunday,
+ * EM PnP, YF Saturday), its media crew at the bottom. Opening it switches root to the worship team
+ * first (root works in one team at a time), then opens the plan.
+ */
+export function ServiceCard({ service }: { service: Service }) {
+  const plan = service.session.plan;
+  return (
+    <SessionCard
+      s={service.session}
+      href={plan ? `/teams/${service.teamSlug}/open?next=/sessions/${plan.id}` : undefined}
+      extra={service.crew ? <Crew crew={service.crew} /> : undefined}
+    />
+  );
+}

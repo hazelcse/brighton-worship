@@ -8,7 +8,7 @@
  *   passwords in members.json are ignored. Existing members (and root) keep their password.
  * - Emails must be unique per login. When several members share one (a placeholder), the first keeps
  *   it and the others get a non-deliverable placeholder (…@placeholder.invalid) to replace later.
- * - New members join the "member" permission group.
+ * - Members join the worship team (or TEAM=<slug>); new members join its "member" permission group.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -71,8 +71,12 @@ async function main() {
   const path = resolve(process.argv[2] ?? "../members.json");
   const members = readMembers(path);
 
-  const { data: group } = await db.from("groups").select("id").eq("name", "member").single();
-  if (!group) throw new Error('The "member" permission group is missing. Run the migrations first.');
+  // Members join Main Worship (TEAM=<slug> to import into another team).
+  const teamSlug = process.env.TEAM ?? "main-worship";
+  const { data: team } = await db.from("teams").select("id").eq("slug", teamSlug).single();
+  if (!team) throw new Error(`There's no team "${teamSlug}". Run the migrations first.`);
+  const { data: group } = await db.from("groups").select("id").eq("team_id", team.id).eq("name", "member").single();
+  if (!group) throw new Error('The team\'s "member" permission group is missing. Run the migrations first.');
 
   // Which emails appear more than once (placeholders)?
   const seen = new Map<string, number>();
@@ -100,10 +104,13 @@ async function main() {
     const fields = {
       uid,
       full_name: name,
+      gender: e.gender === "male" || e.gender === "female" ? e.gender : null,
+    };
+    // Their profile on this team (someone on two teams has a separate one on each).
+    const teamFields = {
       instruments,
       em_percent: typeof e.em_percent === "number" ? e.em_percent : emPercent(e.ministry),
       ...(e.serves === "both" || e.serves === "sunday" || e.serves === "pnp" ? { serves: e.serves } : {}),
-      gender: e.gender === "male" || e.gender === "female" ? e.gender : null,
     };
 
     // Existing member? Match by uid, then by email.
@@ -140,6 +147,8 @@ async function main() {
       .update({ ...fields, email, ...(isNew ? { must_change_password: true } : {}) })
       .eq("id", id);
     if (error) throw new Error(`#${uid} ${name}: ${error.message}`);
+    const { error: tErr } = await db.from("team_members").upsert({ team_id: team.id, user_id: id, ...teamFields }, { onConflict: "team_id,user_id" });
+    if (tErr) throw new Error(`#${uid} ${name}: ${tErr.message}`);
   }
 
   // New members created in the app continue from the highest uid.

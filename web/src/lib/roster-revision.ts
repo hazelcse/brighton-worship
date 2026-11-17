@@ -68,7 +68,7 @@ export async function revisionOf(publishedId: string, db: Db = createAdminClient
 export async function createRevision(publishedId: string, userId: string, db: Db = createAdminClient()): Promise<string> {
   const { data: pub } = await db
     .from("rosters")
-    .select("id, status, starts_on, ends_on, result, generated_at, check")
+    .select("id, team_id, status, starts_on, ends_on, result, generated_at, check")
     .eq("id", publishedId)
     .maybeSingle();
   if (!pub) throw new Error("Roster not found.");
@@ -76,7 +76,7 @@ export async function createRevision(publishedId: string, userId: string, db: Db
 
   const [{ data: sessions, error: sErr }, { data: rules, error: rErr }] = await Promise.all([
     db.from("roster_sessions").select("*").eq("roster_id", publishedId),
-    db.from("roster_rules").select("template, params, hard, weight, enabled, created_by").eq("roster_id", publishedId),
+    db.from("roster_rules").select("team_id, template, params, hard, weight, enabled, created_by").eq("roster_id", publishedId),
   ]);
   if (sErr) throw sErr;
   if (rErr) throw rErr;
@@ -96,6 +96,7 @@ export async function createRevision(publishedId: string, userId: string, db: Db
   const { data: rev, error } = await db
     .from("rosters")
     .insert({
+      team_id: pub.team_id,
       starts_on: pub.starts_on,
       ends_on: pub.ends_on,
       status: "revision",

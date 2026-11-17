@@ -4,7 +4,7 @@ import { ROLE_LABEL, todayYmd } from "@/lib/roster";
 import { keyLabel } from "@/lib/session-plan";
 import { BAND_COLUMNS, ROLE_TO_BAND, isSunday, type Band, type PendingSession, type SessionRecord, type TrackedMinistry, type TrackedSong } from "@/lib/tracking";
 
-/** Session tracking data (root only: callers check). */
+/** Session tracking data, one team's (the lead only: callers check). */
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -12,15 +12,16 @@ type Db = ReturnType<typeof createAdminClient>;
  * Every confirmed session, plus each session marked as no session (with its reason) on a published
  * roster once its date has come, newest first.
  */
-export async function loadRecords(): Promise<SessionRecord[]> {
+export async function loadRecords(teamId: string): Promise<SessionRecord[]> {
   const db = createAdminClient();
   const [{ data, error }, cancelled] = await Promise.all([
     db
       .from("session_records")
       .select("id, date, ministry, kind, service_name, band, songs, links, comments")
+      .eq("team_id", teamId)
       .order("date", { ascending: false })
       .order("service_name"),
-    cancelledRows(db),
+    cancelledRows(db, teamId),
   ]);
   if (error) throw error;
   const records: SessionRecord[] = (data ?? []).map((r) => ({
@@ -50,8 +51,8 @@ export async function loadRecords(): Promise<SessionRecord[]> {
 }
 
 /** Sessions marked as no session on published (or archived) rosters, today or earlier. */
-async function cancelledRows(db: Db) {
-  const { data: rosters } = await db.from("rosters").select("id").in("status", ["published", "archived"]);
+async function cancelledRows(db: Db, teamId: string) {
+  const { data: rosters } = await db.from("rosters").select("id").eq("team_id", teamId).in("status", ["published", "archived"]);
   const ids = (rosters ?? []).map((r) => r.id as string);
   if (!ids.length) return [];
   const { data, error } = await db
@@ -64,27 +65,38 @@ async function cancelledRows(db: Db) {
   return data ?? [];
 }
 
-/** Roster sessions that have happened (today or earlier) and aren't in tracking yet, oldest first. */
-async function pendingRows(db: Db) {
-  const { data: rosters } = await db.from("rosters").select("id").in("status", ["published", "archived"]);
+/**
+ * Roster sessions that have happened (today or earlier) and aren't in tracking yet, oldest first.
+ * Ones whose tracked copy was deleted (tracking_removed) stay out.
+ */
+async function pendingRows(db: Db, teamId: string) {
+  const { data: rosters } = await db.from("rosters").select("id").eq("team_id", teamId).in("status", ["published", "archived"]);
   const ids = (rosters ?? []).map((r) => r.id as string);
   if (!ids.length) return [];
   const [{ data: sessions }, { data: done }] = await Promise.all([
-    db.from("roster_sessions").select("id, date, kind, name, ministry").in("roster_id", ids).eq("cancelled", false).lte("date", todayYmd()).order("date").order("name"),
-    db.from("session_records").select("roster_session_id").not("roster_session_id", "is", null),
+    db
+      .from("roster_sessions")
+      .select("id, date, kind, name, ministry")
+      .in("roster_id", ids)
+      .eq("cancelled", false)
+      .eq("tracking_removed", false)
+      .lte("date", todayYmd())
+      .order("date")
+      .order("name"),
+    db.from("session_records").select("roster_session_id").eq("team_id", teamId).not("roster_session_id", "is", null),
   ]);
   const recorded = new Set((done ?? []).map((d) => d.roster_session_id as string));
   return (sessions ?? []).filter((s) => !recorded.has(s.id));
 }
 
-export async function countPending(): Promise<number> {
-  return (await pendingRows(createAdminClient())).length;
+export async function countPending(teamId: string): Promise<number> {
+  return (await pendingRows(createAdminClient(), teamId)).length;
 }
 
 /** Pending sessions with their band and the songs of their plan, filled in for root to check. */
-export async function loadPending(): Promise<PendingSession[]> {
+export async function loadPending(teamId: string): Promise<PendingSession[]> {
   const db = createAdminClient();
-  const rows = await pendingRows(db);
+  const rows = await pendingRows(db, teamId);
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id as string);
 

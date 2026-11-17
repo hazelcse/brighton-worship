@@ -45,7 +45,7 @@ function Row({ s }: { s: BuildableSession }) {
 async function BuildView() {
   const user = await requireUser();
   const all = buildsAnySession(user);
-  const loaded = await loadBuildableSessions(user.id, { all });
+  const loaded = await loadBuildableSessions(user.id, user.team.id, { all });
   // Plans already started (drafts and published) live on /sessions; this page is for starting new ones.
   const sessions = loaded.sessions.filter((s) => s.stage === "not_started");
   const { unconfirmed } = loaded;

@@ -25,7 +25,7 @@ export async function startRosterRevision(rosterId: string): Promise<RevisionSta
   let revisionId: string;
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can edit a published roster." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can edit a published roster." };
     const db = createAdminClient();
     const existing = await revisionOf(rosterId, db);
     if (existing) {
@@ -50,7 +50,7 @@ export async function republishRoster(revisionId: string): Promise<RevisionState
   let publishedId: string;
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can republish a roster." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can republish a roster." };
     const db = createAdminClient();
     const r = await applyRevision(revisionId, user.id, db);
     publishedId = r.publishedId;
@@ -84,7 +84,7 @@ export async function resetRosterRevision(revisionId: string): Promise<RevisionS
   let freshId: string;
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can edit a published roster." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can edit a published roster." };
     const db = createAdminClient();
     const { data: rev } = await db.from("rosters").select("status, revision_of").eq("id", revisionId).maybeSingle();
     if (!rev || rev.status !== "revision") return { ok: false, message: "There's no edit in progress for this roster." };

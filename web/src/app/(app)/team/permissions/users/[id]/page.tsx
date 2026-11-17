@@ -6,27 +6,32 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ActionForm } from "@/components/action-form";
 import { updateUserAccess } from "../../actions";
 import { byCategory, loadGroups, loadPermissionCatalogue, requireAdminViewer } from "../../data";
+import { membership } from "@/lib/teams";
+import { overseesLeads } from "@/lib/auth";
 
 const input =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
 async function UserView({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireAdminViewer();
-  if (!me.can("users.view")) notFound();
+  if (!me.can("users.view") && !me.observerManagesPermissions) notFound();
   const { id } = await params;
   const admin = createAdminClient();
 
   const [{ data: user }, groups, catalogue, { data: memberships }, { data: overrides }, { data: effective }, { data: groupPerms }] =
     await Promise.all([
-      admin.from("profiles").select("id, email, full_name, is_root, is_developer, is_active, created_at").eq("id", id).maybeSingle(),
-      loadGroups(),
-      loadPermissionCatalogue(),
+      admin.from("profiles").select("id, email, full_name, is_developer, is_active, created_at").eq("id", id).maybeSingle(),
+      loadGroups(me.team.id),
+      loadPermissionCatalogue(me.team.id),
       admin.from("user_groups").select("group_id").eq("user_id", id),
-      admin.from("user_permission_overrides").select("permission_key, effect").eq("user_id", id),
-      admin.rpc("effective_permissions", { p_user_id: id }),
+      admin.from("user_permission_overrides").select("permission_key, effect").eq("user_id", id).eq("team_id", me.team.id),
+      admin.rpc("team_permissions", { p_user_id: id, p_team_id: me.team.id }),
       admin.from("group_permissions").select("group_id, permission_key"),
     ]);
   if (!user) notFound();
+  const place = await membership(me.team.id, id);
+  if (!place) notFound(); // not on this team
+  const isLead = place.isLead;
 
   const memberOf = new Set((memberships ?? []).map((m) => m.group_id));
   const overrideOf = new Map((overrides ?? []).map((o) => [o.permission_key, o.effect as "allow" | "deny"]));
@@ -36,7 +41,9 @@ async function UserView({ params }: { params: Promise<{ id: string }> }) {
       .filter((g) => memberOf.has(g.id) && (groupPerms ?? []).some((gp) => gp.group_id === g.id && gp.permission_key === perm))
       .map((g) => g.name);
 
-  const editable = me.can("users.manage") && !user.is_root && !user.is_developer && (me.isRoot || me.id !== user.id);
+  const editable = (me.can("users.manage") || me.observerManagesPermissions) && !isLead && !user.is_developer && (me.isLead || me.observerManagesPermissions || me.id !== user.id);
+  // The observer (and root) can deny the lead permissions; the lead keeps everything else the team has.
+  const leadEditable = isLead && overseesLeads(me);
 
   return (
     <div className="space-y-6">
@@ -47,14 +54,61 @@ async function UserView({ params }: { params: Promise<{ id: string }> }) {
         <h1 className="font-display text-4xl font-semibold">{user.full_name || user.email}</h1>
         <p className="text-sm text-muted">
           {user.email}
-          {user.is_root && " · root user (has every permission)"}
+          {isLead && " · team lead (has every permission the team has)"}
           {user.is_developer && " · developer (has every permission)"}
         </p>
       </div>
 
-      {user.is_root || user.is_developer ? (
+      {leadEditable ? (
+        <ActionForm action={updateUserAccess.bind(null, user.id)} submitLabel="Save changes" className="space-y-6">
+          <section className="overflow-hidden rounded-xl border border-border bg-surface">
+            <div className="p-4">
+              <h2 className="font-semibold">Permissions</h2>
+              <p className="text-sm text-muted">
+                The lead has every permission the team has. Use <b>Deny</b> to take one away. Running the team (members,
+                permission groups, handing over the lead) stays with the lead.
+              </p>
+            </div>
+            {byCategory(catalogue).map(([category, perms]) => (
+              <div key={category} className="border-t border-border">
+                <h3 className="bg-background px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted">{category}</h3>
+                <ul className="divide-y divide-border">
+                  {perms.map((p) => (
+                    <li key={p.key} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {p.description}{" "}
+                          <span
+                            className={`ml-1 rounded px-1.5 py-0.5 text-xs ${
+                              effectiveSet.has(p.key) ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-muted"
+                            }`}
+                          >
+                            {effectiveSet.has(p.key) ? "has access" : "no access"}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted">
+                          <code>{p.key}</code>
+                        </p>
+                      </div>
+                      <select
+                        name={`override:${p.key}`}
+                        defaultValue={overrideOf.get(p.key) === "deny" ? "deny" : "inherit"}
+                        aria-label={`Override for ${p.key}`}
+                        className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+                      >
+                        <option value="inherit">Lead: allowed</option>
+                        <option value="deny">Deny</option>
+                      </select>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+        </ActionForm>
+      ) : isLead || user.is_developer ? (
         <p className="rounded-xl border border-border bg-surface p-4 text-sm">
-          {user.is_root ? "The root user" : "A developer"} always has full access. Its permissions can&apos;t be changed.
+          {isLead ? "The team's lead" : "A developer"} always has full access. Its permissions can&apos;t be changed.
         </p>
       ) : (
         <ActionForm action={updateUserAccess.bind(null, user.id)} submitLabel="Save changes" className="space-y-6">

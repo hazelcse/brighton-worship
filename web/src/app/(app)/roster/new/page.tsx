@@ -17,7 +17,7 @@ async function Rosters() {
   const user = await requireUser();
   if (!user.can("roster.edit")) notFound();
   const today = todayYmd();
-  const all = await listRosters();
+  const all = await listRosters(user.team.id);
   const current = all
     .filter((r) => r.status === "draft" || (r.status === "published" && r.ends_on >= today))
     .sort((a, b) => a.starts_on.localeCompare(b.starts_on) || a.status.localeCompare(b.status));
@@ -59,7 +59,7 @@ async function Rosters() {
           </Link>
         </div>
       </div>
-      <RosterList rosters={items} isRoot={user.isRoot} existing={existing} defaultQuarter={defaultQuarter} />
+      <RosterList rosters={items} isLead={user.isLead} existing={existing} defaultQuarter={defaultQuarter} teamConfig={user.team.config} />
     </div>
   );
 }

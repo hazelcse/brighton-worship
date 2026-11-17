@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { editCell, type CellSlot } from "@/app/(app)/roster/actions";
-import { ATTACHED_ROLES, MINISTRY_LABEL, ROLE_LABEL, ROLE_SHORT, formatDate } from "@/lib/roster";
+import { ATTACHED_ROLES, MINISTRY_LABEL, ROLE_LABEL, ROLE_SHORT, formatDate, usesMinistry } from "@/lib/roster";
 import type { AssignmentRow, SessionRow } from "@/lib/roster-data";
 
 export type EditPerson = {
@@ -244,7 +244,8 @@ export function CellEditor({
     <div className="space-y-4">
       <div>
         <p className="text-sm text-muted">
-          {formatDate(session.date, { weekday: "long", day: "numeric", month: "long" })} · {session.name} · {MINISTRY_LABEL[session.ministry]}
+          {formatDate(session.date, { weekday: "long", day: "numeric", month: "long" })} · {session.name}
+          {usesMinistry(sessions) && <> · {MINISTRY_LABEL[session.ministry]}</>}
         </p>
         <h2 className="font-display text-2xl font-semibold">{ROLE_LABEL[role]}</h2>
         <p className="pt-1 text-xs text-muted">

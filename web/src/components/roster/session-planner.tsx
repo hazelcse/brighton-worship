@@ -14,10 +14,12 @@ import {
   compositionSummary,
   formatDate,
   headcount,
+  usesMinistry,
   type Composition,
   type Ministry,
   type SessionKind,
 } from "@/lib/roster";
+import { presetKinds, splitsMinistry, type TeamConfig } from "@/lib/team-config";
 
 export type PlannerSession = {
   id: string;
@@ -252,7 +254,7 @@ function mostCommonBand(bands: Composition[]): Composition {
 }
 
 /** One kind of session (e.g. all "CM Prayer & Praise"): set the weight and band of all of them at once. */
-function DefaultsRow({ rosterId, group }: { rosterId: string; group: Group }) {
+function DefaultsRow({ rosterId, group, showMinistry }: { rosterId: string; group: Group; showMinistry: boolean }) {
   const { name, ministry, weights, bands } = group;
   const count = weights.length;
   const sameWeight = weights.every((w) => w === weights[0]);
@@ -270,7 +272,9 @@ function DefaultsRow({ rosterId, group }: { rosterId: string; group: Group }) {
   return (
     <li className="py-2">
       <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left">
-        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[ministry]}`}>{MINISTRY_LABEL[ministry]}</span>
+        {showMinistry && (
+          <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[ministry]}`}>{MINISTRY_LABEL[ministry]}</span>
+        )}
         <span className="min-w-0 flex-1 text-sm font-medium">
           {name} <span className="font-normal text-muted">× {count}</span>
           <span className="block text-xs font-normal text-muted">
@@ -384,7 +388,7 @@ function SessionDefaults({ rosterId, sessions }: { rosterId: string; sessions: P
           <ul className="divide-y divide-border">
             {groups.map((g) => (
               // Remount when the saved values change so the editor shows them.
-              <DefaultsRow key={`${g.name}|${g.weights.join(",")}|${JSON.stringify(g.bands)}`} rosterId={rosterId} group={g} />
+              <DefaultsRow key={`${g.name}|${g.weights.join(",")}|${JSON.stringify(g.bands)}`} rosterId={rosterId} group={g} showMinistry={usesMinistry(sessions)} />
             ))}
           </ul>
         </div>
@@ -406,6 +410,7 @@ export function SessionDialog({
   extra,
   band,
   reasons = [],
+  teamConfig,
 }: {
   rosterId: string;
   draft: Draft;
@@ -419,8 +424,13 @@ export function SessionDialog({
   band?: BandMember[];
   /** Reasons already used for "no session" in this roster, offered as quick picks. */
   reasons?: string[];
+  /** The signed-in team: which regular bands "Start from" offers, and whether EM/CM applies. */
+  teamConfig?: TeamConfig;
 }) {
   const [s, setS] = useState<Draft>(draft);
+  const presets = presetKinds(teamConfig);
+  // Teams without an EM/CM split (e.g. Youth) don't choose who can serve: anyone can.
+  const splitMinistry = splitsMinistry(teamConfig);
   // Asking why it won't happen (marking it as no session, or changing the reason).
   const [askReason, setAskReason] = useState(false);
   // "role|memberId" picked to come off parts made smaller than the people in them.
@@ -506,9 +516,9 @@ export function SessionDialog({
             <option value="" disabled>
               Choose a band…
             </option>
-            {Object.entries(SESSION_TYPES).map(([k, t]) => (
+            {presets.map((k) => (
               <option key={k} value={k}>
-                {t.name} band
+                {SESSION_TYPES[k].name} band
               </option>
             ))}
             <option value="blank">Empty band</option>
@@ -568,14 +578,16 @@ export function SessionDialog({
           />
         )}
         <p className="-mt-2 text-xs text-muted sm:col-span-2">Anyone away on the rehearsal date won&apos;t be rostered for this session.</p>
-        <label className="space-y-1 text-sm font-medium sm:col-span-2">
-          Who can serve
-          <select value={s.ministry} onChange={(e) => set({ ministry: e.target.value as Ministry })} className={input}>
-            <option value="em">EM members only</option>
-            <option value="cm">CM members only</option>
-            <option value="any">Anyone (EM & CM)</option>
-          </select>
-        </label>
+        {(splitMinistry || s.ministry !== "any") && (
+          <label className="space-y-1 text-sm font-medium sm:col-span-2">
+            Who can serve
+            <select value={s.ministry} onChange={(e) => set({ ministry: e.target.value as Ministry })} className={input}>
+              <option value="em">EM members only</option>
+              <option value="cm">CM members only</option>
+              <option value="any">Anyone (EM & CM)</option>
+            </select>
+          </label>
+        )}
         <label className="space-y-1 text-sm font-medium sm:col-span-2">
           Weight <span className="font-normal text-muted">({s.weight.toFixed(1)}): how much serving at this counts toward someone&apos;s load</span>
           <input
@@ -702,11 +714,13 @@ export function SessionPlanner({
   sessions,
   quarter,
   editable,
+  teamConfig,
 }: {
   rosterId: string;
   sessions: PlannerSession[];
   quarter: { start: string; end: string };
   editable: boolean;
+  teamConfig?: TeamConfig;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -723,6 +737,8 @@ export function SessionPlanner({
   }, [sessions]);
 
   const active = sessions.filter((s) => !s.cancelled);
+  // No EM or CM sessions (e.g. Youth): no EM/CM badges.
+  const showMinistry = usesMinistry(sessions);
   // Reasons already given in this roster, offered again as quick picks.
   const reasons = useMemo(() => [...new Set(sessions.map((s) => s.cancel_reason.trim()).filter(Boolean))], [sessions]);
   // The session being marked as no session from the list (asks why first).
@@ -791,7 +807,9 @@ export function SessionPlanner({
                         onClick={() => open({ ...s })}
                         className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left disabled:cursor-default"
                       >
-                        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[s.ministry]}`}>{MINISTRY_LABEL[s.ministry]}</span>
+                        {showMinistry && (
+                          <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[s.ministry]}`}>{MINISTRY_LABEL[s.ministry]}</span>
+                        )}
                         <span className={`text-[13px] font-medium ${s.cancelled ? "line-through" : ""}`}>{s.name}</span>
                         <span className="text-xs text-muted">
                           {s.cancelled ? (
@@ -852,7 +870,7 @@ export function SessionPlanner({
           <h2 id="session-dialog-title" className="font-display text-2xl font-semibold">
             {draft?.id ? "Edit session" : "Add a session"}
           </h2>
-          {draft && <SessionDialog key={draft.id ?? "new"} rosterId={rosterId} draft={draft} quarter={quarter} onClose={close} reasons={reasons} />}
+          {draft && <SessionDialog key={draft.id ?? "new"} rosterId={rosterId} draft={draft} quarter={quarter} onClose={close} reasons={reasons} teamConfig={teamConfig} />}
         </div>
       </dialog>
 

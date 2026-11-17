@@ -49,12 +49,19 @@ export const SINGING_ROLES: readonly string[] = ["worship leader", "vocalist"];
 export type Composition = Partial<Record<Role, number>>;
 export type Ministry = "em" | "cm" | "any";
 export const MINISTRY_LABEL: Record<Ministry, string> = { em: "EM", cm: "CM", any: "EM/CM" };
+/**
+ * Whether EM/CM means anything for these sessions: only if some are EM or CM. A team without the
+ * split (Youth: every session is open to anyone) shows no EM/CM badges, column or filter.
+ */
+export const usesMinistry = (sessions: readonly { ministry: Ministry }[]) => sessions.some((s) => s.ministry !== "any");
 
 // ---------------------------------------------------------------------------
 // Session types
 // ---------------------------------------------------------------------------
 
-export type SessionKind = "em_sunday" | "cm_sunday" | "em_pnp" | "cm_pnp" | "custom";
+export type SessionKind = "em_sunday" | "cm_sunday" | "em_pnp" | "cm_pnp" | "saturday" | "custom";
+/** A session type from the catalogue (every kind but a one-off "custom" event). */
+export type RegularKind = Exclude<SessionKind, "custom">;
 
 const FULL_BAND = (wl: number): Composition => ({
   "worship leader": wl,
@@ -67,25 +74,100 @@ const FULL_BAND = (wl: number): Composition => ({
   drums: 1,
 });
 
-export const SESSION_TYPES: Record<Exclude<SessionKind, "custom">, {
+/** When a regular session happens: every week on a weekday, or the nth weekday of each month (0 = Sunday). */
+export type Schedule = { weekly: number } | { monthly: { nth: number; weekday: number } };
+
+/**
+ * When its band rehearses: `daysBefore` the session, at `time`. `unlessOn`: if that day is a
+ * session of this other kind (e.g. CM Prayer & Praise), rehearse `daysBefore` that many days
+ * before instead.
+ */
+export type RehearsalRule = { daysBefore: number; time: string | null; unlessOn?: { kind: RegularKind; daysBefore: number } };
+
+export type SessionType = {
   name: string;
   ministry: Ministry;
+  /** How much one session counts toward someone's load (0 to 1). */
   weight: number;
   composition: Composition;
-  when: string;
-}> = {
-  em_sunday: { name: "EM Sunday Service", ministry: "em", weight: 1, composition: FULL_BAND(2), when: "Every Sunday" },
+  schedule: Schedule;
+  /** "HH:MM", or null for no usual time. */
+  startTime: string | null;
+  rehearsal: RehearsalRule | null;
+  /** Counted with Prayer & Praise (not services) for fairness and "serves at". */
+  pnp: boolean;
+};
+
+/**
+ * Every kind of regular session any team plans. A team picks the ones it uses in its config
+ * (team-config.ts: sessionKinds). Add a kind here (and to SessionKind and the roster_sessions kind
+ * check in the database), then list it in a team's config.
+ */
+export const SESSION_TYPES: Record<RegularKind, SessionType> = {
+  em_sunday: {
+    name: "EM Sunday Service",
+    ministry: "em",
+    weight: 1,
+    composition: FULL_BAND(2),
+    schedule: { weekly: 0 },
+    startTime: "08:30",
+    rehearsal: { daysBefore: 5, time: "20:00" }, // the Tuesday before
+    pnp: false,
+  },
   // CM Sundays: 2 worship leaders and 1 vocalist; the rest of the band is the same as EM.
-  cm_sunday: { name: "CM Sunday Service", ministry: "cm", weight: 1, composition: { ...FULL_BAND(2), vocalist: 1 }, when: "Every Sunday" },
-  em_pnp: { name: "EM Prayer & Praise", ministry: "em", weight: 0.6, composition: FULL_BAND(2), when: "4th Thursday of the month" },
+  cm_sunday: {
+    name: "CM Sunday Service",
+    ministry: "cm",
+    weight: 1,
+    composition: { ...FULL_BAND(2), vocalist: 1 },
+    schedule: { weekly: 0 },
+    startTime: "07:45",
+    // The Wednesday before, or the Sunday before when that Wednesday is a CM Prayer & Praise.
+    rehearsal: { daysBefore: 4, time: "20:00", unlessOn: { kind: "cm_pnp", daysBefore: 7 } },
+    pnp: false,
+  },
+  em_pnp: {
+    name: "EM Prayer & Praise",
+    ministry: "em",
+    weight: 0.6,
+    composition: FULL_BAND(2),
+    schedule: { monthly: { nth: 4, weekday: 4 } },
+    startTime: null,
+    rehearsal: null,
+    pnp: true,
+  },
   cm_pnp: {
     name: "CM Prayer & Praise",
     ministry: "cm",
     weight: 0.6,
     composition: { "worship leader": 1, vocalist: 1, keys: 1, "acoustic guitar": 1 },
-    when: "4th Wednesday of the month",
+    schedule: { monthly: { nth: 4, weekday: 3 } },
+    startTime: null,
+    rehearsal: null,
+    pnp: true,
+  },
+  // Youth Worship: one service a week, open to everyone (no EM/CM split).
+  saturday: {
+    name: "Saturday Service",
+    ministry: "any",
+    weight: 1,
+    composition: FULL_BAND(2),
+    schedule: { weekly: 6 },
+    startTime: null,
+    rehearsal: null,
+    pnp: false,
   },
 };
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const NTH = ["", "1st", "2nd", "3rd", "4th", "5th"];
+/** "Every Sunday", "4th Thursday of the month" (`midSentence`: "every Sunday"). */
+export function scheduleText(s: Schedule, midSentence = false): string {
+  if ("monthly" in s) return `${NTH[s.monthly.nth]} ${WEEKDAY_NAMES[s.monthly.weekday]} of the month`;
+  return `${midSentence ? "every" : "Every"} ${WEEKDAY_NAMES[s.weekly]}`;
+}
+
+const regularType = (kind: string): SessionType | undefined => SESSION_TYPES[kind as RegularKind];
 
 export function compositionSummary(c: Composition): string {
   return ROLES.filter((r) => (c[r.value] ?? 0) > 0)
@@ -186,28 +268,28 @@ export type PlannedSession = {
 };
 
 /**
- * When a Sunday service rehearses: EM the Tuesday before, CM the Wednesday before, or the Sunday
- * before if that Wednesday is a CM Prayer & Praise (cmPnpDates). Other sessions: none.
+ * When a session rehearses, from its type's rehearsal rule (e.g. EM Sundays the Tuesday before).
+ * `clashDates`: dates of the rule's `unlessOn` kind in this roster (e.g. CM Prayer & Praise), which
+ * move the rehearsal. Kinds without a rule, and custom events: none.
  */
-export function defaultRehearsal(date: string, kind: SessionKind, cmPnpDates: Set<string>): string | null {
-  if (kind === "em_sunday") return addDays(date, -5);
-  if (kind === "cm_sunday") {
-    const wed = addDays(date, -4);
-    return cmPnpDates.has(wed) ? addDays(date, -7) : wed;
-  }
-  return null;
+export function defaultRehearsal(date: string, kind: SessionKind, clashDates: Set<string>): string | null {
+  const r = regularType(kind)?.rehearsal;
+  if (!r) return null;
+  const day = addDays(date, -r.daysBefore);
+  return r.unlessOn && clashDates.has(day) ? addDays(date, -r.unlessOn.daysBefore) : day;
 }
 
-/** Default start time ("HH:MM") of a session kind: the Sunday services; null for the rest. */
+/** Default start time ("HH:MM") of a session kind, or null. */
 export function defaultStartTime(kind: string): string | null {
-  return kind === "em_sunday" ? "08:30" : kind === "cm_sunday" ? "07:45" : null;
+  return regularType(kind)?.startTime ?? null;
 }
 
-/** Default rehearsal time: 8pm for the usual EM Tuesday and CM Wednesday rehearsals; null otherwise. */
+/** Default rehearsal time: the rule's time when the rehearsal is on its usual weekday; null otherwise. */
 export function defaultRehearsalTime(kind: string, rehearsalDate: string | null): string | null {
-  if (!rehearsalDate) return null;
-  const dow = weekday(rehearsalDate);
-  return (kind === "em_sunday" && dow === 2) || (kind === "cm_sunday" && dow === 3) ? "20:00" : null;
+  const t = regularType(kind);
+  if (!rehearsalDate || !t?.rehearsal?.time || !("weekly" in t.schedule)) return null;
+  const usual = (((t.schedule.weekly - t.rehearsal.daysBefore) % 7) + 7) % 7;
+  return weekday(rehearsalDate) === usual ? t.rehearsal.time : null;
 }
 
 /** "HH:MM" from a Postgres time ("20:00:00"), or null. */
@@ -221,30 +303,35 @@ export function formatTime(t: string): string {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")}${h < 12 ? "am" : "pm"}`;
 }
 
-/** All the regular sessions in a quarter. */
-export function defaultSessions(q: Quarter): PlannedSession[] {
-  const out: PlannedSession[] = [];
-  const add = (date: string, kind: Exclude<SessionKind, "custom">) => {
-    const t = SESSION_TYPES[kind];
-    out.push({ date, kind, name: t.name, ministry: t.ministry, weight: t.weight, composition: t.composition, rehearsal_date: null });
-  };
-  // Sundays
+/** Every given weekday (0 = Sunday) in a quarter. */
+function everyWeekday(q: Quarter, dow: number): string[] {
+  const out: string[] = [];
   let d = q.start;
-  while (weekday(d) !== 0) d = addDays(d, 1);
-  for (; d <= q.end; d = addDays(d, 7)) {
-    add(d, "em_sunday");
-    add(d, "cm_sunday");
-  }
-  // Prayer & praise: 4th Wednesday (CM) and 4th Thursday (EM) of each month
+  while (weekday(d) !== dow) d = addDays(d, 1);
+  for (; d <= q.end; d = addDays(d, 7)) out.push(d);
+  return out;
+}
+
+/** Every date in a quarter that a schedule falls on. */
+function scheduleDates(q: Quarter, sch: Schedule): string[] {
+  if ("weekly" in sch) return everyWeekday(q, sch.weekly);
   const { y, m } = parseYmd(q.start);
-  for (let i = 0; i < 3; i++) {
-    const mm = ((m - 1 + i) % 12) + 1;
-    const yy = y + Math.floor((m - 1 + i) / 12);
-    add(nthWeekday(yy, mm, 3, 4), "cm_pnp");
-    add(nthWeekday(yy, mm, 4, 4), "em_pnp");
+  return [0, 1, 2].map((i) => nthWeekday(y + Math.floor((m - 1 + i) / 12), ((m - 1 + i) % 12) + 1, sch.monthly.weekday, sch.monthly.nth));
+}
+
+/** All the regular sessions of these kinds (a team's config: sessionKinds) in a quarter, with rehearsals. */
+export function defaultSessions(q: Quarter, kinds: readonly RegularKind[]): PlannedSession[] {
+  const out: PlannedSession[] = [];
+  for (const kind of kinds) {
+    const t = SESSION_TYPES[kind];
+    for (const date of scheduleDates(q, t.schedule)) {
+      out.push({ date, kind, name: t.name, ministry: t.ministry, weight: t.weight, composition: t.composition, rehearsal_date: null });
+    }
   }
-  const cmPnp = new Set(out.filter((s) => s.kind === "cm_pnp").map((s) => s.date));
-  for (const s of out) s.rehearsal_date = defaultRehearsal(s.date, s.kind, cmPnp);
+  for (const s of out) {
+    const clash = SESSION_TYPES[s.kind as RegularKind].rehearsal?.unlessOn?.kind;
+    s.rehearsal_date = defaultRehearsal(s.date, s.kind, new Set(clash ? out.filter((x) => x.kind === clash).map((x) => x.date) : []));
+  }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
 }
 

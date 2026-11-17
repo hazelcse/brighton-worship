@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { SONGS_TAG } from "@/lib/cache-tags";
 import { cookies } from "next/headers";
@@ -11,13 +12,26 @@ import { BAND_COLUMNS, MAX_MAIN_SET, ROLE_TO_BAND, cleanRecordInput, isSunday, t
 import { readSessionsCsv, readSessionsWorkbook } from "@/lib/session-import";
 import { readXlsx } from "@/lib/xlsx";
 import { isInstrument } from "@/lib/team";
+import { DEFAULT_TEAM, TEAM_COOKIE, loadTeams, membership, teamBySlug, teamMemberIds, teamProfiles, type Team } from "@/lib/teams";
+
+/** Developers' Populate dialog: every team (to pick which one to fill) and the one they're in now. */
+export async function populateTeams(): Promise<{ teams: { slug: string; name: string }[]; current: string } | null> {
+  const user = await getSessionUser();
+  if (!user?.isDeveloper) return null;
+  return { teams: (await loadTeams()).map((t) => ({ slug: t.slug, name: t.name })), current: user.team.slug };
+}
+
+/** The team a Populate action fills: the one picked in the dialog, or the one the developer is in. */
+async function populateTarget(fallback: Team, slug: string | null | undefined): Promise<Team | null> {
+  return slug ? teamBySlug(slug) : fallback;
+}
 
 /**
  * Developers only: see (and use) the app as root or as one permission group, or act as one
  * person ("person:<id>": their identity and permissions, changes are made as them). null = back to the developer's own full access. The choice
  * is a cookie; the server only honours it for developers.
  */
-export async function setViewAs(view: string | null): Promise<{ ok: boolean; message: string | null }> {
+export async function setViewAs(view: string | null, teamSlug?: string): Promise<{ ok: boolean; message: string | null }> {
   // getSessionUser, not getCurrentUser: switching back must work while viewing as a person.
   const user = await getSessionUser();
   if (!user?.isDeveloper) return { ok: false, message: "Only developers can switch views." };
@@ -33,8 +47,14 @@ export async function setViewAs(view: string | null): Promise<{ ok: boolean; mes
         .eq("id", view.slice(VIEW_AS_PERSON.length))
         .maybeSingle();
       if (!data || !data.is_active || data.is_developer) return { ok: false, message: "That person can't be viewed as." };
-    } else if (view !== "root") {
-      const { data } = await createAdminClient().from("groups").select("name").eq("name", view).maybeSingle();
+      // Someone on another team: switch to that team first (a person is viewed as within one team).
+      if (teamSlug && teamSlug !== user.team.slug) {
+        const team = await teamBySlug(teamSlug);
+        if (!team || !(await membership(team.id, data.id))) return { ok: false, message: "They aren't on that team." };
+        jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+      }
+    } else if (view !== "lead") {
+      const { data } = await createAdminClient().from("groups").select("name").eq("team_id", user.team.id).eq("name", view).maybeSingle();
       if (!data) return { ok: false, message: "That permission group doesn't exist." };
     }
     jar.set(VIEW_AS_COOKIE, view, { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" });
@@ -92,9 +112,12 @@ export async function resetAppData(confirm: string): Promise<{ ok: boolean; mess
       if (rmErr) throw rmErr;
     }
 
-    // Passwords back to the default, except root and developers.
-    const { data: members, error: pErr } = await db.from("profiles").select("id").eq("is_root", false).eq("is_developer", false);
+    // Passwords back to the default, except root, team leads and developers.
+    const { data: leads } = await db.from("team_members").select("user_id").eq("is_lead", true);
+    const leadIds = new Set((leads ?? []).map((l) => l.user_id as string));
+    const { data: everyone, error: pErr } = await db.from("profiles").select("id").eq("is_root", false).eq("is_developer", false);
     if (pErr) throw pErr;
+    const members = (everyone ?? []).filter((m) => !leadIds.has(m.id as string));
     const failed: string[] = [];
     for (const m of members ?? []) {
       const { error: authErr } = await db.auth.admin.updateUserById(m.id, { password });
@@ -137,6 +160,8 @@ function ymd(d: Date) {
 export async function populateRandomAbsences(
   quarter: number,
   year: number,
+  /** Only this team's members; "" or undefined: everyone on every team. */
+  teamSlug?: string,
 ): Promise<{ ok: boolean; message: string | null; created?: number }> {
   const user = await getSessionUser();
   if (!user?.isDeveloper) return { ok: false, message: "Only developers can populate absences." };
@@ -145,7 +170,12 @@ export async function populateRandomAbsences(
   const actorId = user.viewingAsPerson?.realId ?? user.id;
   const db = createAdminClient();
   try {
-    const { data: members, error: mErr } = await db.from("profiles").select("id").eq("is_active", true).eq("is_developer", false);
+    const team = teamSlug ? await teamBySlug(teamSlug) : null;
+    if (teamSlug && !team) return { ok: false, message: "That team doesn't exist." };
+    // Team members only: never root, developers or observers (they're on no team).
+    let membersQuery = db.from("profiles").select("id").eq("is_active", true).eq("is_developer", false).eq("is_root", false).is("observer_group", null);
+    if (team) membersQuery = membersQuery.in("id", (await teamMemberIds(team.id)).concat("00000000-0000-0000-0000-000000000000"));
+    const { data: members, error: mErr } = await membersQuery;
     if (mErr) throw mErr;
 
     const qStart = Date.UTC(year, (quarter - 1) * 3, 1);
@@ -176,12 +206,12 @@ export async function populateRandomAbsences(
       actor_id: actorId,
       action: "developer.populate_absences",
       target: actorId,
-      details: { quarter, year, members: members?.length ?? 0, created: rows.length },
+      details: { quarter, year, team: team?.slug ?? "all", members: members?.length ?? 0, created: rows.length },
     });
     revalidatePath("/roster", "layout");
     return {
       ok: true,
-      message: `Created ${rows.length} absence${rows.length === 1 ? "" : "s"} for ${members?.length ?? 0} member${members?.length === 1 ? "" : "s"} in Q${quarter} ${year}.`,
+      message: `Created ${rows.length} absence${rows.length === 1 ? "" : "s"} for ${members?.length ?? 0} member${members?.length === 1 ? "" : "s"}${team ? ` of ${team.name}` : ""} in Q${quarter} ${year}.`,
       created: rows.length,
     };
   } catch (e) {
@@ -220,9 +250,13 @@ function pick<T>(list: readonly T[], n: number): T[] {
 export async function populatePastSessions(
   quarter: number,
   year: number,
+  /** The team to fill (default: the one the developer is in). */
+  teamSlug?: string,
 ): Promise<{ ok: boolean; message: string | null; created?: number }> {
   const user = await getSessionUser();
   if (!user?.isDeveloper) return { ok: false, message: "Only developers can populate sessions." };
+  const team = await populateTarget(user.team, teamSlug);
+  if (!team) return { ok: false, message: "That team doesn't exist." };
   if (![1, 2, 3, 4].includes(quarter)) return { ok: false, message: "Choose a quarter." };
   if (!Number.isInteger(year) || year < 2000 || year > 2100) return { ok: false, message: "Choose a year." };
   const actorId = user.viewingAsPerson?.realId ?? user.id;
@@ -233,10 +267,13 @@ export async function populatePastSessions(
     if (q.start > today) return { ok: false, message: `Q${quarter} ${year} hasn't started yet, so it has no past sessions.` };
     const last = q.end < today ? q.end : today;
 
+    // What each member plays here and "serves at": their profile on this team.
+    const onTeam = await teamProfiles(team.id);
+    const memberIds = [...onTeam.keys()];
     const [{ data: members, error: mErr }, { data: songs, error: sErr }, { data: existing, error: eErr }] = await Promise.all([
-      db.from("profiles").select("id, full_name, email, instruments, serves").eq("is_active", true).eq("is_developer", false),
+      db.from("profiles").select("id, full_name, email").in("id", memberIds).eq("is_active", true).eq("is_developer", false),
       db.from("songs").select("title, artist, language, original_key, song_versions(keys)"),
-      db.from("session_records").select("date, kind").gte("date", q.start).lte("date", last),
+      db.from("session_records").select("date, kind").eq("team_id", team.id).gte("date", q.start).lte("date", last),
     ]);
     if (mErr) throw mErr;
     if (sErr) throw sErr;
@@ -252,14 +289,14 @@ export async function populatePastSessions(
     const zhSongs = library.filter((s) => s.zh);
     const people = (members ?? []).map((m) => ({
       name: (m.full_name as string) || (m.email as string),
-      instruments: (m.instruments as string[]) ?? [],
-      serves: m.serves as string,
+      instruments: onTeam.get(m.id as string)!.instruments,
+      serves: onTeam.get(m.id as string)!.serves as string,
     }));
     const taken = new Set((existing ?? []).map((r) => `${r.date}|${r.kind}`));
 
     // The regular schedule, plus 1–2 ad-hoc events on a day that isn't a Sunday.
     type Planned = { date: string; kind: SessionKind; name: string; ministry: "em" | "cm" | "any"; composition: Record<string, number> };
-    const planned: Planned[] = defaultSessions(q).map((s) => ({ date: s.date, kind: s.kind, name: s.name, ministry: s.ministry, composition: s.composition }));
+    const planned: Planned[] = defaultSessions(q, team.config.sessionKinds).map((s) => ({ date: s.date, kind: s.kind, name: s.name, ministry: s.ministry, composition: s.composition }));
     const days = daysBetween(q.start, q.end) + 1;
     for (const name of pick(AD_HOC_EVENTS, randInt(1, 2))) {
       let date = addDays(q.start, randInt(0, days - 1));
@@ -315,6 +352,7 @@ export async function populatePastSessions(
 
       rows.push({
         roster_session_id: null,
+        team_id: team.id,
         date: s.date,
         ministry: s.ministry,
         kind: s.kind,
@@ -355,6 +393,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export async function importSessionsFile(form: FormData): Promise<{ ok: boolean; message: string | null; created?: number }> {
   const user = await getSessionUser();
   if (!user?.isDeveloper) return { ok: false, message: "Only developers can import sessions." };
+  const team = await populateTarget(user.team, form.get("team") ? String(form.get("team")) : null);
+  if (!team) return { ok: false, message: "That team doesn't exist." };
   const file = form.get("file");
   if (!(file instanceof File) || !file.size) return { ok: false, message: "Choose a file." };
   if (file.size > 20_000_000) return { ok: false, message: "That file is too big (20 MB at most)." };
@@ -368,7 +408,7 @@ export async function importSessionsFile(form: FormData): Promise<{ ok: boolean;
     const { sessions, problems } = workbook ? readSessionsWorkbook(readXlsx(data)) : readSessionsCsv(data.toString("utf8"));
     if (!sessions.length) return { ok: false, message: problems[0] ?? "There are no sessions in that file." };
 
-    const { data: existing, error: eErr } = await db.from("session_records").select("date, kind, service_name");
+    const { data: existing, error: eErr } = await db.from("session_records").select("date, kind, service_name").eq("team_id", team.id);
     if (eErr) throw eErr;
     // Regular services are one a day; an ad-hoc event is matched by its name too.
     const keyOf = (date: string, kind: string, name: string) => (kind === "custom" ? `${date}|custom|${name.toLowerCase()}` : `${date}|${kind}`);
@@ -393,6 +433,7 @@ export async function importSessionsFile(form: FormData): Promise<{ ok: boolean;
         taken.add(key);
         rows.push({
           roster_session_id: null,
+          team_id: team.id,
           date: s.date,
           ministry: s.ministry,
           kind: s.kind,
@@ -439,15 +480,27 @@ export async function importSessionsFile(form: FormData): Promise<{ ok: boolean;
 /**
  * Developers only: add team members from a JSON file, either a list or an object of entries like
  *   { "name": "…", "email": "…", "password": "…", "instrument": ["Keys", "Band Leader"],
- *     "gender": "female", "ministry": ["CM"], "em_percent": 0, "serves": "both",
- *     "groups": ["member", "admin"], "is_root": false, "is_active": true }
- * Members whose email or name is already in the team are skipped. With a password (6+ characters)
- * they sign in with it; without one they get the default password and choose their own. is_root
- * is only honoured when the team has no root yet.
+ *     "no_roster": ["Band Leader"], "gender": "female", "ministry": ["CM"], "em_percent": 0,
+ *     "serves": "both", "groups": ["member", "admin"], "is_lead": false, "is_active": true }
+ * "instrument" (or "instruments") is what they play or do on this team (worship instruments or media
+ * roles, by name, any case); "no_roster" is their personal rule: ones of those they shouldn't be
+ * rostered for (teams with personal rules only). EM/CM ("ministry" / "em_percent") and "serves" are
+ * ignored by teams that don't use them.
+ * They join the team picked in the dialog (or the one the developer is signed into). Someone whose email already has an account is
+ * linked to this team (if they aren't on it yet) with this entry's instruments, EM/CM and "serves"
+ * as their profile here; a new name that's already taken is skipped. With a
+ * password (6+ characters) they sign in with it; without one they get the default password and
+ * choose their own. is_lead (or the old is_root) is only honoured when the team has no lead yet.
  */
-export async function importMembersJson(json: string): Promise<{ ok: boolean; message: string | null; created?: number }> {
+export async function importMembersJson(
+  json: string,
+  /** The team they join (default: the one the developer is in). */
+  teamSlug?: string,
+): Promise<{ ok: boolean; message: string | null; created?: number }> {
   const user = await getSessionUser();
   if (!user?.isDeveloper) return { ok: false, message: "Only developers can import members." };
+  const team = await populateTarget(user.team, teamSlug);
+  if (!team) return { ok: false, message: "That team doesn't exist." };
   const actorId = user.viewingAsPerson?.realId ?? user.id;
   let entries: Record<string, unknown>[];
   try {
@@ -462,14 +515,20 @@ export async function importMembersJson(json: string): Promise<{ ok: boolean; me
   const db = createAdminClient();
   try {
     const [{ data: profiles, error: pErr }, { data: groups, error: gErr }] = await Promise.all([
-      db.from("profiles").select("email, full_name, uid, is_root"),
-      db.from("groups").select("id, name"),
+      db.from("profiles").select("id, email, full_name, uid, is_root, is_developer"),
+      db.from("groups").select("id, name").eq("team_id", team.id),
     ]);
     if (pErr) throw pErr;
     if (gErr) throw gErr;
     const emails = new Set((profiles ?? []).map((p) => (p.email as string).toLowerCase()));
     const fullNames = new Set((profiles ?? []).map((p) => (p.full_name as string).trim().replace(/\s+/g, " ").toLowerCase()));
-    let hasRoot = (profiles ?? []).some((p) => p.is_root);
+    const { data: onTeam } = await db.from("team_members").select("user_id, is_lead").eq("team_id", team.id);
+    const memberIds = new Set((onTeam ?? []).map((t) => t.user_id as string));
+    // Root and developer accounts are never on a team.
+    const idByEmail = new Map(
+      (profiles ?? []).filter((p) => !p.is_root && !p.is_developer).map((p) => [(p.email as string).toLowerCase(), p.id as string]),
+    );
+    let hasLead = (onTeam ?? []).some((t) => t.is_lead);
     let uid = Math.max(0, ...(profiles ?? []).map((p) => (p.uid as number | null) ?? 0));
     const groupId = new Map((groups ?? []).map((g) => [(g.name as string).toLowerCase(), g.id as string]));
     const fallback = defaultMemberPassword();
@@ -485,11 +544,8 @@ export async function importMembersJson(json: string): Promise<{ ok: boolean; me
         problems.push(`${label}: needs a name and a valid email.`);
         continue;
       }
-      if (emails.has(email) || fullNames.has(name.toLowerCase())) {
-        skipped++;
-        continue;
-      }
-      const instruments = [...new Set((Array.isArray(m.instrument) ? m.instrument : Array.isArray(m.instruments) ? m.instruments : []).map((x) => String(x).trim().toLowerCase()))].filter(isInstrument);
+      // Their profile on this team (someone on two teams has a separate one on each).
+      const instruments = [...new Set((Array.isArray(m.instrument) ? m.instrument : Array.isArray(m.instruments) ? m.instruments : []).map((x) => String(x).trim().toLowerCase()))].filter((x) => isInstrument(x) && team.config.roles.includes(x));
       const ministries = (Array.isArray(m.ministry) ? m.ministry : [m.ministry]).map((x) => String(x ?? "").toUpperCase());
       const em = Number(m.em_percent);
       const emPercent =
@@ -502,10 +558,34 @@ export async function importMembersJson(json: string): Promise<{ ok: boolean; me
               : ministries.includes("CM")
                 ? 0
                 : null;
-      const gender = m.gender === "male" || m.gender === "female" ? m.gender : null;
       const serves = m.serves === "sunday" || m.serves === "pnp" ? m.serves : "both";
+      // Their personal rule: parts they play here but shouldn't be rostered for.
+      const noRoster = team.config.memberFields.rules
+        ? [...new Set((Array.isArray(m.no_roster) ? m.no_roster : []).map((x) => String(x).trim().toLowerCase()))].filter((x) => instruments.includes(x))
+        : [];
+      const teamProfile = {
+        instruments,
+        no_roster_roles: noRoster,
+        em_percent: team.config.memberFields.ministry ? emPercent : null,
+        serves: team.config.memberFields.serves ? serves : "both",
+      };
+      if (emails.has(email)) {
+        // Already has a login (e.g. on another team): link it, with a new profile for this team.
+        const existingId = idByEmail.get(email);
+        if (existingId && !memberIds.has(existingId)) {
+          await db.from("team_members").insert({ team_id: team.id, user_id: existingId, ...teamProfile });
+          memberIds.add(existingId);
+          created++;
+        } else skipped++;
+        continue;
+      }
+      if (fullNames.has(name.toLowerCase())) {
+        skipped++;
+        continue;
+      }
+      const gender = m.gender === "male" || m.gender === "female" ? m.gender : null;
       const given = typeof m.password === "string" && m.password.length >= 6 ? m.password : null;
-      const makeRoot = m.is_root === true && !hasRoot;
+      const makeLead = (m.is_lead === true || m.is_root === true) && !hasLead;
 
       const { data, error } = await db.auth.admin.createUser({ email, password: given ?? fallback, email_confirm: true, user_metadata: { full_name: name } });
       if (error) {
@@ -518,12 +598,8 @@ export async function importMembersJson(json: string): Promise<{ ok: boolean; me
         .update({
           uid,
           full_name: name,
-          instruments,
-          em_percent: emPercent,
           gender,
-          serves,
           is_active: m.is_active !== false,
-          is_root: makeRoot,
           must_change_password: !given,
         })
         .eq("id", data.user.id);
@@ -532,9 +608,11 @@ export async function importMembersJson(json: string): Promise<{ ok: boolean; me
         problems.push(`${label}: ${upErr.message}`);
         continue;
       }
+      await db.from("team_members").insert({ team_id: team.id, user_id: data.user.id, is_lead: makeLead, ...teamProfile });
+      memberIds.add(data.user.id);
       const wanted = (Array.isArray(m.groups) && m.groups.length ? m.groups : ["member"]).map((g) => groupId.get(String(g).toLowerCase())).filter((g): g is string => Boolean(g));
       if (wanted.length) await db.from("user_groups").insert([...new Set(wanted)].map((group_id) => ({ user_id: data.user.id, group_id })));
-      if (makeRoot) hasRoot = true;
+      if (makeLead) hasLead = true;
       emails.add(email);
       fullNames.add(name.toLowerCase());
       created++;
@@ -552,4 +630,17 @@ export async function importMembersJson(json: string): Promise<{ ok: boolean; me
   } catch (e) {
     return { ok: false, message: e instanceof Error ? `Couldn't import: ${e.message}` : "Couldn't import." };
   }
+}
+
+/**
+ * Developers in the media app (e.g. viewing as a media team member): stop viewing as anyone and go
+ * back to the worship app, which has the developer menu.
+ */
+export async function backToDeveloper(): Promise<void> {
+  const user = await getSessionUser();
+  if (!user?.isDeveloper) redirect("/");
+  const jar = await cookies();
+  jar.delete(VIEW_AS_COOKIE);
+  jar.set(TEAM_COOKIE, DEFAULT_TEAM, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  redirect("/home");
 }

@@ -9,32 +9,40 @@ const PERSON = "person:";
 
 /**
  * Account menu section for developers: switch which permissions you're using, or see the app as
- * one person (acting as them). viewAs is the current choice ("root", a group, "person:<id>" or null).
+ * one person (acting as them). viewAs is the current choice ("lead", a group, "person:<id>" or null).
+ * People are listed under every team they're on; picking someone on another team switches to that
+ * team first, so you see them as they are there.
  */
 export function ViewAsMenu({
   viewAs,
   groups,
   people,
+  team,
   onPicked,
 }: {
   viewAs: string | null;
   groups: string[];
-  people: { id: string; name: string }[];
+  people: { id: string; name: string; team: string; teamName: string }[];
+  /** The team being worked in now (slug). */
+  team: string;
   onPicked?: () => void;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const pick = (value: string | null) =>
+  const pick = (value: string | null, inTeam?: string) =>
     start(async () => {
       setError(null);
-      const r = await setViewAs(value);
+      const r = await setViewAs(value, inTeam);
       if (!r.ok) setError(r.message);
       else onPicked?.(); // close the account menu so the page (and banner) are visible
     });
   const personId = viewAs?.startsWith(PERSON) ? viewAs.slice(PERSON.length) : "";
+  // Each option is "<team>|<person>": the same person can be picked in each of their teams.
+  const selected = personId ? `${team}|${personId}` : "";
+  const teams = [...new Map(people.map((p) => [p.team, p.teamName]))];
   const options: { value: string | null; text: string; hint: string }[] = [
     { value: null, text: "Developer", hint: "everything" },
-    { value: "root", text: "Root", hint: "root's view" },
+    { value: "lead", text: "Lead", hint: "the lead's view" },
     ...groups.map((g) => ({ value: g, text: label(g), hint: "group" })),
   ];
   return (
@@ -64,17 +72,26 @@ export function ViewAsMenu({
         <label className="mt-1 block px-2">
           <span className={`block pb-1 text-sm ${personId ? "font-medium text-accent" : ""}`}>{personId ? "● " : "○ "}A person (act as them)</span>
           <select
-            value={personId}
+            value={selected}
             disabled={pending}
-            onChange={(e) => e.target.value && pick(PERSON + e.target.value)}
+            onChange={(e) => {
+              const [inTeam, id] = e.target.value.split("|");
+              if (id) pick(PERSON + id, inTeam);
+            }}
             aria-label="Act as a person"
             className="h-8 w-full rounded-md border border-border bg-surface px-2 text-sm outline-none focus:border-accent"
           >
             <option value="">Choose someone…</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+            {teams.map(([slug, name]) => (
+              <optgroup key={slug} label={name}>
+                {people
+                  .filter((p) => p.team === slug)
+                  .map((p) => (
+                    <option key={`${slug}|${p.id}`} value={`${slug}|${p.id}`}>
+                      {p.name}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </select>
         </label>

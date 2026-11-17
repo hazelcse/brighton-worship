@@ -22,6 +22,7 @@ import {
   type RuleParams,
 } from "@/lib/roster";
 import { loadPeople } from "@/lib/roster-data";
+import { teamProfiles } from "@/lib/teams";
 import { cleanComposition, compositionProblem, isDate, validateSession, type SessionInput } from "@/lib/session-input";
 import { bandRoleCandidates, createServeRequests } from "@/lib/serving";
 import { followCustomSession } from "@/lib/roster-revision";
@@ -48,18 +49,18 @@ export async function createRoster(quarterStart: string): Promise<ActionState> {
     if (!isDate(quarterStart)) return { ok: false, message: "Choose a quarter." };
     const q = quarterOf(quarterStart);
     const db = createAdminClient();
-    const { data: existing } = await db.from("rosters").select("id").eq("starts_on", q.start).eq("status", "draft").maybeSingle();
+    const { data: existing } = await db.from("rosters").select("id").eq("team_id", user.team.id).eq("starts_on", q.start).eq("status", "draft").maybeSingle();
     if (existing) {
       id = existing.id;
     } else {
       const { data, error } = await db
         .from("rosters")
-        .insert({ starts_on: q.start, ends_on: q.end, created_by: user.id })
+        .insert({ starts_on: q.start, ends_on: q.end, created_by: user.id, team_id: user.team.id })
         .select("id")
         .single();
       if (error) throw error;
       id = data.id;
-      const sessions = defaultSessions(q).map((s) => ({ ...s, roster_id: id }));
+      const sessions = defaultSessions(q, user.team.config.sessionKinds).map((s) => ({ ...s, roster_id: id }));
       const { error: sErr } = await db.from("roster_sessions").insert(sessions);
       if (sErr) throw sErr;
       await audit(user.id, "roster.create", id, { quarter: q.label });
@@ -128,9 +129,9 @@ export async function deleteRoster(rosterId: string): Promise<ActionState> {
   try {
     const user = await requirePermission("roster.edit");
     const db = createAdminClient();
-    const { data: r } = await db.from("rosters").select("status, starts_on").eq("id", rosterId).maybeSingle();
+    const { data: r } = await db.from("rosters").select("status, starts_on").eq("id", rosterId).eq("team_id", user.team.id).maybeSingle();
     if (!r) return { ok: false, message: "Roster not found." };
-    if (r.status !== "draft" && !user.isRoot) return { ok: false, message: "Only root can delete a published roster." };
+    if (r.status !== "draft" && !user.isLead) return { ok: false, message: "Only the lead can delete a published roster." };
     const plans = await deleteRosterPlans(db, rosterId);
     const { error } = await db.from("rosters").delete().eq("id", rosterId);
     if (error) throw error;
@@ -147,7 +148,7 @@ export async function deleteDraft(rosterId: string): Promise<ActionState> {
   try {
     const user = await requirePermission("roster.edit");
     const db = createAdminClient();
-    const { data: r } = await db.from("rosters").select("status").eq("id", rosterId).maybeSingle();
+    const { data: r } = await db.from("rosters").select("status").eq("id", rosterId).eq("team_id", user.team.id).maybeSingle();
     if (!r) return { ok: false, message: "Roster not found." };
     if (r.status !== "draft") return { ok: false, message: "Only draft rosters can be deleted." };
     await deleteRosterPlans(db, rosterId);
@@ -165,12 +166,20 @@ export async function deleteDraft(rosterId: string): Promise<ActionState> {
  * The draft being planned. Pass the user to also allow root's revision of a published roster (its
  * sessions and who serves can be changed; generating and its own rules can't).
  */
-async function draftFor(rosterId: string, user?: { isRoot: boolean }) {
-  const { data } = await createAdminClient().from("rosters").select("id, status, starts_on, ends_on").eq("id", rosterId).maybeSingle();
+async function draftFor(rosterId: string, user?: { isLead: boolean }) {
+  const me = await getCurrentUser();
+  if (!me) throw new Error("You are signed out. Please log in again.");
+  // Only the signed-in team's rosters.
+  const { data } = await createAdminClient()
+    .from("rosters")
+    .select("id, status, starts_on, ends_on")
+    .eq("id", rosterId)
+    .eq("team_id", me.team.id)
+    .maybeSingle();
   if (!data) throw new Error("Roster not found.");
   if (data.status === "revision") {
     if (!user) throw new Error("This can't be changed while editing a published roster.");
-    if (!user.isRoot) throw new Error("Only root can edit a published roster.");
+    if (!user.isLead) throw new Error("Only the lead can edit a published roster.");
     return data;
   }
   if (data.status !== "draft") throw new Error("This roster has been published, so its sessions can't be changed here.");
@@ -247,7 +256,7 @@ export async function updateSession(
   let message: string | null = null;
   try {
     const user = await requirePermission("roster.edit");
-    if (removals.length && !user.isRoot) return { ok: false, message: "Only root can change who's serving." };
+    if (removals.length && !user.isLead) return { ok: false, message: "Only the lead can change who's serving." };
     const db = createAdminClient();
     const { data: row } = await db.from("roster_sessions").select("roster_id, kind, date, name").eq("id", sessionId).maybeSingle();
     if (!row) return { ok: false, message: "Session not found." };
@@ -433,18 +442,19 @@ export async function saveRule(
   try {
     const user = await requirePermission("roster.edit");
     if (!input.isDefault) await draftFor(input.rosterId);
+    if (ruleId && !(await ownRule(ruleId, user.team.id))) return { ok: false, message: "Rule not found." };
     if (ruleId && (await isPermanent(ruleId))) {
       return { ok: false, message: "This is a permanent rule. Only its weight can be changed." };
     }
     const params = cleanParams(input.params);
     if (!params) return { ok: false, message: "That rule isn't complete." };
-    const people = await loadPeople();
+    const people = await loadPeople(user.team);
     const errors = checkRule(params, people, input.hard).filter((a) => a.level === "error");
     if (errors.length) return { ok: false, message: errors.map((e) => e.message).join(" ") };
 
     const db = createAdminClient();
     let weight = Math.min(1, Math.max(0, Number(input.weight)));
-    if (!user.isRoot) {
+    if (!user.isLead) {
       // Admins can build rules, but only root sets how much a soft rule matters.
       if (ruleId) {
         const { data: existing } = await db.from("roster_rules").select("weight").eq("id", ruleId).maybeSingle();
@@ -461,6 +471,7 @@ export async function saveRule(
       weight,
       enabled: Boolean(input.enabled),
       roster_id: input.isDefault ? null : input.rosterId,
+      team_id: user.team.id,
       updated_by: user.id,
       updated_at: new Date().toISOString(),
     };
@@ -483,6 +494,7 @@ export async function saveRule(
 export async function setRuleDefault(ruleId: string, rosterId: string, isDefault: boolean): Promise<ActionState> {
   try {
     const user = await requirePermission("roster.edit");
+    if (!(await ownRule(ruleId, user.team.id))) return { ok: false, message: "Rule not found." };
     if (await isPermanent(ruleId)) return { ok: false, message: "Permanent rules are always defaults." };
     if (!isDefault) await draftFor(rosterId);
     const { error } = await createAdminClient()
@@ -498,6 +510,12 @@ export async function setRuleDefault(ruleId: string, rosterId: string, isDefault
   return { ok: true, message: null };
 }
 
+/** Whether the rule belongs to this team. */
+async function ownRule(ruleId: string, teamId: string): Promise<boolean> {
+  const { data } = await createAdminClient().from("roster_rules").select("id").eq("id", ruleId).eq("team_id", teamId).maybeSingle();
+  return Boolean(data);
+}
+
 async function isPermanent(ruleId: string): Promise<boolean> {
   const { data } = await createAdminClient().from("roster_rules").select("permanent").eq("id", ruleId).maybeSingle();
   return Boolean(data?.permanent);
@@ -506,6 +524,7 @@ async function isPermanent(ruleId: string): Promise<boolean> {
 export async function deleteRule(ruleId: string): Promise<ActionState> {
   try {
     const user = await requirePermission("roster.edit");
+    if (!(await ownRule(ruleId, user.team.id))) return { ok: false, message: "Rule not found." };
     if (await isPermanent(ruleId)) return { ok: false, message: "Permanent rules can't be deleted." };
     const { error } = await createAdminClient().from("roster_rules").delete().eq("id", ruleId);
     if (error) throw error;
@@ -519,7 +538,8 @@ export async function deleteRule(ruleId: string): Promise<ActionState> {
 
 export async function setRuleEnabled(ruleId: string, enabled: boolean): Promise<ActionState> {
   try {
-    await requirePermission("roster.edit");
+    const user = await requirePermission("roster.edit");
+    if (!(await ownRule(ruleId, user.team.id))) return { ok: false, message: "Rule not found." };
     if (await isPermanent(ruleId)) return { ok: false, message: "Permanent rules can't be switched off." };
     const { error } = await createAdminClient().from("roster_rules").update({ enabled }).eq("id", ruleId);
     if (error) throw error;
@@ -538,9 +558,9 @@ export async function setRuleEnabled(ruleId: string, enabled: boolean): Promise<
 export async function setServeLess(memberId: string, factor: number | null): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can change who serves less." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can change who serves less." };
     const db = createAdminClient();
-    const { data: rule } = await db.from("roster_rules").select("id, params").eq("template", "fairness").maybeSingle();
+    const { data: rule } = await db.from("roster_rules").select("id, params").eq("team_id", user.team.id).eq("template", "fairness").maybeSingle();
     if (!rule) return { ok: false, message: "The fairness rule is missing." };
     const reduced: Record<string, number> = { ...((rule.params as { reduced?: Record<string, number> })?.reduced ?? {}) };
     const f = factor == null ? 1 : Math.round(Number(factor) * 100) / 100;
@@ -565,9 +585,9 @@ export async function setServeLess(memberId: string, factor: number | null): Pro
 export async function setRuleWeight(ruleId: string, weight: number): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can change rule weights." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can change rule weights." };
     const w = Math.min(1, Math.max(0, Math.round(Number(weight) * 100) / 100));
-    const { error } = await createAdminClient().from("roster_rules").update({ weight: w }).eq("id", ruleId);
+    const { error } = await createAdminClient().from("roster_rules").update({ weight: w }).eq("id", ruleId).eq("team_id", user.team.id);
     if (error) throw error;
   } catch (e) {
     return fail(e);
@@ -645,7 +665,7 @@ export async function editCell(
 ): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can change the roster by hand." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can change the roster by hand." };
     const { status } = await draftFor(rosterId, user);
     if (!ROLES.some((r) => r.value === role) || ATTACHED_ROLES.includes(role as Role)) return { ok: false, message: "Unknown part." };
     const db = createAdminClient();
@@ -661,8 +681,14 @@ export async function editCell(
     const { data: band } = await db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", sessionId);
     const before = band ?? [];
     const ids = [...new Set([...members, ...Object.values(handOver)])];
-    const { data: profiles } = ids.length ? await db.from("profiles").select("id, full_name, email, instruments").in("id", ids) : { data: [] };
-    const person = new Map((profiles ?? []).map((p) => [p.id as string, p]));
+    // Names from their login; what they play from their profile on this team (not another team's).
+    const [{ data: profiles }, onTeam] = await Promise.all([
+      ids.length ? db.from("profiles").select("id, full_name, email").in("id", ids) : Promise.resolve({ data: [] as { id: string; full_name: string; email: string }[] }),
+      teamProfiles(user.team.id, ids),
+    ]);
+    const person = new Map(
+      (profiles ?? []).filter((p) => onTeam.has(p.id as string)).map((p) => [p.id as string, { ...p, instruments: onTeam.get(p.id as string)!.instruments }]),
+    );
     const nameOf = (id: string) => person.get(id)?.full_name || person.get(id)?.email || "Someone";
     if (members.some((m) => !person.has(m))) return { ok: false, message: "Someone picked isn't on the team." };
     // The same person can't fill two places in one part.
@@ -695,7 +721,7 @@ export async function editCell(
     }
 
     const heldBefore = (id: string, t: string) => before.some((b) => b.member_id === id && ((b.also_roles as string[] | null) ?? []).includes(t));
-    const skilled = (id: string, t: string) => ((person.get(id)?.instruments as string[] | null) ?? []).includes(t);
+    const skilled = (id: string, t: string) => (person.get(id)?.instruments ?? []).includes(t);
     const rows: { session_id: string; member_id: string; role: string; also_roles: string[] }[] = [];
     for (const s of slots) {
       if (!s.member) continue;
@@ -761,7 +787,7 @@ export async function editCell(
 export async function resetToGenerated(rosterId: string): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can reset the roster." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can reset the roster." };
     await draftFor(rosterId);
     const db = createAdminClient();
     const { data: r } = await db.from("rosters").select("generated_assignments").eq("id", rosterId).maybeSingle();
@@ -792,16 +818,16 @@ export async function publishRoster(rosterId: string): Promise<ActionState> {
   try {
     const user = await requirePermission("roster.edit");
     const db = createAdminClient();
-    const { data: r } = await db.from("rosters").select("status, starts_on, result").eq("id", rosterId).maybeSingle();
+    const { data: r } = await db.from("rosters").select("status, starts_on, result").eq("id", rosterId).eq("team_id", user.team.id).maybeSingle();
     if (!r) return { ok: false, message: "Roster not found." };
     if (r.status !== "draft") return { ok: false, message: "This roster is already published." };
     if (!r.result) return { ok: false, message: "Generate the roster before publishing it." };
     // Rosters with problems can still be published; the problems stay listed on the roster.
     // A revision of the roster being replaced goes with it.
-    const { data: replaced } = await db.from("rosters").select("id").eq("starts_on", r.starts_on).eq("status", "published");
+    const { data: replaced } = await db.from("rosters").select("id").eq("team_id", user.team.id).eq("starts_on", r.starts_on).eq("status", "published");
     const replacedIds = (replaced ?? []).map((x) => x.id as string);
     if (replacedIds.length) await db.from("rosters").delete().eq("status", "revision").in("revision_of", replacedIds);
-    await db.from("rosters").update({ status: "archived" }).eq("starts_on", r.starts_on).eq("status", "published");
+    await db.from("rosters").update({ status: "archived" }).eq("team_id", user.team.id).eq("starts_on", r.starts_on).eq("status", "published");
     const { error } = await db
       .from("rosters")
       .update({ status: "published", published_at: new Date().toISOString() })
@@ -841,7 +867,7 @@ export async function restoreRevisionAssignments(
 ): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
-    if (!user?.isRoot) return { ok: false, message: "Only root can change the roster by hand." };
+    if (!user?.isLead) return { ok: false, message: "Only the lead can change the roster by hand." };
     const roster = await draftFor(rosterId, user);
     if (roster.status !== "revision") return { ok: false, message: "This only undoes changes while editing a published roster." };
     const db = createAdminClient();

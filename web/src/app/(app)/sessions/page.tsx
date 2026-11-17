@@ -6,9 +6,11 @@ import { after } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { purgeExpiredUploads } from "@/lib/session-uploads";
 import { formatDate } from "@/lib/roster";
-import { buildsAnySession, loadBuildableSessions, loadNewlyPublished, loadUpcomingPlans } from "@/lib/sessions";
+import { buildsAnySession, loadBuildableSessions, loadNewlyPublished, loadServices, loadUpcomingPlans } from "@/lib/sessions";
+import { ServiceCard } from "@/components/sessions/service-card";
 import { MarkSessionsSeen } from "@/components/sessions/mark-sessions-seen";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { GROUP_LABEL, type TeamGroup } from "@/lib/team-config";
 
 export const metadata: Metadata = { title: "Sessions · Brighton Worship" };
 
@@ -34,17 +36,62 @@ function SwitchIcon() {
 
 type View = { view?: string };
 
+/** How far ahead root's Services page looks. */
+const SERVICE_DAYS = 28;
+
+/**
+ * Root's Services page (root is on no team, so it sees services, not one team's sessions): every
+ * worship team's services on published rosters over the next four weeks, by date. Each is a session
+ * (plan and band) and, for EM Sunday, EM PnP and YF Saturday, a media crew.
+ */
+async function RootServices({ userId, group }: { userId: string; group?: TeamGroup }) {
+  // An observer sees only its group's services (e.g. Youth Worship's, with Youth Media's crews).
+  const services = await loadServices(userId, SERVICE_DAYS, group);
+  const byDate = new Map<string, typeof services>();
+  for (const s of services) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
+  return (
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h1 className="font-display text-3xl font-semibold">Services</h1>
+        <p className="text-sm text-muted">
+          {group ? `${GROUP_LABEL[group]}` : "Every team's"} services in the next four weeks: the session, the band and, where it has one, the media crew.
+        </p>
+      </div>
+      {byDate.size ? (
+        [...byDate].map(([date, onDay]) => (
+          <section key={date} aria-label={formatDate(date, { weekday: "long", day: "numeric", month: "long" })} className="space-y-3">
+            <h2 className="text-sm font-medium text-muted">{formatDate(date, { weekday: "long", day: "numeric", month: "long" })}</h2>
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+              {onDay.map((s) => (
+                <ServiceCard key={s.session.rosterSessionId} service={s} />
+              ))}
+            </div>
+          </section>
+        ))
+      ) : (
+        <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
+          No services on a published roster in the next four weeks.
+        </p>
+      )}
+    </div>
+  );
+}
+
 async function SessionsView({ searchParams }: { searchParams: Promise<View> }) {
   const [user, { view }] = await Promise.all([requireUser(), searchParams]);
   // Worship leaders' own songsheets go 30 days after their session (at most hourly, after the response).
   after(() => purgeExpiredUploads());
+  if (user.isRoot) return <RootServices userId={user.id} />;
+  if (user.observerGroup) return <RootServices userId={user.id} group={user.observerGroup} />;
   const all = buildsAnySession(user);
-  // Root (and the developer) can switch to every upcoming published session.
-  const everyone = user.isRoot && view === "all";
+  // The lead (and developers), and anyone with "See every published session plan" (sessions.view), can switch to every upcoming
+  // published plan in the team.
+  const seesAll = user.isLead || user.can("sessions.view");
+  const everyone = seesAll && view === "all";
   const [plans, buildable, fresh] = await Promise.all([
-    loadUpcomingPlans(user.id, { all, everyone }),
-    loadBuildableSessions(user.id),
-    loadNewlyPublished(user.id),
+    loadUpcomingPlans(user.id, user.team.id, { all, everyone }),
+    loadBuildableSessions(user.id, user.team.id),
+    loadNewlyPublished(user.id, user.team.id),
   ]);
   const isNew = new Set(fresh.map((f) => f.planId));
   const isUpdated = new Set(fresh.filter((f) => f.updated).map((f) => f.planId));
@@ -63,7 +110,7 @@ async function SessionsView({ searchParams }: { searchParams: Promise<View> }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {user.isRoot && (
+          {seesAll && (
             <Link
               href={everyone ? "/sessions" : "/sessions?view=all"}
               aria-label={everyone ? "Show my sessions" : "Show all sessions"}

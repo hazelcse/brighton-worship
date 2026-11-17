@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
 import { requireUser } from "@/lib/auth";
-import { addDays, formatRange, makeSentence, quarterOf } from "@/lib/roster";
+import { addDays, formatRange, makeSentence, quarterOf, usesMinistry } from "@/lib/roster";
 import { loadAbsences, loadAssignments, loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
 import { describeCheck, problemCells, rosterProblems } from "@/lib/roster-check";
 import { EditWarnings } from "@/components/roster/edit-warnings";
@@ -27,7 +27,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   if (!user.can("roster.edit")) notFound();
   const { id } = await params;
-  const [data, rules, people] = await Promise.all([loadRoster(id), loadRules(id), loadPeople()]);
+  const [data, rules, people] = await Promise.all([loadRoster(id, user.team.id), loadRules(id, user.team.id), loadPeople(user.team)]);
   if (!data) notFound();
   const { roster, sessions } = data;
   const [{ result: generated, generatedAt, check, hasSnapshot, generatedKeys }, assignments, absences] = await Promise.all([
@@ -38,7 +38,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
   if (!generated) redirect(`/roster/${id}/plan`);
   // Root's edit of a published roster uses this page too.
   const revision = roster.status === "revision";
-  if (revision && !user.isRoot) notFound();
+  if (revision && !user.isLead) notFound();
   if (roster.status !== "draft" && !revision) redirect(`/roster/${id}`);
 
   const sentence = makeSentence(rules, people);
@@ -54,7 +54,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
   const editedCells = check?.edited_cells ?? [];
 
   // Editing a published roster: the published version, for the edited / published toggle.
-  const publishedData = revision ? await loadRoster(roster.revision_of!) : null;
+  const publishedData = revision ? await loadRoster(roster.revision_of!, user.team.id) : null;
   const publishedAssignments = publishedData ? await loadAssignments(publishedData.sessions.map((s) => s.id)) : [];
   // Whether the edit differs from the published roster yet (the "Unpublished changes" badge):
   // the same people in the same places, matched through each copied session's source.
@@ -82,7 +82,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
     );
   })();
 
-  const tableEdit = user.isRoot
+  const tableEdit = user.isLead
     ? {
         rosterId: roster.id,
         people: people.map((p) => ({
@@ -105,7 +105,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
   return (
     <RevisionEditing rosterId={roster.id} assignments={assignments} sessions={sessions}>
     {/* Shares the table's filters with the phone-only filter dropdown in the header's button row. */}
-    <RosterFilterProvider>
+    <RosterFilterProvider showMinistry={usesMinistry(sessions)} sessions={sessions}>
     <div className="space-y-5">
       {/* Wider than the nav, so every roster column fits (see LAYOUT.md). */}
       <WidePage />
@@ -129,14 +129,14 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
         <div className="flex flex-wrap items-center gap-2">
           <MobileRosterFilter />
           <LoadsButton>
-            <LoadsTable result={result} people={people} />
+            <LoadsTable result={result} people={people} ministry={usesMinistry(sessions)} pnp={sessions.some((s) => s.kind.endsWith("_pnp"))} />
           </LoadsButton>
           {revision ? (
             <RevisionActions revisionId={roster.id} problems={hard.length} unpublished={unpublished} />
           ) : (
             <GeneratedActions
               rosterId={roster.id}
-              isRoot={user.isRoot}
+              isLead={user.isLead}
               edited={editedCells.length > 0 && hasSnapshot}
               problems={hard.length}
             />
@@ -154,10 +154,10 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
               assignments={assignments}
               edit={tableEdit}
               published={{ sessions: publishedData.sessions, assignments: publishedAssignments }}
-              {...(user.isRoot ? { peopleFilter: true } : { meId: user.id })}
+              {...(user.isLead ? { peopleFilter: true } : { meId: user.id })}
             />
           ) : (
-            <FilteredRosterTable sessions={sessions} assignments={assignments} edit={tableEdit} {...(user.isRoot ? { peopleFilter: true } : { meId: user.id })} />
+            <FilteredRosterTable sessions={sessions} assignments={assignments} edit={tableEdit} {...(user.isLead ? { peopleFilter: true } : { meId: user.id })} />
           )}
         </div>
         <aside className="space-y-3 text-sm">

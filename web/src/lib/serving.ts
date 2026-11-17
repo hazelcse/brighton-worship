@@ -218,33 +218,50 @@ export async function createServeRequests(rosterId: string) {
 }
 
 /** Sessions of every published roster, keyed by id. Only these count for requests and updates. */
-type PublishedSession = SessionInfo & { kind: string; rehearsal: string | null };
+type PublishedSession = SessionInfo & { kind: string; rehearsal: string | null; teamId: string };
 
-async function publishedSessions(db: Db = createAdminClient()): Promise<Map<string, PublishedSession>> {
-  const { data: rosters } = await db.from("rosters").select("id").eq("status", "published");
+async function publishedSessions(db: Db = createAdminClient(), teamId?: string): Promise<Map<string, PublishedSession>> {
+  // Every team's by default (someone's own sessions, on any team they're on); one team's with teamId.
+  let q = db.from("rosters").select("id, team_id").eq("status", "published");
+  if (teamId) q = q.eq("team_id", teamId);
+  const { data: rosters } = await q;
   const rosterIds = (rosters ?? []).map((r) => r.id);
+  const teamOf = new Map((rosters ?? []).map((r) => [r.id as string, r.team_id as string]));
   if (!rosterIds.length) return new Map();
   const { data } = await db
     .from("roster_sessions")
-    .select("id, date, name, kind, rehearsal_date")
+    .select("id, date, name, kind, rehearsal_date, roster_id")
     .in("roster_id", rosterIds)
     .eq("cancelled", false);
   return new Map(
-    (data ?? []).map((s) => [s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind, rehearsal: (s.rehearsal_date as string | null) ?? null }]),
+    (data ?? []).map((s) => [s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind, rehearsal: (s.rehearsal_date as string | null) ?? null, teamId: teamOf.get(s.roster_id as string)! }]),
   );
 }
 
-type Person = { id: string; name: string; instruments: string[] };
+/** An active person, with what they play on each team they're on (their profile there), by team id. */
+type Person = { id: string; name: string; plays: Map<string, string[]> };
 
 async function activePeople(db: Db = createAdminClient()): Promise<Map<string, Person>> {
   const { data } = await db
     .from("profiles")
-    .select("id, full_name, email, instruments")
+    .select("id, full_name, email, team_members(team_id, instruments)")
     .eq("is_active", true)
     .eq("is_developer", false);
   return new Map(
-    (data ?? []).map((p) => [p.id, { id: p.id, name: p.full_name || p.email, instruments: (p.instruments as string[]) ?? [] }]),
+    (data ?? []).map((p) => {
+      const teams = (p.team_members ?? []) as { team_id: string; instruments: string[] | null }[];
+      return [p.id, { id: p.id, name: p.full_name || p.email, plays: new Map(teams.map((t) => [t.team_id, t.instruments ?? []])) }];
+    }),
   );
+}
+
+/** What someone plays on this team: [] when they aren't on it (a person on two teams can play different parts on each). */
+const playsOn = (p: Person | undefined, teamId: string | undefined): string[] => (p && teamId ? (p.plays.get(teamId) ?? []) : []);
+
+/** The team whose roster a session is on. */
+async function sessionTeam(db: Db, sessionId: string): Promise<string | undefined> {
+  const { data } = await db.from("roster_sessions").select("rosters!inner(team_id)").eq("id", sessionId).maybeSingle();
+  return (data?.rosters as unknown as { team_id: string } | null)?.team_id;
 }
 
 const info = (s: SessionInfo & { kind?: string }): SessionInfo => ({ id: s.id, date: s.date, name: s.name, rehearsal: s.rehearsal ?? null });
@@ -264,12 +281,14 @@ export async function coverOptions(
   rehearsalOn?: string | null,
 ): Promise<CoverCandidate[]> {
   const [{ data: session }, people, { data: serving }, withPlace] = await Promise.all([
-    db.from("roster_sessions").select("date, rehearsal_date, roster_id").eq("id", sessionId).maybeSingle(),
+    db.from("roster_sessions").select("date, rehearsal_date, roster_id, rosters!inner(team_id)").eq("id", sessionId).maybeSingle(),
     activePeople(db),
     db.from("roster_assignments").select("member_id").eq("session_id", sessionId),
     bandRolesWithPlace(sessionId, requesterId, db),
   ]);
   if (!session) return [];
+  // Only people on this session's team, by what they play there.
+  const teamId = (session.rosters as unknown as { team_id: string }).team_id;
   const rehearsal = rehearsalOn === undefined ? session.rehearsal_date : rehearsalOn;
   const days = [session.date, ...(rehearsal ? [rehearsal] : [])];
   const [{ data: away }, { data: quarter }] = await Promise.all([
@@ -301,9 +320,9 @@ export async function coverOptions(
   ]);
   const absent = new Set((away ?? []).map((a) => a.member_id as string));
   const out = [...people.values()]
-    .filter((p) => p.id !== requesterId && p.instruments.includes(role))
+    .filter((p) => p.id !== requesterId && playsOn(p, teamId).includes(role))
     .map((p): CoverCandidate => {
-      const bandRoles = withPlace.filter((r) => p.instruments.includes(r));
+      const bandRoles = withPlace.filter((r) => playsOn(p, teamId).includes(r));
       const unavailable = onIt.has(p.id) ? "serving" : absent.has(p.id) ? "absent" : withPlace.length && !bandRoles.length ? "band" : undefined;
       return {
         id: p.id,
@@ -334,9 +353,15 @@ export async function coverCandidates(sessionId: string, role: string, requester
 export const BAND_ROLES: readonly string[] = ATTACHED_ROLES;
 export const bandRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
 
-/** Is this person in the admin permission group? (Root is checked separately.) */
-export async function isAdmin(userId: string, db: Db = createAdminClient()): Promise<boolean> {
-  const { data } = await db.from("user_groups").select("groups!inner(name)").eq("user_id", userId).eq("groups.name", "admin").limit(1);
+/** Is this person in this team's admin permission group? (Root is checked separately.) */
+export async function isAdmin(userId: string, teamId: string, db: Db = createAdminClient()): Promise<boolean> {
+  const { data } = await db
+    .from("user_groups")
+    .select("groups!inner(name, team_id)")
+    .eq("user_id", userId)
+    .eq("groups.name", "admin")
+    .eq("groups.team_id", teamId)
+    .limit(1);
   return Boolean(data?.length);
 }
 
@@ -345,10 +370,11 @@ export async function isAdmin(userId: string, db: Db = createAdminClient()): Pro
  * there (not singing), able to do the role, not doing it already, and not stepping out themselves.
  */
 export async function bandRoleCandidates(sessionId: string, role: string, exclude: string[], db: Db = createAdminClient()): Promise<Candidate[]> {
-  const [{ data: band }, people, { data: leaving }] = await Promise.all([
+  const [{ data: band }, people, { data: leaving }, teamId] = await Promise.all([
     db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", sessionId),
     activePeople(db),
     db.from("cover_requests").select("member_id").eq("session_id", sessionId).in("status", ["open", "refused"]),
+    sessionTeam(db, sessionId),
   ]);
   const out = new Set(exclude);
   for (const l of leaving ?? []) out.add(l.member_id as string);
@@ -358,7 +384,7 @@ export async function bandRoleCandidates(sessionId: string, role: string, exclud
       const id = b.member_id as string;
       if (out.has(id) || seen.has(id) || SINGING_ROLES.includes(b.role as string)) return false;
       if (((b.also_roles as string[] | null) ?? []).includes(role)) return false;
-      if (!(people.get(id)?.instruments ?? []).includes(role)) return false;
+      if (!playsOn(people.get(id), teamId).includes(role)) return false;
       seen.add(id);
       return true;
     })
@@ -614,7 +640,8 @@ export async function swapOptions(
     db.from("roster_assignments").select("session_id").eq("member_id", requesterId),
     db.from("absences").select("starts_on, ends_on").eq("member_id", requesterId).gte("ends_on", today),
   ]);
-  const plays = people.get(requesterId)?.instruments ?? [];
+  // What the requester plays on each session's team.
+  const plays = (s: PublishedSession) => playsOn(people.get(requesterId), s.teamId);
   const serving = new Set((requesterServing ?? []).map((s) => s.session_id));
   const ranges = [...(requesterAway ?? []), ...(alsoAway ? [{ starts_on: alsoAway.startsOn, ends_on: alsoAway.endsOn }] : [])];
   const away = (date: string) => ranges.some((a) => a.starts_on <= date && a.ends_on >= date);
@@ -622,7 +649,7 @@ export async function swapOptions(
     .map((a) => ({ a, s: sessions.get(a.session_id) }))
     .filter(
       ({ a, s }) =>
-        s && s.id !== excludeSessionId && s.date >= today && plays.includes(a.role) && !serving.has(s.id) && !away(s.date) && !(s.rehearsal && away(s.rehearsal)),
+        s && s.id !== excludeSessionId && s.date >= today && plays(s).includes(a.role) && !serving.has(s.id) && !away(s.date) && !(s.rehearsal && away(s.rehearsal)),
     )
     .map(({ a, s }) => ({ ...info(s!), role: a.role }))
     .sort((x, y) => x.date.localeCompare(y.date) || x.name.localeCompare(y.name));
@@ -821,7 +848,7 @@ export async function loadCoverDetail(coverId: string, userId: string): Promise<
   let whyNot: string | undefined;
   if (!mine || mine.unavailable) {
     const { data: awayOnDay } = await db.from("absences").select("id").eq("member_id", userId).lte("starts_on", session.date).gte("ends_on", session.date).limit(1);
-    whyNot = !mine || !me?.instruments.includes(c.role)
+    whyNot = !mine || !playsOn(me, session.teamId).includes(c.role)
       ? "You don't play this part."
       : mine.unavailable === "serving"
         ? "You're already serving that day."
@@ -900,18 +927,19 @@ const FOR_ADMINS: UpdateKind[] = ["band_role_missing"];
  * changes they're part of, and changes to the bands they're in (the session, and for a swap the
  * session offered in return): not changes to other bands, even ones using their instrument.
  */
-export function loadUpdates(user: { id: string; isRoot: boolean }): Promise<UpdateItem[]> {
-  return updatesFor(user.id, user.isRoot);
+export function loadUpdates(user: { id: string; isLead: boolean; team: { id: string } }): Promise<UpdateItem[]> {
+  return updatesFor(user.id, user.isLead, user.team.id);
 }
 
 /** How long a roster update stays in the inbox. */
 const UPDATE_LIFETIME_DAYS = 14;
 
 /** Once per request per person: the nav's inbox and the landing page both need it. */
-const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<UpdateItem[]> => {
-  const user = { id: userId, isRoot };
+const updatesFor = cache(async (userId: string, isLead: boolean, teamId: string): Promise<UpdateItem[]> => {
+  const user = { id: userId, isLead };
   const db = createAdminClient();
-  const sessions = await publishedSessions(db);
+  // Only the signed-in team's sessions: a lead or admin of one team doesn't hear about another's.
+  const sessions = await publishedSessions(db, teamId);
   if (!sessions.size) return [];
   const columns = "id, kind, session_id, other_session_id, role, actor_id, member_id, reason, detail, created_at, resolved_at";
   // Updates expire from the inbox after two weeks (the rows stay in the database).
@@ -919,7 +947,7 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
   // Roster changes are also about sessions since cancelled or deleted: fetched on their own.
   let changes = db.from("roster_updates").select(columns).in("kind", ROSTER_CHANGE_KINDS).gte("created_at", since);
   // Bandmates' notes are one per person: root gets only their own, so they don't crowd the limit.
-  changes = user.isRoot ? changes.or(`kind.neq.roster_band_changed,member_id.eq.${user.id}`) : changes.eq("member_id", user.id);
+  changes = user.isLead ? changes.or(`kind.neq.roster_band_changed,member_id.eq.${user.id}`) : changes.eq("member_id", user.id);
   const [{ data: onSessions }, { data: changeRows }, people, { data: me }, { data: mine }] = await Promise.all([
     db
       .from("roster_updates")
@@ -935,18 +963,24 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
     db.from("roster_assignments").select("session_id").eq("member_id", user.id),
   ]);
   const seenIds = new Set((onSessions ?? []).map((u) => u.id));
-  const data = [...(onSessions ?? []), ...(changeRows ?? []).filter((u) => !seenIds.has(u.id))].sort((a, b) =>
+  const all = [...(onSessions ?? []), ...(changeRows ?? []).filter((u) => !seenIds.has(u.id))].sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
   );
   // Sessions roster changes mention that aren't live any more (cancelled), for naming them.
-  const missing = [...new Set(data.flatMap((u) => (u.session_id && !sessions.has(u.session_id) ? [u.session_id as string] : [])))];
+  const missing = [...new Set(all.flatMap((u) => (u.session_id && !sessions.has(u.session_id) ? [u.session_id as string] : [])))];
   if (missing.length) {
-    const { data: extra } = await db.from("roster_sessions").select("id, date, name, kind, rehearsal_date").in("id", missing);
+    const { data: extra } = await db
+      .from("roster_sessions")
+      .select("id, date, name, kind, rehearsal_date, rosters!inner(team_id)")
+      .in("id", missing)
+      .eq("rosters.team_id", teamId);
     for (const s of extra ?? []) {
-      sessions.set(s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind, rehearsal: (s.rehearsal_date as string | null) ?? null });
+      sessions.set(s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind, rehearsal: (s.rehearsal_date as string | null) ?? null, teamId });
     }
   }
-  const admin = user.isRoot || (await isAdmin(user.id, db));
+  // Roster changes on other teams' sessions are left out (every update is about a session).
+  const data = all.filter((u) => !u.session_id || sessions.has(u.session_id));
+  const admin = user.isLead || (await isAdmin(user.id, teamId, db));
   const mySessions = new Set((mine ?? []).map((m) => m.session_id));
   const seenAt = me?.updates_seen_at ? new Date(me.updates_seen_at).getTime() : 0;
   const name = (id: string | null) => (id ? (people.get(id)?.name ?? "Someone") : null);
@@ -995,7 +1029,7 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
   const confirmed = new Set((confirmedRows ?? []).map((r) => r.session_id as string));
   const href = (u: { kind: string; session_id: string }) => {
     if (u.kind !== "session_updated" || !planFor.has(u.session_id)) return null;
-    return user.isRoot || confirmed.has(u.session_id) ? `/sessions/${planFor.get(u.session_id)}` : "/roster#requests";
+    return user.isLead || confirmed.has(u.session_id) ? `/sessions/${planFor.get(u.session_id)}` : "/roster#requests";
   };
 
   const mySide = (u: { kind: string; session_id: string; other_session_id: string | null; actor_id: string; member_id: string | null }) => {
@@ -1012,7 +1046,7 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
   // session's date/time change, told to everyone on it, is likewise shown once.
   const MOVES: Record<string, number> = { roster_removed: 0, roster_added: 1, roster_part_changed: 2 };
   const collapse = <T extends (typeof data)[number]>(rows: T[]): T[] => {
-    if (!user.isRoot) return rows;
+    if (!user.isLead) return rows;
     const groups = new Map<string, { row: T; parts: [number, string][] }>();
     const out: T[] = [];
     for (const u of rows) {
@@ -1055,9 +1089,9 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
       if (involved) return true;
       // The rest of a roster edit is one row per person moved, for that person: the band hears it
       // once, in their own "changed the band" note.
-      if (ROSTER_CHANGE_KINDS.includes(u.kind as UpdateKind)) return user.isRoot;
+      if (ROSTER_CHANGE_KINDS.includes(u.kind as UpdateKind)) return user.isLead;
       // Root hears about a swap once it's done, not while it's only proposed (or turned down).
-      if (user.isRoot) return !SWAP_PENDING.includes(u.kind as UpdateKind);
+      if (user.isLead) return !SWAP_PENDING.includes(u.kind as UpdateKind);
       if (FOR_ADMINS.includes(u.kind as UpdateKind)) return admin;
       if (PRIVATE.includes(u.kind as UpdateKind)) return false;
       return mySessions.has(u.session_id) || Boolean(u.other_session_id && mySessions.has(u.other_session_id));
@@ -1074,7 +1108,7 @@ const updatesFor = cache(async (userId: string, isRoot: boolean): Promise<Update
       mySide: mySide(u),
       actor: name(u.actor_id) ?? "Someone",
       member: name(u.member_id),
-      reason: user.isRoot || u.actor_id === user.id ? u.reason : null,
+      reason: user.isLead || u.actor_id === user.id ? u.reason : null,
       detail: (u.detail as string | null) ?? null,
       createdAt: u.created_at,
       isNew: u.actor_id !== user.id && new Date(u.created_at).getTime() > seenAt,

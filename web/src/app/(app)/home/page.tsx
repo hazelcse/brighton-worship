@@ -5,12 +5,15 @@ import { HomeLoader } from "@/components/home-loader";
 import { requireUser } from "@/lib/auth";
 import { daysBetween, formatDate, formatTime, todayYmd } from "@/lib/roster";
 import { countdown, rehearsalTime } from "@/lib/reminder";
-import { loadNewlyPublished, loadNextSession, loadPublishDue } from "@/lib/sessions";
+import { loadGroupWeek, loadNewlyPublished, loadNextSession, loadPublishDue, loadServiceOverview, type ServiceDay, type ServiceOverview } from "@/lib/sessions";
+import { GROUP_LABEL, type TeamGroup } from "@/lib/team-config";
+import { Crew, ServiceCard } from "@/components/sessions/service-card";
 import { SessionCard } from "@/components/sessions/session-card";
 import { CountdownNumber } from "@/components/countdown-number";
 import { BroadcastList } from "@/components/broadcasts";
 import { loadMyBroadcasts } from "@/lib/broadcasts";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { WidePage } from "@/components/wide-page";
 import { OpenInboxButton } from "@/components/inbox";
 import { HomeNotices, type HomeNotice } from "@/components/home-notices";
 import { updateText } from "@/components/roster/updates-board";
@@ -36,15 +39,94 @@ async function homeBandSeenAt(userId: string): Promise<string | null> {
   return (data?.home_band_seen_at as string | null | undefined) ?? null;
 }
 
+/**
+ * Root's home page: one section per group's coming service day (Main: Sunday, Youth: Saturday), with
+ * that day's services: each its session (plan and band) and, where it has one, its media crew. If
+ * no service that day has a crew to show it in, any crew gets a card of its own.
+ */
+function ServiceSection({ o }: { o: ServiceOverview }) {
+  return (
+    <section aria-labelledby={`service-${o.group}`} className="space-y-3">
+      <h2 id={`service-${o.group}`} className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="text-lg font-semibold">{GROUP_LABEL[o.group]} service</span>
+        <span className="text-sm text-muted">{formatDate(o.date, { weekday: "long", day: "numeric", month: "long" })}</span>
+      </h2>
+      {o.services.length ? (
+        o.services.map((s) => <ServiceCard key={s.session.rosterSessionId} service={s} />)
+      ) : (
+        <p className="rounded-xl border border-dashed border-border bg-surface p-4 text-sm text-muted">
+          {o.team ? `${o.team} has no service on a published roster that day.` : "There's no worship team in this group yet."}
+        </p>
+      )}
+      {o.looseCrew.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface p-4">
+          <Crew crew={o.looseCrew} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** One day of an observer's coming week: its services (session, band, media crew), or a crew alone. */
+function ServiceDaySection({ day }: { day: ServiceDay }) {
+  const label = formatDate(day.date, { weekday: "long", day: "numeric", month: "long" });
+  return (
+    <section aria-label={label} className="space-y-3">
+      <h2 className="text-sm font-medium text-muted">{label}</h2>
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        {day.services.map((s) => (
+          <ServiceCard key={s.session.rosterSessionId} service={s} />
+        ))}
+        {day.looseCrew.length > 0 && (
+          <div className="rounded-xl border border-border bg-surface p-4">
+            <Crew crew={day.looseCrew} />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * An observer's home page: its group's services in the coming week (e.g. the YF Saturday service and
+ * any ad hoc events), each with its session, band and media crew. Observers aren't on any roster, so
+ * there's no countdown, notices or broadcasts.
+ */
+async function ObserverHome({ userId, name, group }: { userId: string; name: string; group: TeamGroup }) {
+  const week = await loadGroupWeek(userId, group);
+  return (
+    <div className="space-y-5">
+      <WidePage />
+      <div className="space-y-1">
+        <h1 className="font-display text-3xl font-medium">{name ? `Hi ${name},` : "Welcome"}</h1>
+        <p className="text-sm text-muted">{GROUP_LABEL[group]} services this coming week: the session, the band and the media crew.</p>
+      </div>
+      {week.length ? (
+        week.map((d) => <ServiceDaySection key={d.date} day={d} />)
+      ) : (
+        <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
+          No {GROUP_LABEL[group]} services on a published roster this coming week.{" "}
+          <Link href="/sessions" className="font-medium text-foreground underline underline-offset-2">
+            See later services
+          </Link>
+        </p>
+      )}
+    </div>
+  );
+}
+
 async function HomeView() {
   const user = await requireUser();
-  const [next, fresh, due, broadcasts, updates, bandSeenAt] = await Promise.all([
-    loadNextSession(user.id),
-    loadNewlyPublished(user.id),
-    loadPublishDue(user.id),
+  if (user.observerGroup) return <ObserverHome userId={user.id} name={(user.fullName || "").trim()} group={user.observerGroup} />;
+  const [next, fresh, due, broadcasts, updates, bandSeenAt, overview] = await Promise.all([
+    loadNextSession(user.id, user.team.id),
+    loadNewlyPublished(user.id, user.team.id),
+    loadPublishDue(user.id, user.team.id),
     loadMyBroadcasts(user),
     loadUpdates(user), // the nav's inbox loads these too: fetched once
     homeBandSeenAt(user.id),
+    // Root serves on no team: it sees every group's coming service instead of its own next session.
+    user.isRoot ? loadServiceOverview(user.id) : Promise.resolve(null),
   ]);
   const name = (user.fullName || "").trim();
 
@@ -137,10 +219,26 @@ async function HomeView() {
   );
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    // Root's two services sit side by side on the wide page (the owner's choice); everyone else's
+    // home stays the 672px column.
+    <div className={overview ? "space-y-5" : "mx-auto max-w-2xl space-y-5"}>
+      {overview && <WidePage />}
       <h1 className="font-display text-3xl font-medium">{name ? `Hi ${name},` : "Welcome"}</h1>
 
-      {!next && (
+      {overview && (
+        <>
+          {messages}
+          {/* Youth on the left, Main on the right; stacked (Youth first) below 1024px. */}
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start lg:gap-x-12">
+            {[...overview]
+              .sort((a, b) => Number(a.group !== "youth") - Number(b.group !== "youth"))
+              .map((o) => (
+                <ServiceSection key={o.group} o={o} />
+              ))}
+          </div>
+        </>
+      )}
+      {!overview && !next && (
         <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
           You&apos;re not on any upcoming sessions yet. Once a roster is published, your next one shows here.{" "}
           <Link href="/roster" className="font-medium text-foreground underline underline-offset-2">
@@ -148,8 +246,8 @@ async function HomeView() {
           </Link>
         </p>
       )}
-      {!next && messages}
-      {next && (
+      {!overview && !next && messages}
+      {!overview && next && (
         <>
           <section aria-label="Countdown" className="rounded-xl bg-ink p-6 text-ink-foreground">
             <p className="text-xs font-medium uppercase tracking-wider opacity-70">Your next session</p>
