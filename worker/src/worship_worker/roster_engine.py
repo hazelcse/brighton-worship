@@ -48,6 +48,17 @@ ATTACHED_ROLES = ["band leader"]
 SINGING = {"worship leader", "vocalist"}
 INSTRUMENTS = [r for r in MAIN_ROLES if r not in SINGING]
 
+
+# Media teams' roles (web/src/lib/team-config.ts ROLE_CATALOGUE): each one a part of its own.
+MEDIA_ROLES = ["media ic", "wide angle cam", "close up cam", "roving cam", "director", "video mixer",
+               "projectionist", "lights", "soundboard"]
+
+
+def is_main(role: str) -> bool:
+    """A part someone fills on its own: the band's main roles, or a media team's role (e.g.
+    "wide angle cam"). Band leader / talkback is attached to another part instead."""
+    return role in MAIN_ROLES or role in MEDIA_ROLES
+
 # Objective scaling (everything must be an integer)
 HARD_PENALTY = 10_000_000  # per unit of a hard violation (unfilled slot, broken hard rule)
 RULE_UNIT = 10_000  # x rule weight (0-1) per unit of soft-rule violation
@@ -244,7 +255,9 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             # nor for a service whose rehearsal they'll miss.
             if not eligible(p, s) or s.date in p.absent or (s.rehearsal and s.rehearsal in p.absent) or s.date in p.elsewhere:
                 continue
-            for r in MAIN_ROLES:
+            # The band's parts in their usual order (the solver searches in this order), then a
+            # media crew's roles.
+            for r in [*MAIN_ROLES, *(r for r in s.composition if r not in MAIN_ROLES and is_main(r))]:
                 if s.composition.get(r, 0) > 0 and r in p.instruments:
                     x[p.id, s.id, r] = m.NewBoolVar(f"x_{p.id[:6]}_{s.id[:6]}_{r}")
             for t in ATTACHED_ROLES:
@@ -308,7 +321,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         for role, need in s.composition.items():
             if need <= 0:
                 continue
-            pool = x if role in MAIN_ROLES else a
+            pool = x if is_main(role) else a
             vars_ = [v for (pid, sid, r), v in pool.items() if sid == s.id and r == role]
             short = m.NewIntVar(0, need, f"short_{s.id[:6]}_{role}")
             if fixed is None:
@@ -615,7 +628,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             penalties.append((coef, v, "hard_rule" if rule.hard else "soft_rule", rule.id))
 
     # ---- built-in soft objectives --------------------------------------------------
-    total_weighted = sum(round(s.weight * LOAD_SCALE) * sum(n for r, n in s.composition.items() if r in MAIN_ROLES) for s in sessions)
+    total_weighted = sum(round(s.weight * LOAD_SCALE) * sum(n for r, n in s.composition.items() if is_main(r)) for s in sessions)
     loads: dict[str, cp_model.IntVar] = {}
     cat_top: dict[str, float] = {}
     for s in sessions:
@@ -736,8 +749,9 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             if sid == s.id and solver.Value(v):
                 also = [t for t in ATTACHED_ROLES if (pid, sid, t) in a and solver.Value(a[pid, sid, t])]
                 rows.append({"member": pid, "name": names[pid], "role": r, "also": also})
-        order = {r: i for i, r in enumerate(MAIN_ROLES)}
-        res.assignments[s.id] = sorted(rows, key=lambda row: (order[row["role"]], row["name"]))
+        # The band's order, then a media crew's roles in the session's own order.
+        order = {r: i for i, r in enumerate([*MAIN_ROLES, *(r for r in s.composition if r not in MAIN_ROLES)])}
+        res.assignments[s.id] = sorted(rows, key=lambda row: (order.get(row["role"], len(order)), row["name"]))
 
     for s, role, short in unfilled_vars:
         k = solver.Value(short)

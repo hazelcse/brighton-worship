@@ -39,7 +39,8 @@ Each group (Main, Youth) can have one read-only **observer** account at a time. 
 removes) them on the Teams page. An observer is on no team (`profiles.observer_group`), so it isn't
 counted, rostered or listed in a directory (root still sees it there, badged "observer").
 
-It logs in from either title and lands on "Brighton Serving" for its group: the coming week's
+It logs in from either title and lands on "Brighton Serving" for its group, outside every team (like
+root's, which covers every team): the coming week's
 services (session, band and media crew, ad hoc events included), every published session plan, both
 of the group's team directories and the rosters. It can't add absences, edit the directory, or change
 rosters or sessions.
@@ -111,11 +112,12 @@ Everything that differs between teams is in the team's row in the `teams` table:
 
 | Key                   | What it does                                                                                                                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sessionKinds`        | The regular sessions a new roster starts with, from the session catalogue. Empty: rosters start empty.                                                                                                 |
-| `roles`               | What members can play or do on this team, from `ROLE_CATALOGUE` in `team-config.ts`: Main and Youth Worship have the band's instruments; Main Media has stage camera, back camera, director, video mixer, projectionist and lights; Youth Media has projectionist and soundboard. Media teams call them "roles". |
+| `sessionKinds`        | The regular sessions a new roster starts with, from the session catalogue. Empty: rosters start empty. Main Media: EM Sunday Service and EM Prayer & Praise. |
+| `compositions`        | A team's own parts for its regular sessions, in place of the catalogue's band. Main Media: EM Sunday = 1 Media IC, 1 director, 1 video mixer, 2 roving cams, 1 wide angle cam, 1 close up cam, 1 projectionist, 1 lights; EM PnP = 1 projectionist, 1 lights. The session editor and roster grid show the team's roles ("Crew"), and the generator fills them. |
+| `roles`               | What members can play or do on this team, from `ROLE_CATALOGUE` in `team-config.ts`: Main and Youth Worship have the band's instruments; Main Media has Media IC, wide angle, roving and close up cameras, director, video mixer, projectionist and lights; Youth Media has projectionist and soundboard. Media teams call them "roles". |
 | `memberFields.ministry` | Members have an EM/CM share. Off: no EM/CM slider, badges, column or filter, and the roster generator ignores EM/CM.                                                                                   |
 | `memberFields.serves` | Members choose Sunday services and/or P&P. Off: not shown or saved, and rosters ignore it.                                                                                                             |
-| `memberFields.rules`  | Personal rules (parts someone plays but shouldn't be rostered for). On for Main Worship and Youth Worship.                                                                                                       |
+| `memberFields.rules`  | Personal rules (parts someone plays but shouldn't be rostered for). On for Main Worship, Youth Worship and Main Media.                                                                                                       |
 | `sessionsFrom`        | Media teams: the worship team (slug) whose sessions they work on. Stored for the media pages still to come; not used yet.                                                                              |
 
 The app (`web/src/lib/team-config.ts`) and the roster generator (`worker/.../roster_service.py`)

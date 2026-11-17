@@ -381,9 +381,19 @@ OR-Tools CP-SAT. One yes/no variable per person × session × role they can do.
   gender, from the member's gender; unset counts for neither side. Each extra singer of one gender
   is one miss. Unlike the other permanent rules it's listed with the soft rules on the generated
   page, so clicking its badge highlights the singers in unbalanced bands.
-- Developer accounts (profiles.is_developer) have root's powers plus "View or act as" in the account menu
-  (root, any permission group, or one person, whose identity it then acts with; a cookie the server only honours for developers). A badge next to
-  the avatar shows the current view.
+- Each team has its own permanent rules. The worship teams have all five; the media teams (Main
+  and Youth Media) have the three that suit a crew: share the load fairly, space out services and
+  mix up the teams (singer balance and band leader backup are band-only). Media crews fill any
+  media role in a session's parts (worker `MEDIA_ROLES`), and get no rehearsal dates.
+- Developer accounts (profiles.is_developer) have root's powers plus "View as" in the account menu
+  (a button in the media app's header): pick Main/Youth, then one of that group's teams (a
+  dropdown, so new teams appear on their own), and a Standard (their own full access) or Observer
+  account, in any combination, or act as one person, whose identity it then uses. Choices are a
+  draft until Apply is pressed. An observer view starts from the group's real observer settings (managing
+  permissions, seeing absences), which "Can" toggles change for that view only (the observer
+  account isn't touched), and, like a real observer, always gets the worship app's pages. The account
+  type is a cookie the server only honours for developers. A badge next to the avatar shows the
+  current view.
 - Hand edits (root, drafts): on the generated page, click a cell (the whole cell, not a
   name) to change, add or remove who fills that part and who also does BL/TB. People already in the
   part are greyed out in the other pickers. If someone doing BL/TB leaves the part, it has to stay
@@ -400,45 +410,170 @@ OR-Tools CP-SAT. One yes/no variable per person × session × role they can do.
 
 ## Team
 
-The Team page is a gallery of every member (uid, name, instruments, EM/CM), filterable by
-instrument. Only root can create, edit or delete members, and only root sees emails and the
-**Manage permissions** button (`/team/permissions`). Names are unique; passwords live only in
-Supabase Auth as a bcrypt hash.
+The Team page is a gallery of the current team's members (uid, name, instruments or roles, EM/CM),
+filterable by instrument. Only the team's lead (and root and developers, who have lead powers in
+every team) can add, edit, link or remove members and reset passwords, and only they see emails,
+permission groups and the **Manage permissions** button (`/team/permissions`). Names are unique;
+passwords live only in Supabase Auth as a bcrypt hash. Teams, linking someone onto a second team
+and observers are covered in [TEAMS.md](TEAMS.md).
 
-Members were created from `members.json` (repo root; not committed):
+Members can be imported from `members.json` (repo root; not committed) into Main Worship, or into
+another team with `TEAM=<slug>`:
 
 ```bash
 cd web && npm run import-members
 ```
 
-Re-running updates members by uid. Shared/placeholder emails get a unique
-`…@placeholder.invalid` address, flagged on the card for root to replace.
-
-Permission groups: **admin** (view, upload, edit, review and delete songs; transpose) and
-**member** (view songs and transpose). Everyone starts as a member.
+Re-running updates members by uid. New members join the team's **member** permission group.
+Shared/placeholder emails get a unique `…@placeholder.invalid` address, flagged on the card for
+the lead to replace.
 
 ## Accounts and permissions
 
-Modelled on AWS IAM:
+Modelled on AWS IAM, per team (code: `web/src/lib/auth.ts`; full detail in [TEAMS.md](TEAMS.md)).
 
-- **Root**: exactly one user (`profiles.is_root`), always has every permission, can't be edited.
+**Accounts** (`profiles`):
+
+- **Root**: exactly one account (`profiles.is_root`, `npm run create-root`), on no team. It has the
+  lead's powers in every team, creates and edits teams, sets each team's maximum permissions,
+  chooses a team's lead and creates observers. It can't be denied anything. From either login
+  title it lands on **Brighton Serving**, its own view outside every team, which draws on all of
+  them (worship and media): Home, Roster, Absences, Services, Tracking and the inbox cover every
+  team. To work in one team (its members, permissions, rosters) it opens it from Team; the bar then
+  shows "Root · team name", and the name "Brighton Serving" (or "Back to Brighton Serving" in the
+  profile menu) leaves it. A page about one team opened with no team chosen asks which team.
+- **Developer** (`profiles.is_developer`, `npm run create-dev`): on no team, root's powers plus
+  **View or act as** (see the Roster section).
+- **Observer** (`profiles.observer_group`, one each for Main and Youth): on no team, read-only
+  over its group's teams. Root can let it see absences and manage permissions. Like root, it lands
+  on Brighton Serving (limited to its group) and opens one of its group's teams to look inside it.
+- **Members**: everyone else, on one or more teams (`team_members`), with a separate profile and
+  separate permissions on each team.
+
+**Within a team:**
+
+- **Lead** (`team_members.is_lead`, at most one per team): every permission the team may have,
+  and the only member who can manage members and permissions. Root, developers or a
+  permission-managing observer can deny the lead permissions.
 - **Permissions**: named strings like `songs.create`, listed in `public.permissions` and mirrored in
   `web/src/lib/permissions.ts`. Add new ones in a migration and in that file.
-- **Security groups**: hold default permissions. `core` exists from the start with no permissions.
-- **User overrides**: per user, *Allow* adds a permission, *Deny* removes it even if a group grants it.
-- **Effective permissions** = group permissions + allows − denies (`public.effective_permissions`).
+- **Permission groups**: belong to one team and hold its default permissions. Every team has a
+  **member** group; Main Worship also has **admin**.
+- **User overrides**: per person per team, *Allow* adds a permission and *Deny* removes it, even
+  if a group grants it.
+- **Team ceiling** (`teams.permission_ceiling`): the most anyone on the team can have, the lead
+  included (null = every permission).
+- **Effective permissions** = (group permissions + allows − denies), capped by the ceiling
+  (`public.team_permissions`).
 
-Rules enforced on the server (`web/src/app/(app)/admin/actions.ts`):
+Some access comes from serving rather than permissions: a session's confirmed worship leaders
+edit its plan, and everyone serving on it sees the plan once it's published (`sessionAccess` in
+`web/src/lib/sessions.ts`).
 
-- Every write calls `requirePermission(...)` first.
-- Non-root admins can only grant permissions they hold themselves, and can't edit their own access.
+Rules enforced on the server (`web/src/lib/auth.ts`, `web/src/app/(app)/team/permissions/actions.ts`):
+
+- Every write calls `requirePermission(...)`, `requireLead()`, `requirePermissionsManager()` or
+  `requireRoot()` first.
+- Anyone other than the lead (or a permission-managing observer) can only grant permissions they
+  hold themselves, and can't edit their own access.
+- Handing over the lead needs the current lead's (or root's) password.
 - Deactivating a user blocks them from logging in.
-- Every admin change is written to `public.audit_log`.
+- Every access change is written to `public.audit_log`.
 
-Public sign-up is disabled. Accounts are created by root or anyone with `users.manage` under the
-account menu → **Manage permissions** (root only).
+Public sign-up is disabled. Members are added by their team's lead (Team page or **Manage
+permissions**); root creates teams and observers on the Teams page.
 
-## Deploying (later)
+## Notifications
+
+Everything is in-app: there are no emails or push notifications. Each user sees only what
+belongs to the team they're signed into. The worship app has five places notifications show up;
+media teams share the nav bar, so they get the roster Inbox (Main Media also has the Roster and Absences pages); the rest are worship-only for now.
+
+| Where | What it is | Code |
+|---|---|---|
+| **Inbox** (nav, left of the account icon) | Roster updates from the last 14 days, with an unread count. Opening it marks them all read (`profiles.updates_seen_at`). | `loadUpdates` in `web/src/lib/serving.ts`, `components/inbox.tsx` |
+| **Notices box** (home page) | Things to act on: plans to publish, sessions to confirm, plans published, band changes. | `app/(app)/home/page.tsx` |
+| **Broadcasts** (home page) | Messages from the team's lead. | `web/src/lib/broadcasts.ts` |
+| **Requests / Actionables** (Roster page) | Requests waiting on the viewer. | `loadRequestsBoard` in `web/src/lib/serving.ts` |
+| **Nav badges** | Counts on **Songs** (new song library updates) and **Sessions** (plans published, plans due). | `app/(app)/layout.tsx` |
+
+### Inbox: roster updates
+
+Saved as rows in `roster_updates`. Who sees each kind (`updatesFor` in `serving.ts`):
+
+| Update | Logged when | Member (not lead) sees it if… | Team lead | Root |
+|---|---|---|---|---|
+| `declined`: "X cannot serve …" | Someone says they can't serve, adds an absence that clashes, or is away for a moved rehearsal | They made it, or they're in that session's band. The reason is shown only to the person and the lead. | Yes, with reason | Yes, with reason |
+| `asked`, `refused`, `cancelled`: asking someone to cover, turning it down, withdrawing | A cover request is sent, refused or withdrawn | They're the asker or the person asked | Yes | Yes |
+| `taken`: "X took over … from Y" | A cover is accepted | Involved, or in that session's band | Yes | Yes |
+| `swap_proposed`, `swap_declined` | A swap is offered or turned down | They're one of the two people | Only if one of the two | No |
+| `swapped` | A swap is accepted | Involved, or in the band of either session | Yes | No |
+| `band_role_asked`, `band_role_refused`: band leader / talkback handover | A bandmate is asked to take over BL/TB, or says no | They're one of the two people | Yes | Yes |
+| `band_role_taken` | A BL/TB handover is accepted | Involved, or in that session's band | Yes | Yes |
+| `band_role_missing`: "… has no band leader" | Someone steps out and nobody left in the band can do their BL/TB | They caused it, or they're in the team's **admin** group | Yes | Yes |
+| `session_updated`: "Session for … has been updated" | A published session plan is published again with changes | They're in that session's band | Yes | Yes |
+| `roster_added`, `roster_removed`, `roster_part_changed`, `roster_session_changed` | An edited roster is republished | It's about them | Yes, folded into one "changed the band" line per session | Yes, as for the lead |
+| `roster_band_changed`: "X changed the band for …" | An edited roster is republished | They're in the band whose line-up changed (not whoever made the edit) | Only for their own band | Only for its own band |
+| `member_added`, `member_removed` | A lead adds or removes someone (on any team) | No | No | Yes, from every team |
+
+Nobody's inbox counts their own actions as unread. Developers see what a lead sees, or what the
+person they're acting as sees. Observers have no inbox, and neither does anyone without
+`roster.view`.
+
+### Home page notices
+
+The box under the countdown, refreshed every 30 seconds. Top to bottom:
+
+- **Not confirmed yet**: their next session is still waiting for "I can serve" (link to their
+  requests).
+- **Plan due**: a session they're a confirmed worship leader of is two weeks away or less and its
+  plan isn't published (`loadPublishDue`). It stays until the plan is published.
+- **Plan published / updated**: a session they're rostered on had its plan published, or
+  published again, by someone else since they last opened Sessions (`loadNewlyPublished`,
+  `profiles.sessions_seen_at`). If they haven't confirmed yet, it sends them to confirm first.
+- **Band changes**: someone else changed the band of an upcoming session they're on (added,
+  removed, part changed, cover taken, swap, BL/TB taken over). Shown on **one visit only**
+  (`profiles.home_band_seen_at`), with a link to the inbox.
+
+Observers' home pages show their group's services instead, with no notices or broadcasts. Root's
+home page shows the services plus its own notices and broadcasts.
+
+### Broadcasts
+
+A team's lead (or root, or a developer, in that team) sends a message from the Roster page's **New** menu
+to everyone on the team. It shows at the top of each member's home page until they dismiss it. If it
+**requires acknowledgement**, it can only be closed by ticking the acknowledgement, and the lead
+sees who has and hasn't acknowledged under **Actionables** on the Roster page. The sender doesn't
+receive their own broadcast. Developers don't receive broadcasts unless they're acting as someone.
+
+### Requests board (Roster page)
+
+Called **Requests** for members and **Actionables** for the lead. It lists only what's waiting on
+the viewer:
+
+- sessions on a newly published roster they haven't confirmed ("I can serve" / can't)
+- people asking them directly to cover a session, and swap proposals with them
+- bandmates asking them to take over band leader / talkback
+- their own requests still waiting, or turned down
+- sessions they're rostered on while away, with nobody asked to cover yet
+
+A request only appears for the person it's addressed to. Leads also see the broadcast
+acknowledgement lists here.
+
+### Nav badges
+
+- **Songs**: new song library events from the last 60 days that the user hasn't seen
+  (`profiles.song_updates_seen_at`). Which events depends on permissions (`updateKindsFor` in
+  `web/src/lib/song-updates.ts`):
+  - `songs.library_updates`: new songs, re-uploaded songsheets, scanner issues, songsheets missing
+    from Drive.
+  - `songs.issue_reports`: issues someone raises on a song.
+
+  Issue events drop out once someone marks the song as reviewed. By default only Main Worship's
+  **admin** group has these two permissions (and leads, root and developers get everything their
+  team allows).
+- **Sessions**: plans published for them to see plus their own plans due (the same items as the
+  home page notices).
 
 - Create a Supabase project, run `npx supabase link` then `npx supabase db push --remote` (without `--remote` the CLI targets your local database). Full steps: [documentation/DEPLOY.md](documentation/DEPLOY.md).
 - Deploy `web/` to Vercel with the same env vars (service-role key as a secret, never `NEXT_PUBLIC_`).
