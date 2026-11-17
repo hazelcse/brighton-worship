@@ -19,6 +19,16 @@ PART_WARN_PCT = 10  # ... or one part of it (fairness, spacing, EM/CM split)
 SOFT_KINDS = ("soft_rule", "fairness", "split", "spacing", "variety")
 
 
+def _member_fields(db: Client, team_id: str) -> tuple[bool, bool, bool]:
+    """Whether the team uses each person's EM/CM share, "serves at" and personal rule
+    (teams.config.memberFields; see web/src/lib/team-config.ts). They're on each member's team
+    profile (team_members); a team that doesn't use one ignores whatever is saved there.
+    Missing config: all used."""
+    team = db.table("teams").select("config").eq("id", team_id).single().execute().data or {}
+    fields = (team.get("config") or {}).get("memberFields") or {}
+    return bool(fields.get("ministry", True)), bool(fields.get("serves", True)), bool(fields.get("rules", True))
+
+
 def _load(db: Client, roster_id: str):
     roster = db.table("rosters").select("*").eq("id", roster_id).single().execute().data
     sess_rows = (db.table("roster_sessions").select("*").eq("roster_id", roster_id)
@@ -29,25 +39,87 @@ def _load(db: Client, roster_id: str):
                 s.get("kind") or "custom", s.get("rehearsal_date"))
         for s in sess_rows
     ]
+    team_id = roster["team_id"]
+    use_ministry, use_serves, use_rules = _member_fields(db, team_id)
+    # Absences are personal: one absence counts for every team they're on.
     # From the earliest rehearsal, which can be before the quarter starts.
     absent = _absent_dates(db, min([roster["starts_on"], *(s.rehearsal for s in sessions if s.rehearsal)]), roster["ends_on"])
+    # Each member's profile on this team (what they play here, EM/CM, serves at, personal rule).
+    team_profiles = {r["user_id"]: r for r in db.table("team_members")
+                     .select("user_id, instruments, no_roster_roles, em_percent, serves")
+                     .eq("team_id", team_id).execute().data}
+    elsewhere = _serving_elsewhere(db, team_id, roster["starts_on"], roster["ends_on"])
+    rules = [
+        Rule(r["id"], r["hard"], float(r["weight"]), r["template"], r["params"])
+        # this team's defaults (roster_id null) plus this roster's own rules
+        for r in db.table("roster_rules").select("*").eq("team_id", team_id).eq("enabled", True)
+        .or_(f"roster_id.is.null,roster_id.eq.{roster_id}").execute().data
+    ]
+    before = _served_before(db, team_id, roster["starts_on"], _lookback_weeks(rules))
     people = [
         # A personal rule can keep someone off parts they play: the generator treats those as not theirs.
         Person(p["id"], p["full_name"] or p["email"],
-               [i for i in (p["instruments"] or []) if i not in (p.get("no_roster_roles") or [])],
-               p["em_percent"], p.get("serves") or "both",
-               absent.get(p["id"], set()), p.get("gender"))
-        # developer accounts are never rostered
-        for p in db.table("profiles").select("id, full_name, email, instruments, no_roster_roles, em_percent, serves, gender")
-        .eq("is_active", True).eq("is_developer", False).execute().data
-    ]
-    rules = [
-        Rule(r["id"], r["hard"], float(r["weight"]), r["template"], r["params"])
-        # the defaults (roster_id null) plus this roster's own rules
-        for r in db.table("roster_rules").select("*").eq("enabled", True)
-        .or_(f"roster_id.is.null,roster_id.eq.{roster_id}").execute().data
+               [i for i in (t["instruments"] or []) if i not in (t.get("no_roster_roles") or [] if use_rules else [])],
+               t["em_percent"] if use_ministry else None,
+               (t.get("serves") or "both") if use_serves else "both",
+               absent.get(p["id"], set()), p.get("gender"), elsewhere.get(p["id"], {}), before.get(p["id"], []))
+        # only this team's members; developer accounts are never rostered
+        for p in (db.table("profiles").select("id, full_name, email, gender")
+                  .in_("id", list(team_profiles)).eq("is_active", True).eq("is_developer", False).execute().data
+                  if team_profiles else [])
+        for t in [team_profiles[p["id"]]]
     ]
     return roster, sessions, people, rules
+
+
+def _lookback_weeks(rules: list[Rule]) -> int:
+    """How many weeks before the quarter matter: the longest "N weeks between services" rule (its
+    run is N + 2 weeks at most), and at least the spacing preference's 3 weeks."""
+    longest = max((int(r.params.get("weeks", 0)) for r in rules if r.template == "break"), default=0)
+    return max(4, longest + 3)
+
+
+def _served_before(db: Client, team_id: str, starts_on: str, weeks: int) -> dict[str, list[str]]:
+    """Member id -> the dates they served on this team's previous published roster in the `weeks`
+    weeks before starts_on (whole weeks from Monday). Break and spacing rules count them."""
+    q_start = date.fromisoformat(starts_on)
+    since = (q_start - timedelta(days=q_start.weekday()) - timedelta(weeks=weeks)).isoformat()
+    prev = (db.table("rosters").select("id").eq("team_id", team_id).eq("status", "published")
+            .lt("starts_on", starts_on).gte("ends_on", since).execute().data)
+    if not prev:
+        return {}
+    sess = (db.table("roster_sessions").select("id, date").in_("roster_id", [r["id"] for r in prev])
+            .eq("cancelled", False).gte("date", since).lt("date", starts_on).execute().data)
+    if not sess:
+        return {}
+    date_of = {s["id"]: s["date"] for s in sess}
+    out: dict[str, set[str]] = {}
+    ids = list(date_of)
+    for i in range(0, len(ids), 200):
+        for a in db.table("roster_assignments").select("member_id, session_id").in_("session_id", ids[i:i + 200]).execute().data:
+            out.setdefault(a["member_id"], set()).add(date_of[a["session_id"]])
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _serving_elsewhere(db: Client, team_id: str, starts_on: str, ends_on: str) -> dict[str, dict[str, str]]:
+    """Member id -> {date: team name} for the days they serve on another team's published roster."""
+    others = (db.table("rosters").select("id, teams(name)").neq("team_id", team_id).eq("status", "published")
+              .lte("starts_on", ends_on).gte("ends_on", starts_on).execute().data)
+    if not others:
+        return {}
+    team_of = {r["id"]: (r.get("teams") or {}).get("name") or "another team" for r in others}
+    sess = (db.table("roster_sessions").select("id, date, roster_id").in_("roster_id", list(team_of))
+            .eq("cancelled", False).gte("date", starts_on).lte("date", ends_on).execute().data)
+    if not sess:
+        return {}
+    by_id = {s["id"]: s for s in sess}
+    out: dict[str, dict[str, str]] = {}
+    ids = list(by_id)
+    for i in range(0, len(ids), 200):
+        for a in db.table("roster_assignments").select("member_id, session_id").in_("session_id", ids[i:i + 200]).execute().data:
+            s = by_id[a["session_id"]]
+            out.setdefault(a["member_id"], {})[s["date"]] = team_of[s["roster_id"]]
+    return out
 
 
 def _absent_dates(db: Client, starts_on: str, ends_on: str) -> dict[str, set[str]]:
