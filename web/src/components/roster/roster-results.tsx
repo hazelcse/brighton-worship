@@ -4,6 +4,7 @@ import {
   ROLE_LABEL,
   ROLE_SHORT,
   ATTACHED_ROLES,
+  ROLES,
   addDays,
   formatDate,
   weekday,
@@ -14,7 +15,11 @@ import type {
   GenerationResult,
   SessionRow,
 } from "@/lib/roster-data";
+import { ROLE_CATALOGUE, ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 import { MissBadge } from "./miss-badge";
+
+/** A part's full name: the band's, or a media team's role (e.g. Wide Angle Cam). */
+const partLabel = (r: string) => ROLE_LABEL[r] ?? CATALOGUE_LABEL[r] ?? r;
 import { PastRowsFrame } from "./past-rows-toggle";
 
 const MINISTRY_STYLE = {
@@ -34,6 +39,8 @@ const COLUMNS = [
   "acoustic guitar",
   "bass",
   "drums",
+  // Media teams' roles, in catalogue order (only the ones a roster's sessions need show).
+  ...ROLE_CATALOGUE.map((r) => r.value as string).filter((r) => !ROLES.some((b) => b.value === r)),
 ];
 const HEADER: Record<string, string> = {
   "worship leader": "WL",
@@ -167,9 +174,9 @@ export function RosterTable({
                 key={c}
                 scope="col"
                 className="px-2 py-1.5 font-semibold"
-                title={ROLE_LABEL[c]}
+                title={partLabel(c)}
               >
-                {HEADER[c]}
+                {HEADER[c] ?? partLabel(c)}
               </th>
             ))}
           </tr>
@@ -242,7 +249,7 @@ export function RosterTable({
                     ) : (
                       <CellList
                         editable={editable}
-                        label={`Change ${ROLE_LABEL[c]} (${s.name}, ${when})`}
+                        label={`Change ${partLabel(c)} (${s.name}, ${when})`}
                         onClick={() => onCellClick?.(s.id, c)}
                       >
                         {people.map((a) =>
@@ -567,14 +574,14 @@ export function LoadsTable({
     (p) => !result.loads.some((l) => l.member === p.id),
   );
   // Each person's parts in the usual role order; band leader / talkback as +BL / +TB, like the roster.
-  const order = Object.keys(ROLE_LABEL);
+  const order = [...Object.keys(ROLE_LABEL), ...COLUMNS];
   const instruments = new Map(
     people.map((p) => {
       const sorted = [...p.instruments].sort((a, b) => order.indexOf(a) - order.indexOf(b));
       return [
         p.id,
         {
-          main: sorted.filter((r) => !(ATTACHED_ROLES as readonly string[]).includes(r)).map((r) => ROLE_LABEL[r] ?? r).join(", "),
+          main: sorted.filter((r) => !(ATTACHED_ROLES as readonly string[]).includes(r)).map(partLabel).join(", "),
           also: sorted.filter((r) => (ATTACHED_ROLES as readonly string[]).includes(r)),
         },
       ];

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition, type TouchEvent } from "react";
 import { deleteAbsence, getSessionDetail, saveAbsence } from "@/app/(app)/roster/absences/actions";
 import { ROLE_SHORT, addDays, formatDate, formatTime, parseYmd, weekday, ymd } from "@/lib/roster";
+import { ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 import { rehearsalTime, sessionTime } from "@/lib/reminder";
 import type { SessionDetail } from "@/lib/sessions";
 import { SessionCard } from "@/components/sessions/session-card";
@@ -576,7 +577,7 @@ export function ScheduleView({ absences: all, services, today, userId, isLead, r
                     const chips = showServices
                       ? serviceChips(servicesByDate.get(day) ?? [])
                       : (mineByDate.get(day) ?? []).map((m) => ({
-                          label: `${m.kind === "rehearsal" ? rehearsalLabel([m]) : [ministryOf(m.kind), m.kind.endsWith("_pnp") ? "PnP" : "Svc"].filter(Boolean).join(" ")} · ${ROLE_SHORT[m.role] ?? m.role}`,
+                          label: `${m.kind === "rehearsal" ? rehearsalLabel([m]) : [ministryOf(m.kind), m.kind.endsWith("_pnp") ? "PnP" : "Svc"].filter(Boolean).join(" ")} · ${ROLE_SHORT[m.role] ?? CATALOGUE_LABEL[m.role] ?? m.role}`,
                           dot: serviceDot(m.kind),
                         }));
                     if (!chips.length) return null;
@@ -862,7 +863,7 @@ function DayList({
                 >
                   <span aria-hidden className={`h-2 w-2 shrink-0 translate-y-px rounded-full ${serviceDot(s.kind)}`} />
                   <span className="min-w-0 flex-1">
-                    {s.kind === "rehearsal" ? rehearsalLabel([s]) : s.name} · {ROLE_SHORT[s.role] ?? s.role}
+                    {s.kind === "rehearsal" ? rehearsalLabel([s]) : s.name} · {ROLE_SHORT[s.role] ?? CATALOGUE_LABEL[s.role] ?? s.role}
                     <RehearsalFor s={s.forSession} />
                   </span>
                   <span aria-hidden className="text-muted">›</span>

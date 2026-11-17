@@ -46,7 +46,8 @@ export const ATTACHED_ROLES: readonly string[] = ["band leader"];
 /** Singing roles. A session needing both WLs and vocalists needs separate people for each. */
 export const SINGING_ROLES: readonly string[] = ["worship leader", "vocalist"];
 
-export type Composition = Partial<Record<Role, number>>;
+/** How many people each part needs: the band's instruments, or a media team's roles (team-config ROLE_CATALOGUE). */
+export type Composition = Record<string, number>;
 export type Ministry = "em" | "cm" | "any";
 export const MINISTRY_LABEL: Record<Ministry, string> = { em: "EM", cm: "CM", any: "EM/CM" };
 /**
@@ -151,7 +152,7 @@ export const SESSION_TYPES: Record<RegularKind, SessionType> = {
     name: "Saturday Service",
     ministry: "any",
     weight: 1,
-    composition: FULL_BAND(2),
+    composition: FULL_BAND(1),
     schedule: { weekly: 6 },
     startTime: null,
     rehearsal: null,
@@ -169,10 +170,20 @@ export function scheduleText(s: Schedule, midSentence = false): string {
 
 const regularType = (kind: string): SessionType | undefined => SESSION_TYPES[kind as RegularKind];
 
-export function compositionSummary(c: Composition): string {
-  return ROLES.filter((r) => (c[r.value] ?? 0) > 0)
-    .map((r) => `${c[r.value]} ${r.short}`)
-    .join(" · ");
+export function compositionSummary(c: Composition, labels: Record<string, string> = {}): string {
+  const band = ROLES.filter((r) => (c[r.value] ?? 0) > 0).map((r) => `${c[r.value]} ${r.short}`);
+  // A media team's roles, by their label and in the labels' order (passed in: roster.ts can't
+  // import team-config's catalogue).
+  const known = new Set<string>(ROLES.map((r) => r.value));
+  const at = (r: string) => {
+    const i = Object.keys(labels).indexOf(r);
+    return i < 0 ? Infinity : i;
+  };
+  const other = Object.entries(c)
+    .filter(([r, n]) => !known.has(r) && (n ?? 0) > 0)
+    .sort(([a], [b]) => at(a) - at(b))
+    .map(([r, n]) => `${n} ${labels[r] ?? r}`);
+  return [...band, ...other].join(" · ");
 }
 
 /** People needed for a session: band leader / talkback doesn't add people. */
@@ -319,16 +330,26 @@ function scheduleDates(q: Quarter, sch: Schedule): string[] {
   return [0, 1, 2].map((i) => nthWeekday(y + Math.floor((m - 1 + i) / 12), ((m - 1 + i) % 12) + 1, sch.monthly.weekday, sch.monthly.nth));
 }
 
-/** All the regular sessions of these kinds (a team's config: sessionKinds) in a quarter, with rehearsals. */
-export function defaultSessions(q: Quarter, kinds: readonly RegularKind[]): PlannedSession[] {
+/**
+ * All the regular sessions of these kinds (a team's config: sessionKinds) in a quarter, with rehearsals.
+ * `compositions`: the team's own parts for a kind (e.g. Main Media's crew), in place of the band.
+ * `rehearsals`: false for a team that doesn't rehearse (media crews): no rehearsal dates, so nobody
+ * is left off a session for being away on the band's rehearsal day.
+ */
+export function defaultSessions(
+  q: Quarter,
+  kinds: readonly RegularKind[],
+  compositions: Partial<Record<RegularKind, Composition>> = {},
+  rehearsals = true,
+): PlannedSession[] {
   const out: PlannedSession[] = [];
   for (const kind of kinds) {
     const t = SESSION_TYPES[kind];
     for (const date of scheduleDates(q, t.schedule)) {
-      out.push({ date, kind, name: t.name, ministry: t.ministry, weight: t.weight, composition: t.composition, rehearsal_date: null });
+      out.push({ date, kind, name: t.name, ministry: t.ministry, weight: t.weight, composition: { ...(compositions[kind] ?? t.composition) }, rehearsal_date: null });
     }
   }
-  for (const s of out) {
+  for (const s of rehearsals ? out : []) {
     const clash = SESSION_TYPES[s.kind as RegularKind].rehearsal?.unlessOn?.kind;
     s.rehearsal_date = defaultRehearsal(s.date, s.kind, new Set(clash ? out.filter((x) => x.kind === clash).map((x) => x.date) : []));
   }

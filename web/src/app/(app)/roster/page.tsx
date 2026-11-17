@@ -82,7 +82,7 @@ function Panel({ title, id, children }: { title: string; id?: string; children: 
 }
 
 async function RosterView() {
-  const user = await requireUser();
+  const user = await requireUser("team");
   if (!user.can("roster.view")) {
     return (
       <p className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
@@ -92,16 +92,18 @@ async function RosterView() {
   }
   if (user.isRoot) return <RootRosters />;
   if (user.observerGroup) return <RootRosters group={user.observerGroup} />;
+  const team = user.team;
+  if (!team) return <RootRosters />;
   const today = todayYmd();
   const q = quarterOf(today);
   const next = nextQuarter(q);
   // Next quarter's roster shows up here as soon as it's published, for everyone who can see rosters.
-  const [roster, upcoming] = await Promise.all([publishedRosterFor(today, user.team.id), publishedRosterFor(next.start, user.team.id)]);
+  const [roster, upcoming] = await Promise.all([publishedRosterFor(today, team.id), publishedRosterFor(next.start, team.id)]);
   const canEdit = user.can("roster.edit");
   const [services, board, broadcasts] = await Promise.all([
-    loadMyServices(user.id, user.team.id),
+    loadMyServices(user.id, team.id),
     loadRequestsBoard(user.id),
-    user.isLead ? loadBroadcastActionables(user.team.id) : Promise.resolve([]),
+    user.isLead ? loadBroadcastActionables(team.id) : Promise.resolve([]),
   ]);
 
   return (
@@ -160,7 +162,7 @@ async function RosterView() {
             >
               View past rosters
             </Link>
-            <NewMenu isLead={user.isLead} teamConfig={user.team.config} />
+            <NewMenu isLead={user.isLead} teamConfig={team.config} />
           </div>
         )}
       </div>

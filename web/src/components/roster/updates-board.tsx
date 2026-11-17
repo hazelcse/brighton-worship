@@ -22,6 +22,8 @@ const DOT: Record<UpdateItem["kind"], string> = {
   roster_part_changed: "bg-violet-400",
   roster_session_changed: "bg-violet-400",
   roster_band_changed: "bg-violet-300",
+  member_added: "bg-teal-500",
+  member_removed: "bg-teal-300",
 };
 
 const day = (date: string) => formatDate(date, { weekday: "short", day: "numeric", month: "short" });
@@ -153,6 +155,18 @@ export function updateText(u: UpdateItem): React.ReactNode {
         <>
           {b(u.actor)} changed the band for {b(`${u.session?.name ?? "a session"} – ${u.session ? day(u.session.date) : ""}`)}
           {u.detail && <>: {u.detail}</>}
+        </>
+      );
+    case "member_added":
+      return (
+        <>
+          {b(u.actor)} added {b(u.detail ?? u.member ?? "someone")} to {u.team ?? "their team"}
+        </>
+      );
+    case "member_removed":
+      return (
+        <>
+          {b(u.actor)} removed {b(u.detail ?? u.member ?? "someone")} from {u.team ?? "their team"}
         </>
       );
     default:

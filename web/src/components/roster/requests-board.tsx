@@ -206,13 +206,21 @@ function candidateLabel(c: CoverCandidate) {
 }
 
 export function CandidateOptions({ candidates, keep }: { candidates: CoverCandidate[]; keep?: string | null }) {
+  const option = (c: CoverCandidate) => (
+    <option key={c.id} value={c.id} disabled={Boolean(c.unavailable) && c.id !== keep}>
+      {candidateLabel(c)}
+    </option>
+  );
+  // Those who normally serve at this session (its ministry and type) first, like the lead's picker.
+  const unusual = candidates.filter((c) => c.unusual && !c.unavailable);
+  if (!unusual.length) return <>{candidates.map(option)}</>;
+  const usual = candidates.filter((c) => !c.unusual && !c.unavailable);
+  const unavailable = candidates.filter((c) => c.unavailable);
   return (
     <>
-      {candidates.map((c) => (
-        <option key={c.id} value={c.id} disabled={Boolean(c.unavailable) && c.id !== keep}>
-          {candidateLabel(c)}
-        </option>
-      ))}
+      {usual.length > 0 && <optgroup label="Normally serves in this session">{usual.map(option)}</optgroup>}
+      <optgroup label="Does not normally serve in this session">{unusual.map(option)}</optgroup>
+      {unavailable.length > 0 && <optgroup label="Can't be asked">{unavailable.map(option)}</optgroup>}
     </>
   );
 }

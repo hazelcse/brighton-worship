@@ -43,7 +43,8 @@ const toBroadcast = (r: Row): Broadcast => ({
 /** The signed-in team's broadcasts still waiting on this person, newest first. */
 export async function loadMyBroadcasts(user: CurrentUser): Promise<Broadcast[]> {
   // Developers aren't on the team (unless they're viewing as someone).
-  if (user.isDeveloper && !user.viewingAsPerson) return [];
+  // Brighton Serving (root and observers outside every team) has none.
+  if ((user.isDeveloper && !user.viewingAsPerson) || !user.team) return [];
   const db = createAdminClient();
   const [{ data: rows, error }, { data: done }] = await Promise.all([
     db.from("broadcasts").select(SELECT).eq("team_id", user.team.id).order("created_at", { ascending: false }),

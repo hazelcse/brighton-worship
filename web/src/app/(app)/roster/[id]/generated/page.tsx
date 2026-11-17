@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { addDays, formatRange, makeSentence, quarterOf, usesMinistry } from "@/lib/roster";
 import { loadAbsences, loadAssignments, loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
 import { describeCheck, problemCells, rosterProblems } from "@/lib/roster-check";
@@ -13,6 +13,7 @@ import { FilteredRosterTable, MobileRosterFilter, RosterFilterProvider } from "@
 import { HighlightProvider } from "@/components/roster/highlight";
 import { WidePage } from "@/components/wide-page";
 import { LoadsTable, ResultStatus, RulesPanel, WeightsPanel } from "@/components/roster/roster-results";
+import { splitsMinistry } from "@/lib/team-config";
 
 export const metadata: Metadata = { title: "Generated roster · Brighton Worship" };
 
@@ -24,7 +25,7 @@ function quarterTitle(startsOn: string): string {
 
 /** The roster the optimiser just produced: table in the main area, weights and rule outcomes at the side. */
 async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
+  const user = await requireTeamUser(`/roster/${(await params).id}/generated`, "team");
   if (!user.can("roster.edit")) notFound();
   const { id } = await params;
   const [data, rules, people] = await Promise.all([loadRoster(id, user.team.id), loadRules(id, user.team.id), loadPeople(user.team)]);
@@ -102,10 +103,13 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
       }
     : undefined;
 
+  // EM/CM filter, column and loads: only for a team that splits EM and CM (not media) with EM/CM sessions.
+  const showMinistry = splitsMinistry(user.team.config) && usesMinistry(sessions);
+
   return (
     <RevisionEditing rosterId={roster.id} assignments={assignments} sessions={sessions}>
     {/* Shares the table's filters with the phone-only filter dropdown in the header's button row. */}
-    <RosterFilterProvider showMinistry={usesMinistry(sessions)} sessions={sessions}>
+    <RosterFilterProvider showMinistry={showMinistry} sessions={sessions}>
     <div className="space-y-5">
       {/* Wider than the nav, so every roster column fits (see LAYOUT.md). */}
       <WidePage />
@@ -129,7 +133,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
         <div className="flex flex-wrap items-center gap-2">
           <MobileRosterFilter />
           <LoadsButton>
-            <LoadsTable result={result} people={people} ministry={usesMinistry(sessions)} pnp={sessions.some((s) => s.kind.endsWith("_pnp"))} />
+            <LoadsTable result={result} people={people} ministry={showMinistry} pnp={sessions.some((s) => s.kind.endsWith("_pnp"))} />
           </LoadsButton>
           {revision ? (
             <RevisionActions revisionId={roster.id} problems={hard.length} unpublished={unpublished} />
@@ -157,7 +161,7 @@ async function GeneratedView({ params }: { params: Promise<{ id: string }> }) {
               {...(user.isLead ? { peopleFilter: true } : { meId: user.id })}
             />
           ) : (
-            <FilteredRosterTable sessions={sessions} assignments={assignments} edit={tableEdit} {...(user.isLead ? { peopleFilter: true } : { meId: user.id })} />
+            <FilteredRosterTable splitsMinistry={showMinistry} teamConfig={user.team.config} sessions={sessions} assignments={assignments} edit={tableEdit} {...(user.isLead ? { peopleFilter: true } : { meId: user.id })} />
           )}
         </div>
         <aside className="space-y-3 text-sm">

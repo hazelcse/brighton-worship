@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { hasDeveloperAccess, requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ActionForm } from "@/components/action-form";
 import { TeamLoader } from "@/components/team-loader";
@@ -19,7 +19,7 @@ type MemberRow = { is_lead: boolean; profiles: { id: string; full_name: string; 
 
 async function TeamView({ params }: { params: Promise<{ slug: string }> }) {
   const user = await requireUser();
-  if (!user.isRoot && !(user.isDeveloper && !user.viewingAsPerson)) notFound();
+  if (!user.isRoot && !hasDeveloperAccess(user)) notFound();
   const { slug } = await params;
 
   const db = createAdminClient();
@@ -39,7 +39,7 @@ async function TeamView({ params }: { params: Promise<{ slug: string }> }) {
     .filter((m) => m.profiles)
     .sort((a, b) => Number(b.is_lead) - Number(a.is_lead) || (a.profiles!.full_name || "").localeCompare(b.profiles!.full_name || ""));
   const lead = rows.find((m) => m.is_lead)?.profiles;
-  const isOpen = user.team.id === team.id;
+  const isOpen = user.team?.id === team.id;
   // This team's page at `path`, switched to this team first.
   const open = (path: string) => `/teams/${team.slug}/open?next=${encodeURIComponent(path)}`;
 

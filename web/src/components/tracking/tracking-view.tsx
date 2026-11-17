@@ -3,7 +3,22 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { formatDate, todayYmd } from "@/lib/roster";
 import { downloadTrackingCsv } from "@/lib/tracking-csv";
-import { BAND_COLUMNS, MAX_SONGS, MINISTRY_TEXT, linkLabel, serviceType, songSlots, type BandKey, type SessionRecord } from "@/lib/tracking";
+import {
+  BAND_COLUMNS,
+  MAX_SONGS,
+  MINISTRY_TEXT,
+  SERVICE_GROUPS,
+  SERVICE_GROUP_TEXT,
+  linkLabel,
+  serviceGroups,
+  serviceLabel,
+  serviceType,
+  songSlots,
+  type BandKey,
+  type ServiceGroup,
+  type ServiceRecord,
+  type SessionRecord,
+} from "@/lib/tracking";
 import { deleteRecords, updateRecord } from "@/app/(app)/sessions/tracking/actions";
 import { RecordForm } from "@/components/tracking/record-form";
 import { QUERY_COLUMNS, parseQuery, runQuery } from "@/lib/tracking-query";
@@ -58,6 +73,8 @@ function matches(r: SessionRecord, f: Filters, q: string): boolean {
         year: "numeric",
       }),
       r.serviceName,
+      serviceLabel(r.kind),
+      "team" in r ? String(r.team) : "",
       MINISTRY_TEXT[r.ministry],
       ...musiciansOf(r),
       ...r.songs.flatMap((s) => [s.title, s.artist, s.key, s.lead]),
@@ -288,6 +305,71 @@ function FilterDropdown({ records, filters, setFilters }: { records: SessionReco
               className="w-full border-t border-border px-3 py-2.5 text-left text-sm text-muted hover:bg-background hover:text-foreground"
             >
               Clear filters
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Root's Tracking: one dropdown to show YF, CM and/or EM services (none ticked: all of them). */
+function GroupDropdown({ value, onChange }: { value: ServiceGroup[]; onChange: (v: ServiceGroup[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const label = value.length ? SERVICE_GROUPS.filter((g) => value.includes(g)).map((g) => SERVICE_GROUP_TEXT[g]).join(", ") : "YF, CM, EM";
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={`Show services: ${label}`}
+        onClick={() => setOpen((o) => !o)}
+        className={`flex h-10 items-center gap-2 rounded-lg border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 ${
+          value.length ? "border-accent/60" : "border-border"
+        }`}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden className="text-muted">
+          <path d="M3 5h18M6 12h12M10 19h4" />
+        </svg>
+        <span>{label}</span>
+        <Chevron open={open} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+          {SERVICE_GROUPS.map((g) => {
+            const on = value.includes(g);
+            return (
+              <label key={g} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-background">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => onChange(on ? value.filter((x) => x !== g) : [...value, g])}
+                  className="h-4 w-4 accent-[var(--color-accent)]"
+                />
+                {SERVICE_GROUP_TEXT[g]}
+              </label>
+            );
+          })}
+          {value.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="w-full border-t border-border px-3 py-2 text-left text-sm text-muted hover:bg-background hover:text-foreground"
+            >
+              Show all
             </button>
           )}
         </div>
@@ -716,77 +798,158 @@ function ConfirmDelete({ ids, onClose, onDeleted }: { ids: string[]; onClose: ()
   );
 }
 
+const sectionHeading = "mb-2 text-xs font-semibold uppercase tracking-wider text-muted";
+
+function BandSection({ band: b, title = "Band" }: { band: SessionRecord["band"]; title?: string }) {
+  const band = BAND_COLUMNS.filter((c) => b[c.key]?.length);
+  return (
+    <section>
+      <h3 className={sectionHeading}>{title}</h3>
+      {band.length ? (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          {band.map((c) => (
+            <div key={c.key} className="contents">
+              <dt className="text-muted">{c.long}</dt>
+              <dd>{b[c.key]!.join(", ")}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-sm text-muted">No band recorded.</p>
+      )}
+    </section>
+  );
+}
+
+function SongsSection({ songs }: { songs: SessionRecord["songs"] }) {
+  return (
+    <section>
+      <h3 className={sectionHeading}>Songs</h3>
+      {songs.length ? (
+        <ol className="space-y-1.5 text-sm">
+          {songSlots(songs).map((s, i) =>
+            !s ? null : (
+              <li key={i} className="flex items-baseline gap-2">
+                <span className="w-4 shrink-0 text-right text-xs text-muted">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{s.title}</span>
+                  {s.closing && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 text-[11px] font-medium text-accent">Closing</span>}
+                  {s.artist && <span className="text-muted"> · {s.artist}</span>}
+                  {s.lead && <span className="block text-xs text-muted">Lead: {s.lead}</span>}
+                </span>
+                {s.key && <span className="shrink-0 rounded bg-background px-1.5 text-xs font-medium">{s.key}</span>}
+              </li>
+            ),
+          )}
+        </ol>
+      ) : (
+        <p className="text-sm text-muted">No songs recorded.</p>
+      )}
+    </section>
+  );
+}
+
+function LinksSection({ links }: { links: string[] }) {
+  return (
+    <section>
+      <h3 className={sectionHeading}>Livestream</h3>
+      {links.length ? (
+        <ul className="space-y-1 text-sm">
+          {links.map((l, i) => (
+            <li key={i} className="truncate">
+              <a href={l} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                {l}
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted">No links.</p>
+      )}
+    </section>
+  );
+}
+
+function CommentsSection({ comments }: { comments: string }) {
+  if (!comments) return null;
+  return (
+    <section>
+      <h3 className={sectionHeading}>Comments</h3>
+      <p className="whitespace-pre-wrap text-sm">{comments}</p>
+    </section>
+  );
+}
+
 /** A session's details: band, songs, links and comments. */
 export function RecordDetails({ r }: { r: Pick<SessionRecord, "band" | "songs" | "links" | "comments"> }) {
-  const band = BAND_COLUMNS.filter((c) => r.band[c.key]?.length);
   return (
     <div className="grid gap-5 md:grid-cols-2">
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Band</h3>
-        {band.length ? (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            {band.map((c) => (
-              <div key={c.key} className="contents">
-                <dt className="text-muted">{c.long}</dt>
-                <dd>{r.band[c.key]!.join(", ")}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="text-sm text-muted">No band recorded.</p>
-        )}
-      </section>
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Songs</h3>
-        {r.songs.length ? (
-          <ol className="space-y-1.5 text-sm">
-            {songSlots(r.songs).map((s, i) =>
-              !s ? null : (
-                <li key={i} className="flex items-baseline gap-2">
-                  <span className="w-4 shrink-0 text-right text-xs text-muted">{i + 1}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium">{s.title}</span>
-                    {s.closing && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 text-[11px] font-medium text-accent">Closing</span>}
-                    {s.artist && <span className="text-muted"> · {s.artist}</span>}
-                    {s.lead && <span className="block text-xs text-muted">Lead: {s.lead}</span>}
-                  </span>
-                  {s.key && <span className="shrink-0 rounded bg-background px-1.5 text-xs font-medium">{s.key}</span>}
-                </li>
-              ),
-            )}
-          </ol>
-        ) : (
-          <p className="text-sm text-muted">No songs recorded.</p>
-        )}
-      </section>
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Livestream</h3>
-        {r.links.length ? (
-          <ul className="space-y-1 text-sm">
-            {r.links.map((l, i) => (
-              <li key={i} className="truncate">
-                <a href={l} target="_blank" rel="noreferrer" className="text-accent hover:underline">
-                  {l}
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted">No links.</p>
-        )}
-      </section>
-      {r.comments && (
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Comments</h3>
-          <p className="whitespace-pre-wrap text-sm">{r.comments}</p>
-        </section>
-      )}
+      <BandSection band={r.band} />
+      <SongsSection songs={r.songs} />
+      <LinksSection links={r.links} />
+      <CommentsSection comments={r.comments} />
     </div>
   );
 }
 
+/**
+ * Root's Tracking: one service opened up. Its media team (for services that have one), its worship
+ * team (the band) and the session itself (songs, livestream links, comments), each in its own box.
+ */
+function ServiceDetails({ r }: { r: ServiceRecord }) {
+  const box = "space-y-4 rounded-lg border border-border bg-background/50 p-4";
+  const title = "text-sm font-semibold";
+  return (
+    <div className={`grid items-start gap-3 ${r.crew ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
+      {r.crew && (
+        <div className={box}>
+          <h3 className={title}>Media team</h3>
+          {r.crew.length ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+              {r.crew.map((c) => (
+                <div key={c.role} className="contents">
+                  <dt className="text-muted">{c.role}</dt>
+                  <dd>{c.names.join(", ")}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-sm text-muted">No media crew on a roster that day.</p>
+          )}
+        </div>
+      )}
+      <div className={box}>
+        <h3 className={title}>Worship team</h3>
+        <BandSection band={r.band} title={r.team} />
+      </div>
+      <div className={box}>
+        <h3 className={title}>Session</h3>
+        <SongsSection songs={r.songs} />
+        <LinksSection links={r.links} />
+        <CommentsSection comments={r.comments} />
+      </div>
+    </div>
+  );
+}
+
+/** YF for a Youth service; otherwise EM, CM or EM/CM. */
+const groupText = (r: SessionRecord) => ("group" in r && r.group === "youth" ? "YF" : MINISTRY_TEXT[r.ministry]);
+
+/** What a row is called: the service (root's Tracking), or the session's own name. */
+function RowName({ r, byService, struck }: { r: SessionRecord; byService?: boolean; struck?: boolean }) {
+  const cls = `min-w-0 flex-1 truncate text-sm ${struck ? "text-muted line-through" : ""}`;
+  if (!byService) return <span className={cls}>{r.serviceName}</span>;
+  const label = serviceLabel(r.kind);
+  return (
+    <span className={cls}>
+      <span className={struck ? "" : "font-medium"}>{label}</span>
+      {label === "Ad hoc" && <span className="text-muted"> · {r.serviceName}</span>}
+    </span>
+  );
+}
+
 /** A session that didn't happen: why, from roster setup (changed there, not here). */
-function NoSessionItem({ r }: { r: SessionRecord }) {
+function NoSessionItem({ r, byService }: { r: SessionRecord; byService?: boolean }) {
   return (
     <li className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-surface px-4 py-3">
       <span aria-hidden className="w-4 shrink-0" />
@@ -798,14 +961,14 @@ function NoSessionItem({ r }: { r: SessionRecord }) {
           year: "numeric",
         })}
       </span>
-      <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-semibold">{MINISTRY_TEXT[r.ministry]}</span>
-      <span className="min-w-0 flex-1 truncate text-sm text-muted line-through">{r.serviceName}</span>
+      <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-semibold">{groupText(r)}</span>
+      <RowName r={r} byService={byService} struck />
       <span className="shrink-0 text-sm font-semibold">{r.cancelReason}</span>
     </li>
   );
 }
 
-function ListItem({ r, bank, onDelete }: { r: SessionRecord; bank: BankSong[]; onDelete: () => void }) {
+function ListItem({ r, bank, onDelete, byService }: { r: SessionRecord; bank: BankSong[]; onDelete: () => void; byService?: boolean }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   return (
@@ -829,8 +992,8 @@ function ListItem({ r, bank, onDelete }: { r: SessionRecord; bank: BankSong[]; o
               year: "numeric",
             })}
           </span>
-          <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-semibold">{MINISTRY_TEXT[r.ministry]}</span>
-          <span className="min-w-0 flex-1 truncate text-sm">{r.serviceName}</span>
+          <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-semibold">{groupText(r)}</span>
+          <RowName r={r} byService={byService} />
         </button>
         <button
           type="button"
@@ -869,6 +1032,8 @@ function ListItem({ r, bank, onDelete }: { r: SessionRecord; bank: BankSong[]; o
               onCancel={() => setEditing(false)}
               onSaved={() => setEditing(false)}
             />
+          ) : byService ? (
+            <ServiceDetails r={r as ServiceRecord} />
           ) : (
             <RecordDetails r={r} />
           )}
@@ -893,13 +1058,21 @@ export function TrackingView({
   bank,
   heading,
   add,
+  byService = false,
 }: {
   records: SessionRecord[];
   bank: BankSong[];
   heading: React.ReactNode;
   add: React.ReactNode;
+  /**
+   * Root's Tracking: `records` are ServiceRecords from every worship team, listed one service per
+   * row (no table or columns), filtered by YF, CM and EM.
+   */
+  byService?: boolean;
 }) {
-  const [view, setView] = useState<"table" | "list">("table");
+  const [chosenView, setView] = useState<"table" | "list">("table");
+  const view = byService ? "list" : chosenView;
+  const [groups, setGroups] = useState<ServiceGroup[]>([]);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [query, setQuery] = useState("");
   // "text": plain search across everything. "query": [WL = "Vanessa"] and ![AG = "Chong Han"]…
@@ -928,8 +1101,15 @@ export function TrackingView({
   const q = searchMode === "text" ? query.trim().toLowerCase() : "";
   const parsed = useMemo(() => (searchMode === "query" ? parseQuery(query) : null), [searchMode, query]);
   const shown = useMemo(
-    () => records.filter((r) => matches(r, filters, q) && (!parsed?.ok || runQuery(parsed.node, r))),
-    [records, filters, q, parsed],
+    () =>
+      records.filter(
+        (r) =>
+          (byService
+            ? matches(r, NO_FILTERS, q) && (!groups.length || serviceGroups(r as ServiceRecord).some((g) => groups.includes(g)))
+            : matches(r, filters, q)) &&
+          (!parsed?.ok || runQuery(parsed.node, r)),
+      ),
+    [records, filters, q, parsed, byService, groups],
   );
   // Only ticked rows still showing count (a filter or search can hide ticked rows).
   const ticked = view === "table" ? shown.filter((r) => deletable(r) && selected.has(r.id)).map((r) => r.id) : [];
@@ -987,7 +1167,7 @@ export function TrackingView({
     )}
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <FilterDropdown records={records} filters={filters} setFilters={setFilters} />
+        {byService ? <GroupDropdown value={groups} onChange={setGroups} /> : <FilterDropdown records={records} filters={filters} setFilters={setFilters} />}
         <div className="relative min-w-0 flex-1 sm:min-w-48">
           <input
             type="search"
@@ -1033,11 +1213,11 @@ export function TrackingView({
             )}
           </button>
         </div>
-        {view === "table" && <ColumnPicker hidden={hidden} setHidden={setHidden} />}
+        {!byService && view === "table" && <ColumnPicker hidden={hidden} setHidden={setHidden} />}
         {/* Phones: Filters, search and Columns on the first row; the Table / List switch (shorter,
             fully rounded) starts the second, with Export CSV and + at its right. */}
         <div className="basis-full sm:hidden" aria-hidden />
-        <div role="tablist" aria-label="View" className="flex h-10 rounded-lg border border-border bg-surface p-0.5 max-sm:h-8 max-sm:rounded-full">
+        <div role="tablist" aria-label="View" className={`flex h-10 rounded-lg border border-border bg-surface p-0.5 max-sm:h-8 max-sm:rounded-full ${byService ? "hidden" : ""}`}>
           {(["table", "list"] as const).map((v) => (
             <button
               key={v}
@@ -1079,7 +1259,11 @@ export function TrackingView({
       ) : (
         <ul className="space-y-2">
           {shown.map((r) =>
-            r.cancelReason !== undefined ? <NoSessionItem key={r.id} r={r} /> : <ListItem key={r.id} r={r} bank={bank} onDelete={() => setToDelete([r.id])} />,
+            r.cancelReason !== undefined ? (
+              <NoSessionItem key={r.id} r={r} byService={byService} />
+            ) : (
+              <ListItem key={r.id} r={r} bank={bank} byService={byService} onDelete={() => setToDelete([r.id])} />
+            ),
           )}
         </ul>
       )}

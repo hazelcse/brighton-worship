@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { defaultMemberPassword } from "@/lib/default-password";
 import { membership } from "@/lib/teams";
+import { logMemberChange } from "@/lib/serving";
 
 /** The team's groups among these ids (anything else is ignored). */
 async function teamGroupIds(teamId: string, ids: string[]): Promise<string[]> {
@@ -88,6 +89,7 @@ export async function createUser(_prev: ActionResult, formData: FormData): Promi
       if (gErr) throw gErr;
     }
     await audit(actor, "user.create", newId, { email, groupIds });
+    await logMemberChange(actor, "member_added", newId, fullName || email);
   } catch (e) {
     return fail(e);
   }
@@ -267,11 +269,13 @@ export async function updateGroup(
  */
 export async function transferLead(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
   let ok = false;
+  let wasLead = false;
   try {
     const actor = await requirePermissionsManager();
     const db = createAdminClient();
     const isLeadNow = (await membership(actor.team.id, actor.id))?.isLead ?? false;
     const overseer = overseesLeads(actor);
+    wasLead = isLeadNow;
     if (!isLeadNow && !overseer) return { ok: false, message: "Only the team's lead can hand over the lead." };
     const { data: me } = await db.from("profiles").select("email").eq("id", actor.id).maybeSingle();
     if (!me) return { ok: false, message: "Account not found." };
@@ -300,6 +304,7 @@ export async function transferLead(_prev: ActionResult, formData: FormData): Pro
     return { ok: false, message: e instanceof Error ? e.message : "Something went wrong." };
   }
   revalidatePath("/", "layout");
-  if (ok) redirect("/team"); // the old lead loses the permissions pages, so leave them
-  return { ok, message: null };
+  // The old lead loses the permissions pages, so leave them; root or a developer keeps them.
+  if (ok && wasLead) redirect("/team");
+  return ok ? { ok: true, message: "Lead changed." } : { ok, message: null };
 }

@@ -1,14 +1,14 @@
 import "server-only";
 import { notFound } from "next/navigation";
-import { requireUser, type CurrentUser } from "@/lib/auth";
+import { requireTeamUser, type TeamUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type PermissionRow = { key: string; category: string; description: string };
 export type GroupRow = { id: string; name: string; description: string };
 
 /** Gate for the permissions area: the team's lead (or root, a developer, or the group's observer if it manages permissions) only. */
-export async function requireAdminViewer(): Promise<CurrentUser> {
-  const user = await requireUser();
+export async function requireAdminViewer(next = "/team/permissions"): Promise<TeamUser> {
+  const user = await requireTeamUser(next, "team");
   if (!user.isLead && !user.observerManagesPermissions) notFound();
   return user;
 }

@@ -12,7 +12,7 @@
  * starts from PRESETS for its group and kind. Everything that differs between teams reads its
  * config through the helpers below; nothing checks a team's slug.
  */
-import { SESSION_TYPES, scheduleText, type RegularKind } from "@/lib/roster";
+import { SESSION_TYPES, scheduleText, type Composition, type RegularKind, type SessionType } from "@/lib/roster";
 
 export type TeamGroup = "main" | "youth";
 export type TeamKind = "worship" | "media";
@@ -37,8 +37,10 @@ export const ROLE_CATALOGUE = [
   { value: "vocalist", label: "Vocalist" },
   // Band leader and talkback are one job, done by the same person.
   { value: "band leader", label: "BL/TB" },
-  { value: "stage camera", label: "Stage Camera" },
-  { value: "back camera", label: "Back Camera" },
+  { value: "media ic", label: "Media IC"},
+  { value: "wide angle cam", label: "Wide Angle Cam" },
+  { value: "close up cam", label: "Close Up Cam" },
+  { value: "roving cam", label: "Roving Cam" },
   { value: "director", label: "Director" },
   { value: "video mixer", label: "Video Mixer" },
   { value: "projectionist", label: "Projectionist" },
@@ -74,6 +76,11 @@ export type TeamConfig = {
   memberFields: { ministry: boolean; serves: boolean; rules: boolean };
   /** Media teams: the worship team (slug) whose sessions they work on, e.g. "youth-worship". */
   sessionsFrom?: string;
+  /**
+   * The parts each of this team's regular sessions needs, in place of the catalogue's band (roster.ts
+   * SESSION_TYPES), e.g. Main Media's crew for EM Sunday. Kinds left out use the catalogue's.
+   */
+  compositions?: Partial<Record<RegularKind, Composition>>;
 };
 
 /** What a team of each group and kind starts with. The four existing teams were set up from these. */
@@ -85,10 +92,23 @@ export const PRESETS: Record<TeamGroup, Record<TeamKind, TeamConfig>> = {
       memberFields: { ministry: true, serves: true, rules: true },
     },
     media: {
-      sessionKinds: [],
-      roles: ["stage camera", "back camera", "director", "video mixer", "projectionist", "lights"],
-      memberFields: { ministry: false, serves: false, rules: false },
+      sessionKinds: ["em_sunday", "em_pnp"],
+      roles: ["media ic", "wide angle cam", "roving cam", "close up cam", "director", "video mixer", "projectionist", "lights"],
+      memberFields: { ministry: false, serves: false, rules: true },
       sessionsFrom: "main-worship",
+      compositions: {
+        em_sunday: {
+          "media ic": 1,
+          director: 1,
+          "video mixer": 1,
+          "roving cam": 2,
+          "wide angle cam": 1,
+          "close up cam": 1,
+          projectionist: 1,
+          lights: 1,
+        },
+        em_pnp: { projectionist: 1, lights: 1 },
+      },
     },
   },
   youth: {
@@ -122,7 +142,33 @@ export function readTeamConfig(raw: unknown, group: TeamGroup, kind: TeamKind): 
     roles,
     memberFields: { ministry: Boolean(f.ministry), serves: Boolean(f.serves), rules: f.rules === undefined ? preset.memberFields.rules : Boolean(f.rules) },
     ...(typeof c.sessionsFrom === "string" ? { sessionsFrom: c.sessionsFrom } : preset.sessionsFrom ? { sessionsFrom: preset.sessionsFrom } : {}),
+    ...(() => {
+      const compositions = readCompositions(c.compositions ?? preset.compositions);
+      return Object.keys(compositions).length ? { compositions } : {};
+    })(),
   };
+}
+
+/** Stored compositions, checked: known kinds and roles, whole numbers 1 to 6. */
+function readCompositions(raw: unknown): Partial<Record<RegularKind, Composition>> {
+  const out: Partial<Record<RegularKind, Composition>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [kind, parts] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(kind in SESSION_TYPES) || !parts || typeof parts !== "object") continue;
+    const c: Composition = {};
+    for (const [role, n] of Object.entries(parts as Record<string, unknown>)) {
+      const k = Number(n);
+      if (isRole(role) && Number.isInteger(k) && k > 0 && k <= 6) c[role] = k;
+    }
+    if (Object.keys(c).length) out[kind as RegularKind] = c;
+  }
+  return out;
+}
+
+/** A regular kind of session as this team plans it: the catalogue's, with the team's own parts if it has them. */
+export function sessionTypeFor(config: TeamConfig | undefined, kind: RegularKind): SessionType {
+  const t = SESSION_TYPES[kind];
+  return { ...t, composition: { ...(config?.compositions?.[kind] ?? t.composition) } };
 }
 
 /** The session types this team plans, for "Start from" in the session dialog (all of them when it has none). */

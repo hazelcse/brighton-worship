@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatRange, nextQuarter, quarterOf, todayYmd } from "@/lib/roster";
 import { loadAssignments, loadRoster, publishedRosterFor } from "@/lib/roster-data";
 import { loadServeStatuses } from "@/lib/serving";
@@ -11,6 +11,7 @@ import { revisionOf } from "@/lib/roster-revision";
 import { EditPublishedButton } from "@/components/roster/revision-controls";
 import { FilteredRosterTable } from "@/components/roster/roster-filter";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { splitsMinistry } from "@/lib/team-config";
 
 export const metadata: Metadata = { title: "This quarter's roster · Brighton Worship" };
 
@@ -21,7 +22,7 @@ type Search = Promise<{ quarter?: string }>;
  * `?quarter=next` shows next quarter's instead, once it's been published.
  */
 async function CurrentRoster({ searchParams }: { searchParams: Search }) {
-  const user = await requireUser();
+  const user = await requireTeamUser("/roster/current", "team");
   if (!user.can("roster.view")) notFound();
   const { quarter } = await searchParams;
   const today = todayYmd();
@@ -60,7 +61,7 @@ async function CurrentRoster({ searchParams }: { searchParams: Search }) {
           <span aria-hidden className="inline-block size-3 rounded bg-red-100 ring-1 ring-red-200" /> Can&apos;t serve, looking for cover
         </span>
       </div>
-      <FilteredRosterTable sessions={sessions} assignments={assignments} serveStatus={statuses} thisWeekOf={todayYmd()} peopleFilter={user.isLead || user.isObserver} meId={user.id} />
+      <FilteredRosterTable splitsMinistry={splitsMinistry(user.team.config)} sessions={sessions} assignments={assignments} serveStatus={statuses} thisWeekOf={todayYmd()} peopleFilter={user.isLead || user.isObserver} meId={user.id} />
     </div>
   );
 }

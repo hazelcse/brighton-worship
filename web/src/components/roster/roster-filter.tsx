@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState, useSyncExternal
 import { CellEditor, type EditPerson } from "./cell-editor";
 import { isHighlighted, useHighlight } from "./highlight";
 import { hhmm, usesMinistry } from "@/lib/roster";
+import type { TeamConfig } from "@/lib/team-config";
 import type { AssignmentRow, SessionRow } from "@/lib/roster-data";
 import { RosterTable } from "./roster-results";
 import { SessionDialog } from "./session-planner";
@@ -325,9 +326,15 @@ export function FilteredRosterTable({
   thisWeekOf,
   locked,
   toolbarEnd,
+  splitsMinistry = true,
+  teamConfig,
 }: {
+  /** The team's config, for the session settings dialog (a media team: its crew, not the band). */
+  teamConfig?: TeamConfig;
   sessions: SessionRow[];
   assignments: AssignmentRow[];
+  /** Whether the team splits EM and CM (its config); a media team doesn't: no Ministry filter or EM/CM column. */
+  splitsMinistry?: boolean;
   /** This quarter's roster only: "sessionId|memberId" -> whether they've confirmed. */
   serveStatus?: Record<string, "pending" | "accepted" | "declined">;
   /** Mark out the week containing this day ("YYYY-MM-DD"), e.g. today on this quarter's roster. */
@@ -414,8 +421,8 @@ export function FilteredRosterTable({
   );
   const ids = new Set(shown.map((s) => s.id));
   const active = shown.filter((s) => !s.cancelled).length;
-  // No EM or CM sessions (e.g. Youth): no Ministry filter or EM/CM column.
-  const showMinistry = usesMinistry(sessions);
+  // No EM or CM sessions (e.g. Youth), or a team without the split (media): no Ministry filter or EM/CM column.
+  const showMinistry = splitsMinistry && usesMinistry(sessions);
 
   return (
     // Clicks inside the roster keep a rule highlight; clicks elsewhere clear it.
@@ -497,6 +504,7 @@ export function FilteredRosterTable({
             {settingsOf && (
               <SessionDialog
                 key={settingsOf.id}
+                teamConfig={teamConfig}
                 rosterId={edit.rosterId}
                 quarter={edit.quarter}
                 onClose={closeSession}

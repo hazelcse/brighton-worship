@@ -37,6 +37,12 @@ async function PermissionsView() {
   const memberCount = (groupId: string) => (memberships ?? []).filter((m) => m.group_id === groupId).length;
   // The lead hands over the lead; root and developers can also choose a team's lead.
   const isRealLead = leadId === viewer.id || overseesLeads(viewer);
+  // Root or a developer changing someone else's lead: they stay root, so the card speaks of the current lead.
+  const actingForLead = leadId !== viewer.id;
+  const leadName = (() => {
+    const u = (users ?? []).find((x) => x.id === leadId);
+    return u ? ((u.full_name as string) || (u.email as string)) : null;
+  })();
 
   return (
     <div className="space-y-10">
@@ -130,8 +136,9 @@ async function PermissionsView() {
               Transfer lead
             </h2>
             <p className="text-sm text-muted">
-              Hand the lead to another member. Each team has one lead; the current lead becomes an ordinary member of the group you
-              pick.
+              {actingForLead
+                ? `Change ${viewer.team.name}'s lead${leadName ? ` from ${leadName}` : ""} to another member of the team. Each team has one lead; ${leadName ?? "the current lead"} becomes an ordinary member of the group you pick. You stay ${viewer.isDeveloper ? "a developer" : "root"}.`
+                : "Hand the lead to another member. Each team has one lead; you become an ordinary member of the group you pick."}
             </p>
           </div>
           <TransferLead
@@ -140,6 +147,7 @@ async function PermissionsView() {
               .map((u) => ({ id: u.id, name: (u.full_name as string) || (u.email as string) }))
               .sort((x, y) => x.name.localeCompare(y.name))}
             groups={groups.map((g) => ({ id: g.id, name: g.name }))}
+            currentLead={actingForLead ? (leadName ?? "") : null}
           />
         </section>
       )}

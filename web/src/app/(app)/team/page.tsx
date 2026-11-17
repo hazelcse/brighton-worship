@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { TeamLoader } from "@/components/team-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMembers } from "@/lib/team";
 import { TeamGallery } from "@/components/team/team-gallery";
@@ -12,7 +12,7 @@ import { groupTeams } from "@/lib/teams";
 export const metadata: Metadata = { title: "Team · Brighton Worship" };
 
 async function TeamView() {
-  const user = await requireUser();
+  const user = await requireTeamUser("/team", "team");
   if (!user.can("team.view")) {
     return (
       <p className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">

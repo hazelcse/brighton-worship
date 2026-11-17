@@ -34,22 +34,28 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
     await supabase.auth.signOut({ scope: "local" });
     return { error: "This account has been deactivated. Contact a team admin.", email };
   }
-  // The team of this kind they're on (Main Worship, Youth Worship, ...). Root and developers aren't
-  // on any team and can log in from either title, as can an observer (it opens its group's worship team).
-  const team = await loginTeam(kind, data.user.id, {
-    isRoot: Boolean(profile.is_root),
-    isDeveloper: Boolean(profile.is_developer),
-    observerGroup: (profile.observer_group as "main" | "youth" | null) ?? null,
-  });
+  const jar = await cookies();
+  jar.set(LOGIN_KIND_COOKIE, kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  jar.delete(VIEW_AS_COOKIE); // "view as" names a group or person in the last team
+
+  // Root and observers oversee more than one team: from either title they open Brighton Serving,
+  // their own view outside every team (no team cookie).
+  if (profile.is_root || (profile.observer_group && !profile.is_developer)) {
+    jar.delete(TEAM_COOKIE);
+    redirect(profile.must_change_password ? "/change-password" : "/home");
+  }
+
+  // Everyone else: the team of this kind they're on (Main Worship, Youth Worship, ...). Developers
+  // aren't on any team and can log in from either title.
+  const team = await loginTeam(kind, data.user.id, { isDeveloper: Boolean(profile.is_developer) });
   if (!team) {
     await supabase.auth.signOut({ scope: "local" });
     return { error: `You're not on a ${kind} team. Hold the title to switch to ${KIND_TITLE[kind === "worship" ? "media" : "worship"]}.`, email };
   }
-
-  (await cookies()).set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
-  (await cookies()).set(LOGIN_KIND_COOKIE, kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
-  (await cookies()).delete(VIEW_AS_COOKIE); // "view as" names a group or person in the last team
-  redirect(profile.must_change_password ? "/change-password" : "/home");
+  jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  // Straight to their team's own home: going via /home would show the worship loader before it
+  // redirected a media team to /media.
+  redirect(profile.must_change_password ? "/change-password" : TEAM_HOME[team.kind]);
 }
 
 export type ChangePasswordState = { error: string | null };
@@ -97,7 +103,7 @@ export async function switchTeam(formData: FormData): Promise<void> {
   const realId = user.viewingAsPerson?.realId ?? user.id;
   const team = await teamBySlug(String(formData.get("team") ?? ""));
   // Only a team they're on (root and developers switch from the Teams page instead).
-  if (!team || !(await membership(team.id, realId))) redirect(TEAM_HOME[user.team.kind]);
+  if (!team || !(await membership(team.id, realId))) redirect(user.team ? TEAM_HOME[user.team.kind] : "/home");
   const jar = await cookies();
   jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   jar.set(LOGIN_KIND_COOKIE, team.kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });

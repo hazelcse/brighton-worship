@@ -22,9 +22,10 @@ export function Crew({ crew }: { crew: CrewMember[] }) {
             return (
               <div key={key}>
                 {groups.size > 1 && <p className="mb-1 text-xs text-muted">{key}</p>}
-                <dl className="text-sm">
+                {/* Two columns (filled top to bottom) once the card is wide enough, like the band. */}
+                <dl className="gap-x-6 text-sm @md:columns-2">
                   {[...roles].map(([role, people]) => (
-                    <div key={role} className="flex gap-3 py-0.5">
+                    <div key={role} className="flex break-inside-avoid gap-3 py-0.5">
                       <dt className="w-24 shrink-0 text-xs leading-5 text-muted">{ROLE_LABEL[role] ?? role}</dt>
                       <dd className="min-w-0 flex-1">{people.join(", ")}</dd>
                     </div>

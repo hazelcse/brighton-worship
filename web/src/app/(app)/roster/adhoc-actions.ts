@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, inTeam } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { teamProfiles } from "@/lib/teams";
 import { ATTACHED_ROLES, ROLE_LABEL, SINGING_ROLES, defaultSessions, quarterOf, todayYmd } from "@/lib/roster";
@@ -54,7 +54,7 @@ async function targetRoster(db: Db, date: string, teamId: string): Promise<Roste
 async function signedInRoot() {
   const user = await getCurrentUser();
   if (!user?.isLead) throw new Error("Only the lead can add ad-hoc sessions.");
-  return user;
+  return inTeam(user);
 }
 
 const isDay = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -173,7 +173,7 @@ export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): 
       const { data, error } = await db.from("rosters").insert({ starts_on: q.start, ends_on: q.end, created_by: user.id, team_id: user.team.id }).select("id, status, starts_on, ends_on").single();
       if (error) throw error;
       roster = data as Roster;
-      const { error: sErr } = await db.from("roster_sessions").insert(defaultSessions(q, user.team.config.sessionKinds).map((x) => ({ ...x, roster_id: roster!.id })));
+      const { error: sErr } = await db.from("roster_sessions").insert(defaultSessions(q, user.team.config.sessionKinds, user.team.config.compositions, user.team.kind !== "media").map((x) => ({ ...x, roster_id: roster!.id })));
       if (sErr) throw sErr;
       await db.from("audit_log").insert({ actor_id: user.id, action: "roster.create", target: roster.id, details: { quarter: q.label, for: "ad-hoc session" } });
     }

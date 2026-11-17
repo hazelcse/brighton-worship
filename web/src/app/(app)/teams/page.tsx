@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { hasDeveloperAccess, requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ActionForm } from "@/components/action-form";
 import { TeamLoader } from "@/components/team-loader";
@@ -17,7 +17,7 @@ type MemberRow = { team_id: string; is_lead: boolean; profiles: { full_name: str
 
 async function TeamsView() {
   const user = await requireUser();
-  if (!user.isRoot && !(user.isDeveloper && !user.viewingAsPerson)) notFound();
+  if (!user.isRoot && !hasDeveloperAccess(user)) notFound();
 
   const db = createAdminClient();
   const [{ data: teams }, { data: members }, { data: permissions }, { data: observerRows }] = await Promise.all([

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatRange, quarterOf, todayYmd } from "@/lib/roster";
 import { listRosters } from "@/lib/roster-data";
 
@@ -17,7 +17,7 @@ const STATUS_STYLE = {
 };
 
 async function PastRosters() {
-  const user = await requireUser();
+  const user = await requireTeamUser("/roster/past", "team");
   if (!user.can("roster.edit")) notFound();
   const today = todayYmd();
   // Past = published rosters whose last date has passed, plus older versions that were replaced.

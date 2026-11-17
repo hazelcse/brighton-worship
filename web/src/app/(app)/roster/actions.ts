@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getCurrentUser, requirePermission } from "@/lib/auth";
+import { getCurrentUser, inTeam, requirePermission } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ATTACHED_ROLES,
@@ -60,7 +60,7 @@ export async function createRoster(quarterStart: string): Promise<ActionState> {
         .single();
       if (error) throw error;
       id = data.id;
-      const sessions = defaultSessions(q, user.team.config.sessionKinds).map((s) => ({ ...s, roster_id: id }));
+      const sessions = defaultSessions(q, user.team.config.sessionKinds, user.team.config.compositions, user.team.kind !== "media").map((s) => ({ ...s, roster_id: id }));
       const { error: sErr } = await db.from("roster_sessions").insert(sessions);
       if (sErr) throw sErr;
       await audit(user.id, "roster.create", id, { quarter: q.label });
@@ -174,7 +174,7 @@ async function draftFor(rosterId: string, user?: { isLead: boolean }) {
     .from("rosters")
     .select("id, status, starts_on, ends_on")
     .eq("id", rosterId)
-    .eq("team_id", me.team.id)
+    .eq("team_id", inTeam(me).team.id)
     .maybeSingle();
   if (!data) throw new Error("Roster not found.");
   if (data.status === "revision") {
@@ -560,7 +560,7 @@ export async function setServeLess(memberId: string, factor: number | null): Pro
     const user = await getCurrentUser();
     if (!user?.isLead) return { ok: false, message: "Only the lead can change who serves less." };
     const db = createAdminClient();
-    const { data: rule } = await db.from("roster_rules").select("id, params").eq("team_id", user.team.id).eq("template", "fairness").maybeSingle();
+    const { data: rule } = await db.from("roster_rules").select("id, params").eq("team_id", inTeam(user).team.id).eq("template", "fairness").maybeSingle();
     if (!rule) return { ok: false, message: "The fairness rule is missing." };
     const reduced: Record<string, number> = { ...((rule.params as { reduced?: Record<string, number> })?.reduced ?? {}) };
     const f = factor == null ? 1 : Math.round(Number(factor) * 100) / 100;
@@ -587,7 +587,7 @@ export async function setRuleWeight(ruleId: string, weight: number): Promise<Act
     const user = await getCurrentUser();
     if (!user?.isLead) return { ok: false, message: "Only the lead can change rule weights." };
     const w = Math.min(1, Math.max(0, Math.round(Number(weight) * 100) / 100));
-    const { error } = await createAdminClient().from("roster_rules").update({ weight: w }).eq("id", ruleId).eq("team_id", user.team.id);
+    const { error } = await createAdminClient().from("roster_rules").update({ weight: w }).eq("id", ruleId).eq("team_id", inTeam(user).team.id);
     if (error) throw error;
   } catch (e) {
     return fail(e);
@@ -684,7 +684,7 @@ export async function editCell(
     // Names from their login; what they play from their profile on this team (not another team's).
     const [{ data: profiles }, onTeam] = await Promise.all([
       ids.length ? db.from("profiles").select("id, full_name, email").in("id", ids) : Promise.resolve({ data: [] as { id: string; full_name: string; email: string }[] }),
-      teamProfiles(user.team.id, ids),
+      teamProfiles(inTeam(user).team.id, ids),
     ]);
     const person = new Map(
       (profiles ?? []).filter((p) => onTeam.has(p.id as string)).map((p) => [p.id as string, { ...p, instruments: onTeam.get(p.id as string)!.instruments }]),

@@ -249,8 +249,21 @@ export const partInfo = (role: string) => PART_ROLES.find((p) => p.role === role
 /** Worship leader and vocalist colours, apart from the instruments', for roles that aren't parts. */
 const SINGER_COLORS: Record<string, string> = { "worship leader": "#b5852a", vocalist: "#c4692f" };
 
-/** Any rostered role's colour (singers or instruments); null for anything else. */
-export const roleColor = (role: string) => SINGER_COLORS[role] ?? partInfo(role)?.color ?? null;
+/** Media teams' roles, each its own colour (for the viewer's highlight on a crew). */
+const CREW_COLORS: Record<string, string> = {
+  "media ic": "#9a6b2f",
+  "wide angle cam": "#3f78a8",
+  "close up cam": "#2f8a8a",
+  "roving cam": "#6a8a3a",
+  director: "#a0525a",
+  "video mixer": "#7b5ea7",
+  projectionist: "#c0702f",
+  lights: "#b59a2a",
+  soundboard: "#5a6b8c",
+};
+
+/** Any rostered role's colour (singers, instruments or a crew's roles); null for anything else. */
+export const roleColor = (role: string) => SINGER_COLORS[role] ?? partInfo(role)?.color ?? CREW_COLORS[role] ?? null;
 
 /** An instrument's colour, see-through: the tint behind its cards. */
 export const partTint = (color: string) => `${color}26`;

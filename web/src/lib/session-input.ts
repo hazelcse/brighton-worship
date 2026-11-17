@@ -1,5 +1,6 @@
 import "server-only";
-import { ROLES, addDays, type Composition, type Ministry } from "@/lib/roster";
+import { addDays, type Composition, type Ministry } from "@/lib/roster";
+import { ROLE_CATALOGUE } from "@/lib/team-config";
 
 /** Checking a session's details as sent from the browser (roster planning and ad-hoc sessions). */
 
@@ -8,7 +9,8 @@ export const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 export function cleanComposition(raw: unknown): Composition {
   const out: Composition = {};
   if (raw && typeof raw === "object") {
-    for (const r of ROLES) {
+    // Any role a team can have: the band's instruments or a media team's roles.
+    for (const r of ROLE_CATALOGUE) {
       const n = Number((raw as Record<string, unknown>)[r.value] ?? 0);
       if (Number.isInteger(n) && n > 0 && n <= 6) out[r.value] = n;
     }
@@ -20,7 +22,7 @@ export function compositionProblem(c: Composition): string | null {
   const players = Object.entries(c)
     .filter(([role]) => role !== "band leader")
     .reduce((n, [, k]) => n + (k ?? 0), 0);
-  if (players === 0) return "Add at least one person to the band.";
+  if (players === 0) return "Add at least one person.";
   const instrumentalists = Object.entries(c)
     .filter(([role]) => !["band leader", "worship leader", "vocalist"].includes(role))
     .reduce((n, [, k]) => n + (k ?? 0), 0);

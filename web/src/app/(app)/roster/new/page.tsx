@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatRange, nextQuarter, quarterOf, todayYmd } from "@/lib/roster";
 import { listRosters, type RosterRow } from "@/lib/roster-data";
 import { RosterList, type RosterItem } from "@/components/roster/roster-list";
@@ -14,7 +14,7 @@ const stageOf = (r: RosterRow): RosterItem["stage"] => (r.status === "published"
 
 /** Current rosters (drafts, and published ones that haven't ended). Past ones live on /roster/past. */
 async function Rosters() {
-  const user = await requireUser();
+  const user = await requireTeamUser("/roster/new", "team");
   if (!user.can("roster.edit")) notFound();
   const today = todayYmd();
   const all = await listRosters(user.team.id);

@@ -29,18 +29,15 @@ export async function chosenLoginKind(): Promise<TeamKind> {
  * The team someone logs into from a kind's login page: of the teams of that kind they're on, a Main
  * team first (e.g. Main Worship before Youth Worship), then in team order. They can switch to their
  * other teams from the profile menu (switchTeam).
- * Root, observers and developers aren't on any team: root opens Main Worship's view, an observer its
- * group's worship team, developers the kind's first team.
+ * Developers aren't on any team: they open the kind's first team. Root and observers don't log into
+ * a team at all (they get Brighton Serving, outside every team), so this isn't asked for them.
  */
 export async function loginTeam(
   kind: TeamKind,
   userId: string,
-  opts: { isRoot: boolean; isDeveloper: boolean; observerGroup?: TeamGroup | null },
+  opts: { isDeveloper: boolean },
 ): Promise<Team | null> {
   const db = createAdminClient();
-  if (opts.isRoot) return teamBySlug(DEFAULT_TEAM);
-  // An observer opens its group's worship team from either title (its view covers the group's media team too).
-  if (opts.observerGroup) return (await groupTeams(opts.observerGroup)).sort((a, b) => Number(a.kind !== "worship") - Number(b.kind !== "worship"))[0] ?? null;
   const { data: teams } = await db.from("teams").select(COLUMNS).eq("kind", kind).order("position");
   // Main teams before Youth ones, then in the Teams page's order.
   const list = (teams ?? []).map(toTeam).sort((a, b) => Number(a.group !== "main") - Number(b.group !== "main"));
@@ -89,9 +86,9 @@ export async function teamBySlug(slug: string): Promise<Team | null> {
   return data ? toTeam(data as TeamRow) : null;
 }
 
-/** The slug in the team cookie (the worship team when there's none). */
-export async function chosenTeamSlug(): Promise<string> {
-  return (await cookies()).get(TEAM_COOKIE)?.value || DEFAULT_TEAM;
+/** The slug in the team cookie, or null when there's none (members then get DEFAULT_TEAM; root and observers, Brighton Serving). */
+export async function chosenTeamSlug(): Promise<string | null> {
+  return (await cookies()).get(TEAM_COOKIE)?.value || null;
 }
 
 /** The ids of everyone on a team (not developers: they aren't members of any team). */

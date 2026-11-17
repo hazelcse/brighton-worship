@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { SessionLoader } from "@/components/session-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { loadSongBank } from "@/lib/sessions";
 import { loadPending } from "@/lib/tracking-data";
 import { PendingList } from "@/components/tracking/pending-list";
@@ -14,7 +14,7 @@ import { splitsMinistry } from "@/lib/team-config";
 export const metadata: Metadata = { title: "Pending sessions · Brighton Worship" };
 
 async function Pending() {
-  const user = await requireUser();
+  const user = await requireTeamUser("/sessions/tracking/pending");
   if (!user.isLead) notFound();
   const [sessions, bank] = await Promise.all([loadPending(user.team.id), loadSongBank()]);
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireLead } from "@/lib/auth";
+import { requireLead, requireLeadAnywhere } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SESSION_TYPES, todayYmd, type RegularKind } from "@/lib/roster";
 import { sessionInTeam } from "@/lib/sessions";
@@ -54,12 +54,13 @@ export async function confirmSession(rosterSessionId: string, input: RecordInput
  */
 export async function deleteRecords(ids: string[]): Promise<TrackingResult> {
   try {
-    const user = await requireLead();
+    const user = await requireLeadAnywhere();
     const wanted = [...new Set(ids)].filter((id) => typeof id === "string" && !id.startsWith("no-session-"));
     if (!wanted.length) throw new Error("Nothing to delete.");
     const db = createAdminClient();
-    // Only this team's records.
-    const { data, error } = await db.from("session_records").delete().in("id", wanted).eq("team_id", user.team.id).select("id, roster_session_id");
+    // Only this team's records (root's Tracking shows every worship team's).
+    const del = db.from("session_records").delete().in("id", wanted);
+    const { data, error } = await (user.isRoot || !user.team ? del : del.eq("team_id", user.team.id)).select("id, roster_session_id");
     if (error) throw new Error(error.message);
     // Keep their roster sessions out of Pending.
     const fromRoster = (data ?? []).flatMap((r) => (r.roster_session_id ? [r.roster_session_id as string] : []));
@@ -78,9 +79,11 @@ export async function deleteRecords(ids: string[]): Promise<TrackingResult> {
 /** Root corrects a tracked session. */
 export async function updateRecord(id: string, input: RecordInput): Promise<TrackingResult> {
   try {
-    const user = await requireLead();
+    const user = await requireLeadAnywhere();
     const db = createAdminClient();
-    const { data: rec } = await db.from("session_records").select("kind").eq("id", id).eq("team_id", user.team.id).maybeSingle();
+    // Root's Tracking shows every worship team's records; a lead only edits their own team's.
+    const found = db.from("session_records").select("kind, team_id").eq("id", id);
+    const { data: rec } = await (user.isRoot || !user.team ? found : found.eq("team_id", user.team.id)).maybeSingle();
     if (!rec) throw new Error("This session isn't in tracking any more.");
     const clean = cleanRecordInput(input, rec.kind);
     const { data, error } = await db
@@ -94,7 +97,7 @@ export async function updateRecord(id: string, input: RecordInput): Promise<Trac
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .eq("team_id", user.team.id)
+      .eq("team_id", rec.team_id)
       .select("id");
     if (error) throw new Error(error.message);
     if (!data?.length) throw new Error("This session isn't in tracking any more.");

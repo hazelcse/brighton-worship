@@ -46,6 +46,7 @@ export async function respondToBroadcast(id: string, acknowledge: boolean): Prom
   try {
     const user = await getCurrentUser();
     if (!user) return { ok: false, message: "You are signed out. Please log in again." };
+    if (!user.team) return { ok: true, message: null }; // Brighton Serving gets no broadcasts
     const db = createAdminClient();
     // Only the signed-in team's broadcasts.
     const { data: b } = await db.from("broadcasts").select("id, requires_ack").eq("id", id).eq("team_id", user.team.id).maybeSingle();

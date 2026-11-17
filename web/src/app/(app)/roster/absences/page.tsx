@@ -12,7 +12,7 @@ import { groupTeams, loadTeams, teamMemberIds, type Team } from "@/lib/teams";
 export const metadata: Metadata = { title: "Absences · Brighton Worship" };
 
 async function Schedule({ searchParams }: { searchParams: Promise<{ cover?: string }> }) {
-  const user = await requireUser();
+  const user = await requireUser("team");
   // No permission needed: absences are personal, so everyone sees and manages their own. Seeing
   // other people's (and every service) is for leads, root and observers, below. Observers are on no
   // team and can't add absences.
@@ -32,7 +32,7 @@ async function Schedule({ searchParams }: { searchParams: Promise<{ cover?: stri
   const observed = user.observerGroup ? await groupTeams(user.observerGroup) : null;
   const teamsOf = observed && user.observerSeesAbsences ? await personTeams(observed.map((t) => t.id)) : null;
   if (teamsOf) query = query.in("member_id", [...teamsOf.keys()]);
-  else if (!user.isRoot) query = user.isLead ? query.in("member_id", [...new Set([...(await teamMemberIds(user.team.id)), user.id])]) : query.eq("member_id", user.id);
+  else if (!user.isRoot) query = user.isLead && user.team ? query.in("member_id", [...new Set([...(await teamMemberIds(user.team.id)), user.id])]) : query.eq("member_id", user.id);
   const [{ data }, personAreas] = await Promise.all([
     observed && !teamsOf ? Promise.resolve({ data: [] as never[] }) : query,
     user.isRoot ? loadPersonAreas() : Promise.resolve(teamsOf),
@@ -58,7 +58,7 @@ async function Schedule({ searchParams }: { searchParams: Promise<{ cover?: stri
       ? loadTeams().then((ts) => loadServices(ts.map((t) => t.id), new Map(ts.map((t) => [t.id, t]))))
       : observed
         ? loadServices(observed.map((t) => t.id), undefined, { byTeam: Boolean(teamsOf) })
-        : user.isLead
+        : user.isLead && user.team
           ? loadServices([user.team.id])
           : Promise.resolve([]),
     observed ? Promise.resolve([]) : loadMySessions(user.id),

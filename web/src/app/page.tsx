@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { formatTime } from "@/lib/roster";
 import { morningServiceTonight } from "@/lib/night-owl";
-import { getSessionUser } from "@/lib/auth";
+import { TEAM_HOME, getSessionUser } from "@/lib/auth";
 import { LoginButton } from "@/components/login-dialog";
 import { TeamLogin } from "@/components/team-login";
 import { chosenLoginKind, KIND_TITLE, loadTeams, type TeamKind } from "@/lib/teams";
@@ -11,7 +11,10 @@ import { chosenLoginKind, KIND_TITLE, loadTeams, type TeamKind } from "@/lib/tea
 /** Sends already-signed-in users straight to the app. Streams in after the static shell. */
 async function RedirectIfSignedIn() {
   const user = await getSessionUser();
-  if (user) redirect(user.mustChangePassword ? "/change-password" : "/home");
+  if (!user) return null;
+  // Their team's own home (a media team's is /media); root and observers always get /home.
+  const home = user.team && !user.isRoot && !user.isObserver ? TEAM_HOME[user.team.kind] : "/home";
+  redirect(user.mustChangePassword ? "/change-password" : home);
   return null;
 }
 

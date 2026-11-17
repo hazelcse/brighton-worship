@@ -1,10 +1,10 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { SONGS_TAG } from "@/lib/cache-tags";
 import { cookies } from "next/headers";
-import { VIEW_AS_COOKIE, VIEW_AS_PERSON, getSessionUser } from "@/lib/auth";
+import { TEAM_HOME, VIEW_AS_COOKIE, VIEW_AS_PERSON, getSessionUser, observerViewCookie, type ObserverView } from "@/lib/auth";
+import type { TeamKind } from "@/lib/team-config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { defaultMemberPassword } from "@/lib/default-password";
 import { addDays, daysBetween, defaultSessions, quarterOf, todayYmd, weekday, ymd as ymdOf, type SessionKind } from "@/lib/roster";
@@ -12,24 +12,57 @@ import { BAND_COLUMNS, MAX_MAIN_SET, ROLE_TO_BAND, cleanRecordInput, isSunday, t
 import { readSessionsCsv, readSessionsWorkbook } from "@/lib/session-import";
 import { readXlsx } from "@/lib/xlsx";
 import { isInstrument } from "@/lib/team";
-import { DEFAULT_TEAM, TEAM_COOKIE, loadTeams, membership, teamBySlug, teamMemberIds, teamProfiles, type Team } from "@/lib/teams";
+import { LOGIN_KIND_COOKIE, TEAM_COOKIE, loadTeams, membership, teamBySlug, teamMemberIds, teamProfiles, type Team } from "@/lib/teams";
 
 /** Developers' Populate dialog: every team (to pick which one to fill) and the one they're in now. */
 export async function populateTeams(): Promise<{ teams: { slug: string; name: string }[]; current: string } | null> {
   const user = await getSessionUser();
   if (!user?.isDeveloper) return null;
-  return { teams: (await loadTeams()).map((t) => ({ slug: t.slug, name: t.name })), current: user.team.slug };
+  return { teams: (await loadTeams()).map((t) => ({ slug: t.slug, name: t.name })), current: user.team?.slug ?? "" };
 }
 
 /** The team a Populate action fills: the one picked in the dialog, or the one the developer is in. */
-async function populateTarget(fallback: Team, slug: string | null | undefined): Promise<Team | null> {
+async function populateTarget(fallback: Team | null, slug: string | null | undefined): Promise<Team | null> {
   return slug ? teamBySlug(slug) : fallback;
 }
 
 /**
- * Developers only: see (and use) the app as root or as one permission group, or act as one
- * person ("person:<id>": their identity and permissions, changes are made as them). null = back to the developer's own full access. The choice
- * is a cookie; the server only honours it for developers.
+ * Developers only: open one team (picked by group, then from that group's teams), with a standard
+ * account (their own full access) or as that group's observer. Any combination works; an observer
+ * always sees the worship app's pages, as real observers do. Returns where to go next: the page
+ * they're on (from) when the interface stays the same, otherwise the new interface's home.
+ */
+export async function setDevView(
+  /** observerPerms: the observer's permissions for this view; left out, the group's real observer settings. */
+  view: { team: string; observer: boolean; observerPerms?: ObserverView },
+  from: string,
+): Promise<{ ok: boolean; message: string | null; next?: string }> {
+  const user = await getSessionUser();
+  if (!user?.isDeveloper) return { ok: false, message: "Only developers can switch views." };
+  const actorId = user.viewingAsPerson?.realId ?? user.id;
+  const team = await teamBySlug(view.team);
+  if (!team) return { ok: false, message: "That team doesn't exist." };
+  const jar = await cookies();
+  jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  jar.set(LOGIN_KIND_COOKIE, team.kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  if (view.observer) jar.set(VIEW_AS_COOKIE, observerViewCookie(view.observerPerms ?? {}), { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" });
+  else jar.delete(VIEW_AS_COOKIE);
+  await createAdminClient()
+    .from("audit_log")
+    .insert({ actor_id: actorId, action: "developer.view_as", target: actorId, details: { team: team.slug, observer: view.observer, observerPerms: view.observerPerms ?? null } });
+  revalidatePath("/", "layout");
+  // Observers always get the worship app's pages; everyone else gets their team kind's.
+  const interfaceOf = (kind: TeamKind, observer: boolean) => (observer ? "worship" : kind);
+  const wasMedia = from === "/media" || from.startsWith("/media/");
+  const now = interfaceOf(team.kind, view.observer);
+  const next = now === "media" ? TEAM_HOME.media : wasMedia ? TEAM_HOME.worship : from;
+  return { ok: true, message: null, next };
+}
+
+/**
+ * Developers only: act as one person ("person:<id>": their identity and permissions, changes are
+ * made as them), or null to go back to the developer's own full access. The choice is a cookie;
+ * the server only honours it for developers.
  */
 export async function setViewAs(view: string | null, teamSlug?: string): Promise<{ ok: boolean; message: string | null }> {
   // getSessionUser, not getCurrentUser: switching back must work while viewing as a person.
@@ -48,14 +81,13 @@ export async function setViewAs(view: string | null, teamSlug?: string): Promise
         .maybeSingle();
       if (!data || !data.is_active || data.is_developer) return { ok: false, message: "That person can't be viewed as." };
       // Someone on another team: switch to that team first (a person is viewed as within one team).
-      if (teamSlug && teamSlug !== user.team.slug) {
+      if (teamSlug && teamSlug !== user.team?.slug) {
         const team = await teamBySlug(teamSlug);
         if (!team || !(await membership(team.id, data.id))) return { ok: false, message: "They aren't on that team." };
         jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
       }
-    } else if (view !== "lead") {
-      const { data } = await createAdminClient().from("groups").select("name").eq("team_id", user.team.id).eq("name", view).maybeSingle();
-      if (!data) return { ok: false, message: "That permission group doesn't exist." };
+    } else {
+      return { ok: false, message: "Unknown view." };
     }
     jar.set(VIEW_AS_COOKIE, view, { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" });
   }
@@ -296,7 +328,7 @@ export async function populatePastSessions(
 
     // The regular schedule, plus 1–2 ad-hoc events on a day that isn't a Sunday.
     type Planned = { date: string; kind: SessionKind; name: string; ministry: "em" | "cm" | "any"; composition: Record<string, number> };
-    const planned: Planned[] = defaultSessions(q, team.config.sessionKinds).map((s) => ({ date: s.date, kind: s.kind, name: s.name, ministry: s.ministry, composition: s.composition }));
+    const planned: Planned[] = defaultSessions(q, team.config.sessionKinds, team.config.compositions).map((s) => ({ date: s.date, kind: s.kind, name: s.name, ministry: s.ministry, composition: s.composition }));
     const days = daysBetween(q.start, q.end) + 1;
     for (const name of pick(AD_HOC_EVENTS, randInt(1, 2))) {
       let date = addDays(q.start, randInt(0, days - 1));
@@ -630,17 +662,4 @@ export async function importMembersJson(
   } catch (e) {
     return { ok: false, message: e instanceof Error ? `Couldn't import: ${e.message}` : "Couldn't import." };
   }
-}
-
-/**
- * Developers in the media app (e.g. viewing as a media team member): stop viewing as anyone and go
- * back to the worship app, which has the developer menu.
- */
-export async function backToDeveloper(): Promise<void> {
-  const user = await getSessionUser();
-  if (!user?.isDeveloper) redirect("/");
-  const jar = await cookies();
-  jar.delete(VIEW_AS_COOKIE);
-  jar.set(TEAM_COOKIE, DEFAULT_TEAM, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
-  redirect("/home");
 }

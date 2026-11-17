@@ -7,13 +7,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isInstrument } from "@/lib/team";
 import { defaultMemberPassword } from "@/lib/default-password";
 import { membership } from "@/lib/teams";
-import type { CurrentUser } from "@/lib/auth";
+import { logMemberChange } from "@/lib/serving";
+import type { TeamUser } from "@/lib/auth";
 
 /**
  * The person must be on the actor's team (developers can also manage developer accounts).
  * Returns an error message, or null when it's fine.
  */
-async function notOnTeam(actor: CurrentUser, id: string): Promise<string | null> {
+async function notOnTeam(actor: TeamUser, id: string): Promise<string | null> {
   if (await membership(actor.team.id, id)) return null;
   // Root can reset the password of the observer of this team's group (shown in its directory).
   if (actor.isRoot) {
@@ -45,7 +46,7 @@ function fail(e: unknown): MemberFormState {
  * The form's fields. Name, email and gender are the person's (shared by every team they're on);
  * instruments or roles, EM/CM and "serves at" are their profile on this team only.
  */
-function readFields(formData: FormData, team: CurrentUser["team"]) {
+function readFields(formData: FormData, team: TeamUser["team"]) {
   const name = String(formData.get("name") ?? "").trim().replace(/\s+/g, " ");
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   // Only what this team offers (a worship team's instruments, a media team's roles).
@@ -71,7 +72,7 @@ function teamFields(f: ReturnType<typeof readFields>) {
   };
 }
 
-const rolesWord = (team: CurrentUser["team"]) => (team.kind === "media" ? "role" : "instrument");
+const rolesWord = (team: TeamUser["team"]) => (team.kind === "media" ? "role" : "instrument");
 
 /** Names must be unique (ignoring case and spacing). */
 async function nameTaken(name: string, exceptId?: string): Promise<boolean> {
@@ -117,6 +118,7 @@ export async function createMember(_prev: MemberFormState, formData: FormData): 
       const { data: group } = await db.from("groups").select("id").eq("team_id", actor.team.id).eq("name", groupName).maybeSingle();
       if (group) await db.from("user_groups").insert({ user_id: existing.id, group_id: group.id });
       await db.from("audit_log").insert({ actor_id: actor.id, action: "member.link_team", target: existing.id, details: { team: actor.team.slug, groupName, instruments } });
+      await logMemberChange(actor, "member_added", existing.id, existing.full_name || email);
       newId = existing.id;
     } else {
       if (!name) return { ok: false, message: "Enter their name." };
@@ -149,6 +151,7 @@ export async function createMember(_prev: MemberFormState, formData: FormData): 
       const { data: group } = await db.from("groups").select("id").eq("team_id", actor.team.id).eq("name", groupName).maybeSingle();
       if (group) await db.from("user_groups").insert({ user_id: newId, group_id: group.id });
       await db.from("audit_log").insert({ actor_id: actor.id, action: "member.create", target: newId, details: { uid, name, groupName, team: actor.team.slug } });
+      await logMemberChange(actor, "member_added", newId, name);
     }
   } catch (e) {
     return fail(e);
@@ -245,11 +248,14 @@ export async function deleteMember(id: string): Promise<MemberFormState> {
       const { error } = await db.from("team_members").delete().eq("team_id", actor.team.id).eq("user_id", id);
       if (error) throw error;
       await db.from("audit_log").insert({ actor_id: actor.id, action: "member.leave_team", target: id, details: { name: p.full_name, team: actor.team.slug } });
+      await logMemberChange(actor, "member_removed", id, p.full_name);
     } else {
       // Removing the login also removes their profile and group memberships.
       const { error } = await db.auth.admin.deleteUser(id);
       if (error) throw error;
       await db.from("audit_log").insert({ actor_id: actor.id, action: "member.delete", target: id, details: { name: p.full_name, uid: p.uid } });
+      // Their profile's gone: member_id would only be nulled, so it's left out (the name says who).
+      await logMemberChange(actor, "member_removed", null, p.full_name);
     }
   } catch (e) {
     return fail(e);

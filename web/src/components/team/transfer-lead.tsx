@@ -6,14 +6,22 @@ import { transferLead, type ActionResult } from "@/app/(app)/team/permissions/ac
 const input =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
-/** The lead (or root): hand the team's lead to someone else. Needs your password. */
+/**
+ * Hand the team's lead to someone else. Needs your password. The lead hands over their own lead;
+ * root or a developer (`currentLead` set) changes it from the current lead and stays root themselves.
+ */
 export function TransferLead({
   people,
   groups,
+  currentLead = null,
 }: {
   people: { id: string; name: string }[];
   groups: { id: string; name: string }[];
+  /** Root or a developer acting: the current lead's name ("" when the team has none). Null when the lead is acting. */
+  currentLead?: string | null;
 }) {
+  const forLead = currentLead !== null;
+  const oldLead = currentLead || "The current lead";
   const [state, formAction, pending] = useActionState<ActionResult, FormData>(transferLead, { ok: false, message: null });
   const [to, setTo] = useState("");
   const toName = people.find((p) => p.id === to)?.name;
@@ -22,7 +30,10 @@ export function TransferLead({
     <form
       action={formAction}
       onSubmit={(e) => {
-        if (!window.confirm(`Make ${toName ?? "this person"} the lead? The current lead loses lead access straight away.`)) {
+        const msg = forLead
+          ? `Make ${toName ?? "this person"} the lead? ${oldLead} loses lead access straight away.`
+          : `Make ${toName ?? "this person"} the lead? You lose lead access straight away.`;
+        if (!window.confirm(msg)) {
           e.preventDefault();
         }
       }}
@@ -42,7 +53,7 @@ export function TransferLead({
         </select>
       </label>
       <label className="space-y-1 text-sm font-medium">
-        You&apos;ll then be in
+        {forLead ? `${oldLead} will then be in` : "You'll then be in"}
         <select name="my_group" defaultValue={groups.find((g) => g.name === "admin")?.id ?? ""} className={`${input} capitalize`}>
           {groups.map((g) => (
             <option key={g.id} value={g.id}>

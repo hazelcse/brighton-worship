@@ -8,6 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
  * same dots as NoteLoader). Sized and coloured like the other loaders (30px tall,
  * foreground/70). All CSS (see .home-loader in globals.css): it fades in only after 300ms, so quick
  * loads show nothing, and with "reduce motion" on, the band sits still and the cross isn't shown.
+ * Media teams' home gets a crew instead of a band: movie cameras, stage lights and a clapperboard.
  */
 
 const STROKE = {
@@ -18,7 +19,9 @@ const STROKE = {
   strokeLinejoin: "round",
 } as const;
 
-const INSTRUMENTS: { name: string; width: number; svg: ReactNode }[] = [
+type Icon = { name: string; width: number; svg: ReactNode };
+
+const INSTRUMENTS: Icon[] = [
   {
     name: "mic",
     width: 14,
@@ -89,20 +92,90 @@ const INSTRUMENTS: { name: string; width: number; svg: ReactNode }[] = [
   },
 ];
 
+/** A movie camera on a tripod: two film reels on top, lens to the right. */
+const camera = (
+  <>
+    <circle cx="6" cy="7.5" r="4.5" {...STROKE} />
+    <circle cx="6" cy="7.5" r="1.3" fill="currentColor" />
+    <circle cx="15.5" cy="7.5" r="4.5" {...STROKE} />
+    <circle cx="15.5" cy="7.5" r="1.3" fill="currentColor" />
+    <rect x="1" y="13" width="19" height="10.5" rx="1.5" fill="currentColor" />
+    <path d="M20 16.2l8.5-3v10.6l-8.5-3z" fill="currentColor" />
+    <path d="M10.5 23.5L6 29.3M10.5 23.5L15 29.3M10.5 23.5v5.8" {...STROKE} strokeWidth="1.2" />
+  </>
+);
+
+/** A stage spotlight on a stand, tilted up, with a few rays. */
+const stageLight = (
+  <>
+    <g transform="rotate(-25 9 15)">
+      <rect x="4.5" y="7" width="9" height="12" rx="1.5" fill="currentColor" />
+      <rect x="3.3" y="4.6" width="11.4" height="2.8" rx="0.8" fill="currentColor" />
+      <path d="M6 2.6L5 0.4M9 2.3V0M12 2.6l1-2.2" {...STROKE} strokeWidth="1.1" />
+    </g>
+    <path d="M3 13.5v4.5h12v-4.5" {...STROKE} strokeWidth="1.2" />
+    <path d="M9 18v10.5M5 29h8" {...STROKE} />
+  </>
+);
+
+/** A director's clapperboard, the clapper raised. */
+const STRIPES = [3, 9, 15, 21];
+const clapperboard = (
+  <>
+    <rect x="1" y="13" width="24" height="16" rx="1.5" {...STROKE} />
+    <rect x="1" y="13" width="24" height="4" fill="currentColor" />
+    {STRIPES.map((x) => (
+      <path key={x} d={`M${x} 13h3l-2.4 4h-3z`} fill="var(--background)" />
+    ))}
+    <path d="M5 21.5h9M5 25h13" {...STROKE} strokeWidth="1" />
+    <g transform="rotate(-20 1.5 12)">
+      <rect x="1" y="8" width="24" height="4" rx="0.6" fill="currentColor" />
+      {STRIPES.map((x) => (
+        <path key={x} d={`M${x + 2} 8h3l-2.4 4h-3z`} fill="var(--background)" />
+      ))}
+    </g>
+  </>
+);
+
+const CREW: Icon[] = [
+  { name: "camera", width: 30, svg: camera },
+  { name: "stage light", width: 18, svg: stageLight },
+  { name: "clapperboard", width: 26, svg: clapperboard },
+  { name: "stage light 2", width: 18, svg: <g transform="translate(18 0) scale(-1 1)">{stageLight}</g> },
+  { name: "camera 2", width: 30, svg: <g transform="translate(30 0) scale(-1 1)">{camera}</g> },
+];
+
 const GAP = 10;
-const TOTAL = INSTRUMENTS.reduce((sum, i) => sum + i.width, 0) + GAP * (INSTRUMENTS.length - 1);
 
-/** How far each instrument sits from the middle of the row: where it flies in from and back to. */
-const OFFSETS = INSTRUMENTS.map((_, i) => {
-  const left = INSTRUMENTS.slice(0, i).reduce((sum, x) => sum + x.width + GAP, 0);
-  return TOTAL / 2 - (left + INSTRUMENTS[i].width / 2);
-});
+/** How far each icon sits from the middle of the row: where it flies in from and back to. */
+function offsets(icons: Icon[]) {
+  const total = icons.reduce((sum, i) => sum + i.width, 0) + GAP * (icons.length - 1);
+  return icons.map((_, i) => {
+    const left = icons.slice(0, i).reduce((sum, x) => sum + x.width + GAP, 0);
+    return total / 2 - (left + icons[i].width / 2);
+  });
+}
 
-export function HomeLoader({ label = "Loading", className = "" }: { label?: string; className?: string }) {
+const SETS = {
+  worship: { icons: INSTRUMENTS, offsets: offsets(INSTRUMENTS) },
+  media: { icons: CREW, offsets: offsets(CREW) },
+};
+
+export function HomeLoader({
+  label = "Loading",
+  className = "",
+  kind = "worship",
+}: {
+  label?: string;
+  className?: string;
+  /** Which team's home: a band ("worship") or a media crew ("media"). */
+  kind?: keyof typeof SETS;
+}) {
+  const { icons, offsets: OFFSETS } = SETS[kind];
   return (
     <div role="status" className={`home-loader flex flex-col items-center justify-center gap-3 text-muted ${className}`}>
       <div aria-hidden className="relative flex h-[30px] items-end text-foreground/70" style={{ gap: GAP }}>
-        {INSTRUMENTS.map((inst, i) => (
+        {icons.map((inst, i) => (
           <span
             key={inst.name}
             className="home-loader-instrument block"

@@ -6,7 +6,20 @@ import { setNoRosterRoles } from "@/app/(app)/team/actions";
 const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 /** Tick boxes in a dropdown: the parts they play, ticked = not to be rostered for. */
-function RolePicker({ options, value, onChange, label }: { options: string[]; value: string[]; onChange: (v: string[]) => void; label: (r: string) => string }) {
+function RolePicker({
+  options,
+  value,
+  onChange,
+  label,
+  none,
+}: {
+  options: string[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  label: (r: string) => string;
+  /** Shown when nothing's ticked. */
+  none: string;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -30,7 +43,7 @@ function RolePicker({ options, value, onChange, label }: { options: string[]; va
         onClick={() => setOpen((v) => !v)}
         className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
       >
-        <span className={`truncate ${picked.length ? "" : "text-muted"}`}>{picked.length ? picked.map(label).join(", ") : "Nothing: any part they play"}</span>
+        <span className={`truncate ${picked.length ? "" : "text-muted"}`}>{picked.length ? picked.map(label).join(", ") : none}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition ${open ? "rotate-180" : ""}`}>
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -62,6 +75,7 @@ export function PersonalRule({
   instruments,
   noRosterRoles,
   labels,
+  noun = "instruments",
 }: {
   id: string;
   name: string;
@@ -69,13 +83,15 @@ export function PersonalRule({
   noRosterRoles: string[];
   /** Instrument labels (lib/team can't be imported here: it reads the database). */
   labels: Record<string, string>;
+  /** What the team calls them: "instruments" (worship teams) or "roles" (media teams). */
+  noun?: string;
 }) {
   const label = (r: string) => labels[r] ?? r;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(noRosterRoles);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  // Only parts they still play (an instrument taken off their card drops out of the rule).
+  // Only parts they still play (one taken off their card drops out of the rule).
   const off = instruments.filter((i) => noRosterRoles.includes(i));
 
   const save = () =>
@@ -107,7 +123,9 @@ export function PersonalRule({
         )}
       </div>
       {instruments.length === 0 ? (
-        <p className="text-sm text-muted">{name} has no instruments on their card yet.</p>
+        <p className="text-sm text-muted">
+          {name} has no {noun} on their card yet.
+        </p>
       ) : !editing ? (
         <p className="text-sm">
           {name} can serve {list(instruments.map(label))}
@@ -124,7 +142,13 @@ export function PersonalRule({
           <p className="text-sm">
             {name} can serve {list(instruments.map(label))}, but should not be rostered for:
           </p>
-          <RolePicker options={instruments} value={draft} onChange={setDraft} label={label} />
+          <RolePicker
+            options={instruments}
+            value={draft}
+            onChange={setDraft}
+            label={label}
+            none={noun === "roles" ? "Nothing: all roles they do" : "Nothing: any part they play"}
+          />
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button

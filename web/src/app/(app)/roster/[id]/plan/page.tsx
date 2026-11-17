@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatRange, hhmm, quarterOf } from "@/lib/roster";
 import { loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
 import { GenerateControls } from "@/components/roster/generate-controls";
@@ -14,7 +14,7 @@ import { DeleteDraftButton } from "@/components/roster/delete-draft-button";
 export const metadata: Metadata = { title: "Plan roster · Brighton Worship" };
 
 async function PlanView({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
+  const user = await requireTeamUser(`/roster/${(await params).id}/plan`, "team");
   if (!user.can("roster.edit")) notFound();
   const { id } = await params;
   const [data, rules, people] = await Promise.all([loadRoster(id, user.team.id), loadRules(id, user.team.id), loadPeople(user.team)]);

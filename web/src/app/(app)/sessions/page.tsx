@@ -83,15 +83,17 @@ async function SessionsView({ searchParams }: { searchParams: Promise<View> }) {
   after(() => purgeExpiredUploads());
   if (user.isRoot) return <RootServices userId={user.id} />;
   if (user.observerGroup) return <RootServices userId={user.id} group={user.observerGroup} />;
+  const team = user.team;
+  if (!team) return <RootServices userId={user.id} />;
   const all = buildsAnySession(user);
   // The lead (and developers), and anyone with "See every published session plan" (sessions.view), can switch to every upcoming
   // published plan in the team.
   const seesAll = user.isLead || user.can("sessions.view");
   const everyone = seesAll && view === "all";
   const [plans, buildable, fresh] = await Promise.all([
-    loadUpcomingPlans(user.id, user.team.id, { all, everyone }),
-    loadBuildableSessions(user.id, user.team.id),
-    loadNewlyPublished(user.id, user.team.id),
+    loadUpcomingPlans(user.id, team.id, { all, everyone }),
+    loadBuildableSessions(user.id, team.id),
+    loadNewlyPublished(user.id, team.id),
   ]);
   const isNew = new Set(fresh.map((f) => f.planId));
   const isUpdated = new Set(fresh.filter((f) => f.updated).map((f) => f.planId));

@@ -41,6 +41,11 @@ export type CoverCandidate = Candidate & {
   load?: number;
   /** The one to ask: free, with the lightest load (ties: whoever's next session is furthest away). */
   recommended?: boolean;
+  /**
+   * They don't normally serve at this session: outside its ministry (EM / CM) or its type (Sunday /
+   * Prayer & Praise), as the lead's picker and the generator see it. Listed after those who do.
+   */
+  unusual?: boolean;
 };
 
 /** One of the coverer's sessions the requester would take in a swap. */
@@ -148,10 +153,16 @@ export type UpdateKind =
   | "roster_part_changed"
   | "roster_session_changed"
   // ...and to each bandmate of a session whose line-up changed (detail: who moved).
-  | "roster_band_changed";
+  | "roster_band_changed"
+  // A team lead added someone to their team, or removed them: told to root only (detail: their name).
+  | "member_added"
+  | "member_removed";
 
 /** The kinds a republished roster sends, one per person affected. */
 export const ROSTER_CHANGE_KINDS: UpdateKind[] = ["roster_added", "roster_removed", "roster_part_changed", "roster_session_changed", "roster_band_changed"];
+
+/** A lead adding or removing someone: about a team, not a session, and only root hears. */
+export const MEMBER_KINDS: UpdateKind[] = ["member_added", "member_removed"];
 
 export type UpdateItem = {
   id: string;
@@ -182,6 +193,8 @@ export type UpdateItem = {
   resolvedAt: string | null;
   /** Where clicking it goes (a session's plan was updated: its page). */
   href: string | null;
+  /** For a member added or removed: the team's name. */
+  team: string | null;
 };
 
 /** A session the viewer is rostered on, for the calendar. */
@@ -281,7 +294,7 @@ export async function coverOptions(
   rehearsalOn?: string | null,
 ): Promise<CoverCandidate[]> {
   const [{ data: session }, people, { data: serving }, withPlace] = await Promise.all([
-    db.from("roster_sessions").select("date, rehearsal_date, roster_id, rosters!inner(team_id)").eq("id", sessionId).maybeSingle(),
+    db.from("roster_sessions").select("date, kind, ministry, rehearsal_date, roster_id, rosters!inner(team_id)").eq("id", sessionId).maybeSingle(),
     activePeople(db),
     db.from("roster_assignments").select("member_id").eq("session_id", sessionId),
     bandRolesWithPlace(sessionId, requesterId, db),
@@ -291,13 +304,25 @@ export async function coverOptions(
   const teamId = (session.rosters as unknown as { team_id: string }).team_id;
   const rehearsal = rehearsalOn === undefined ? session.rehearsal_date : rehearsalOn;
   const days = [session.date, ...(rehearsal ? [rehearsal] : [])];
-  const [{ data: away }, { data: quarter }] = await Promise.all([
+  const [{ data: away }, { data: quarter }, { data: profiles }] = await Promise.all([
     db
       .from("absences")
       .select("member_id")
       .or(days.map((d) => `and(starts_on.lte.${d},ends_on.gte.${d})`).join(",")),
     db.from("roster_sessions").select("id, date, weight").eq("roster_id", session.roster_id).eq("cancelled", false),
+    db.from("team_members").select("user_id, em_percent, serves").eq("team_id", teamId),
   ]);
+  // Whether they normally serve at this session: its ministry and type (the same test as the lead's picker).
+  const profileOf = new Map((profiles ?? []).map((p) => [p.user_id as string, p]));
+  const pnp = String(session.kind ?? "").endsWith("_pnp");
+  const normallyServes = (id: string) => {
+    const p = profileOf.get(id);
+    const em = p?.em_percent ?? null;
+    const ministryOk = session.ministry === "em" ? em === null || em > 0 : session.ministry === "cm" ? em === null || em < 100 : true;
+    const serves = p?.serves ?? "both";
+    const servesOk = serves === "both" || (serves === "pnp" ? pnp : !pnp);
+    return ministryOk && servesOk;
+  };
   const dateOf = new Map((quarter ?? []).map((s) => [s.id as string, s.date as string]));
   const weightOf = new Map((quarter ?? []).map((s) => [s.id as string, Number(s.weight ?? 1)]));
   const { data: places } = dateOf.size
@@ -331,11 +356,19 @@ export async function coverOptions(
         load: load.get(p.id) ?? 0,
         ...(unavailable ? { unavailable } : {}),
         ...(withPlace.length ? { withPlace } : {}),
+        ...(normallyServes(p.id) ? {} : { unusual: true }),
       };
     })
-    .sort((a, b) => Number(Boolean(a.unavailable)) - Number(Boolean(b.unavailable)) || a.name.localeCompare(b.name));
-  const best = out
-    .filter((c) => !c.unavailable)
+    // Free and normally at this session, then free but not normally, then those who can't be asked.
+    .sort(
+      (a, b) =>
+        Number(Boolean(a.unavailable)) - Number(Boolean(b.unavailable)) ||
+        Number(Boolean(a.unusual)) - Number(Boolean(b.unusual)) ||
+        a.name.localeCompare(b.name),
+    );
+  // Recommend someone who normally serves here; only if nobody does, someone who doesn't.
+  const free = out.filter((c) => !c.unavailable);
+  const best = (free.some((c) => !c.unusual) ? free.filter((c) => !c.unusual) : free)
     .sort((a, b) => a.load! - b.load! ||(nearest.get(b.id) ?? Infinity) - (nearest.get(a.id) ?? Infinity) || a.name.localeCompare(b.name))[0];
   if (best) best.recommended = true;
   return out;
@@ -917,70 +950,95 @@ const PRIVATE: UpdateKind[] = [
   "band_role_refused",
   ...ROSTER_CHANGE_KINDS,
 ];
-/** Swaps not done yet: root doesn't see these unless they're one of the two people. */
+/** Swaps not done yet: leads don't see these unless they're one of the two people. */
 const SWAP_PENDING: UpdateKind[] = ["swap_proposed", "swap_declined"];
+/** Root hears nothing about swaps, on any roster. */
+const SWAPS: UpdateKind[] = [...SWAP_PENDING, "swapped"];
 /** Only root and admins (and whoever caused it) see these. */
 const FOR_ADMINS: UpdateKind[] = ["band_role_missing"];
 
 /**
- * Recent roster changes, newest first. Root sees everything, with reasons. Everyone else sees
+ * Recent roster changes, newest first. Root sees everything but swaps, with reasons, plus leads
+ * adding and removing people on every team. Everyone else sees
  * changes they're part of, and changes to the bands they're in (the session, and for a swap the
  * session offered in return): not changes to other bands, even ones using their instrument.
  */
-export function loadUpdates(user: { id: string; isLead: boolean; team: { id: string } }): Promise<UpdateItem[]> {
-  return updatesFor(user.id, user.isLead, user.team.id);
+export function loadUpdates(user: { id: string; isLead: boolean; isRoot: boolean; team: { id: string } | null }): Promise<UpdateItem[]> {
+  // No team: root on Brighton Serving, which hears about every team's sessions.
+  return updatesFor(user.id, user.isLead, user.isRoot, user.team?.id ?? null);
+}
+
+/** Leads adding or removing people, on every team (root is app-wide): root's alone. */
+export async function logMemberChange(
+  actor: { id: string; isRoot: boolean; team: { id: string } },
+  kind: "member_added" | "member_removed",
+  memberId: string | null,
+  name: string,
+) {
+  if (actor.isRoot) return; // root did it: nothing to tell root
+  await createAdminClient().from("roster_updates").insert({ kind, team_id: actor.team.id, actor_id: actor.id, member_id: memberId, detail: name });
 }
 
 /** How long a roster update stays in the inbox. */
 const UPDATE_LIFETIME_DAYS = 14;
 
 /** Once per request per person: the nav's inbox and the landing page both need it. */
-const updatesFor = cache(async (userId: string, isLead: boolean, teamId: string): Promise<UpdateItem[]> => {
-  const user = { id: userId, isLead };
+const updatesFor = cache(async (userId: string, isLead: boolean, isRoot: boolean, teamId: string | null): Promise<UpdateItem[]> => {
+  const user = { id: userId, isLead, isRoot };
   const db = createAdminClient();
-  // Only the signed-in team's sessions: a lead or admin of one team doesn't hear about another's.
-  const sessions = await publishedSessions(db, teamId);
-  if (!sessions.size) return [];
-  const columns = "id, kind, session_id, other_session_id, role, actor_id, member_id, reason, detail, created_at, resolved_at";
+  const columns = "id, kind, session_id, other_session_id, role, actor_id, member_id, reason, detail, created_at, resolved_at, team_id";
   // Updates expire from the inbox after two weeks (the rows stay in the database).
   const since = new Date(Date.now() - UPDATE_LIFETIME_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  // Only the signed-in team's sessions: a lead or admin of one team doesn't hear about another's.
+  // Root also hears about leads adding or removing people, on every team.
+  const [sessions, { data: memberRows }, { data: teamRows }] = await Promise.all([
+    publishedSessions(db, teamId ?? undefined),
+    user.isRoot
+      ? db.from("roster_updates").select(columns).in("kind", MEMBER_KINDS).gte("created_at", since).order("created_at", { ascending: false }).limit(100)
+      : Promise.resolve({ data: [] as never[] }),
+    user.isRoot ? db.from("teams").select("id, name") : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ]);
+  const teamName = new Map((teamRows ?? []).map((t) => [t.id as string, t.name as string]));
+  if (!sessions.size && !memberRows?.length) return [];
   // Roster changes are also about sessions since cancelled or deleted: fetched on their own.
   let changes = db.from("roster_updates").select(columns).in("kind", ROSTER_CHANGE_KINDS).gte("created_at", since);
   // Bandmates' notes are one per person: root gets only their own, so they don't crowd the limit.
   changes = user.isLead ? changes.or(`kind.neq.roster_band_changed,member_id.eq.${user.id}`) : changes.eq("member_id", user.id);
+  const none = Promise.resolve({ data: [] as never[] });
   const [{ data: onSessions }, { data: changeRows }, people, { data: me }, { data: mine }] = await Promise.all([
-    db
-      .from("roster_updates")
-      .select(columns)
-      .in("session_id", [...sessions.keys()])
-      .neq("kind", "roster_band_changed") // fetched with the roster changes, for the person they're for
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(300),
-    changes.order("created_at", { ascending: false }).limit(100),
+    sessions.size
+      ? db
+          .from("roster_updates")
+          .select(columns)
+          .in("session_id", [...sessions.keys()])
+          .neq("kind", "roster_band_changed") // fetched with the roster changes, for the person they're for
+          .gte("created_at", since)
+          .order("created_at", { ascending: false })
+          .limit(300)
+      : none,
+    sessions.size ? changes.order("created_at", { ascending: false }).limit(100) : none,
     activePeople(db),
     db.from("profiles").select("updates_seen_at").eq("id", user.id).maybeSingle(),
     db.from("roster_assignments").select("session_id").eq("member_id", user.id),
   ]);
   const seenIds = new Set((onSessions ?? []).map((u) => u.id));
-  const all = [...(onSessions ?? []), ...(changeRows ?? []).filter((u) => !seenIds.has(u.id))].sort((a, b) =>
+  const all = [...(onSessions ?? []), ...(changeRows ?? []).filter((u) => !seenIds.has(u.id)), ...(memberRows ?? [])].sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
   );
   // Sessions roster changes mention that aren't live any more (cancelled), for naming them.
   const missing = [...new Set(all.flatMap((u) => (u.session_id && !sessions.has(u.session_id) ? [u.session_id as string] : [])))];
   if (missing.length) {
-    const { data: extra } = await db
-      .from("roster_sessions")
-      .select("id, date, name, kind, rehearsal_date, rosters!inner(team_id)")
-      .in("id", missing)
-      .eq("rosters.team_id", teamId);
+    let extraQ = db.from("roster_sessions").select("id, date, name, kind, rehearsal_date, rosters!inner(team_id)").in("id", missing);
+    if (teamId) extraQ = extraQ.eq("rosters.team_id", teamId);
+    const { data: extra } = await extraQ;
     for (const s of extra ?? []) {
-      sessions.set(s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind, rehearsal: (s.rehearsal_date as string | null) ?? null, teamId });
+      const team = (s.rosters as unknown as { team_id: string } | null)?.team_id ?? teamId ?? "";
+      sessions.set(s.id, { id: s.id, date: s.date, name: s.name, kind: s.kind, rehearsal: (s.rehearsal_date as string | null) ?? null, teamId: team });
     }
   }
   // Roster changes on other teams' sessions are left out (every update is about a session).
   const data = all.filter((u) => !u.session_id || sessions.has(u.session_id));
-  const admin = user.isLead || (await isAdmin(user.id, teamId, db));
+  const admin = user.isLead || (teamId ? await isAdmin(user.id, teamId, db) : false);
   const mySessions = new Set((mine ?? []).map((m) => m.session_id));
   const seenAt = me?.updates_seen_at ? new Date(me.updates_seen_at).getTime() : 0;
   const name = (id: string | null) => (id ? (people.get(id)?.name ?? "Someone") : null);
@@ -1084,13 +1142,17 @@ const updatesFor = cache(async (userId: string, isLead: boolean, teamId: string)
     .filter((u) => !duplicateAsk(u))
     .filter((u) => {
       const involved = u.actor_id === user.id || u.member_id === user.id;
+      // Only fetched for root.
+      if (MEMBER_KINDS.includes(u.kind as UpdateKind)) return true;
+      // Root hears nothing about swaps, on any roster.
+      if (user.isRoot && SWAPS.includes(u.kind as UpdateKind)) return false;
       // One copy per bandmate, for that bandmate only: whoever made the edit sees the changes themselves.
       if (u.kind === "roster_band_changed") return u.member_id === user.id && u.actor_id !== user.id;
       if (involved) return true;
       // The rest of a roster edit is one row per person moved, for that person: the band hears it
       // once, in their own "changed the band" note.
       if (ROSTER_CHANGE_KINDS.includes(u.kind as UpdateKind)) return user.isLead;
-      // Root hears about a swap once it's done, not while it's only proposed (or turned down).
+      // Leads hear about a swap once it's done, not while it's only proposed (or turned down).
       if (user.isLead) return !SWAP_PENDING.includes(u.kind as UpdateKind);
       if (FOR_ADMINS.includes(u.kind as UpdateKind)) return admin;
       if (PRIVATE.includes(u.kind as UpdateKind)) return false;
@@ -1117,6 +1179,7 @@ const updatesFor = cache(async (userId: string, isLead: boolean, teamId: string)
         u.member_id === user.id || mySessions.has(u.session_id) || Boolean(u.other_session_id && mySessions.has(u.other_session_id)),
       resolvedAt: (u.resolved_at as string | null) ?? null,
       href: href(u),
+      team: u.team_id ? (teamName.get(u.team_id as string) ?? null) : null,
     }));
 });
 

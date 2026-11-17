@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { TeamLoader } from "@/components/team-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { GENDER_LABEL, INSTRUMENT_LABEL, SERVES_LABEL, isPlaceholderEmail, loadMember, ministryLabel } from "@/lib/team";
 import { updateMember } from "../actions";
 import { MemberForm } from "@/components/team/member-form";
@@ -13,9 +13,9 @@ import { rolesNoun, teamPerson } from "@/lib/team-config";
 import { PersonalRule } from "@/components/team/personal-rule";
 
 async function MemberView({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user.can("team.view")) notFound();
   const { id } = await params;
+  const user = await requireTeamUser(`/team/${id}`, "team");
+  if (!user.can("team.view")) notFound();
   const loaded = await loadMember(id, user.team.id, { includeDevelopers: user.isRoot, observerOf: user.team.group }); // developer and observer accounts: root only
   if (!loaded) notFound();
   // Only root (and developers) see a member's gender; it isn't sent to anyone else.
@@ -64,7 +64,7 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
       ) : (
       <>
       {/* Leads, root and developers: what this person shouldn't be rostered for (teams that use personal rules). */}
-      {user.isLead && !m.isDeveloper && user.team.config.memberFields.rules && <PersonalRule id={m.id} name={m.name} instruments={m.instruments} noRosterRoles={m.noRosterRoles} labels={INSTRUMENT_LABEL} />}
+      {user.isLead && !m.isDeveloper && user.team.config.memberFields.rules && <PersonalRule id={m.id} name={m.name} instruments={m.instruments} noRosterRoles={m.noRosterRoles} labels={INSTRUMENT_LABEL} noun={rolesNoun(user.team.config).toLowerCase()} />}
 
       {user.can("roster.edit") && <MemberRules member={m} team={user.team} />}
 
