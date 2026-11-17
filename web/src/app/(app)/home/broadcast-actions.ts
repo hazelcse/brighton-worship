@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, requireRoot } from "@/lib/auth";
+import { getCurrentUser, requireLead } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type BroadcastResult = { ok: boolean; message: string | null };
@@ -13,10 +13,10 @@ function refresh() {
   revalidatePath("/roster");
 }
 
-/** Root: send a message to the whole team's landing page. */
+/** The lead: send a message to the landing page of everyone on their team. */
 export async function createBroadcast(input: { title: string; message: string; requiresAck: boolean; ackMessage: string }): Promise<BroadcastResult> {
   try {
-    const user = await requireRoot();
+    const user = await requireLead();
     const title = input.title.trim();
     const message = input.message.trim();
     const ackMessage = input.requiresAck ? input.ackMessage.trim() : "";
@@ -29,7 +29,7 @@ export async function createBroadcast(input: { title: string; message: string; r
     const db = createAdminClient();
     const { data, error } = await db
       .from("broadcasts")
-      .insert({ title, message, requires_ack: input.requiresAck, ack_message: input.requiresAck ? ackMessage : null, created_by: user.id })
+      .insert({ title, message, requires_ack: input.requiresAck, ack_message: input.requiresAck ? ackMessage : null, created_by: user.id, team_id: user.team.id })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
@@ -46,8 +46,10 @@ export async function respondToBroadcast(id: string, acknowledge: boolean): Prom
   try {
     const user = await getCurrentUser();
     if (!user) return { ok: false, message: "You are signed out. Please log in again." };
+    if (!user.team) return { ok: true, message: null }; // Brighton Serving gets no broadcasts
     const db = createAdminClient();
-    const { data: b } = await db.from("broadcasts").select("id, requires_ack").eq("id", id).maybeSingle();
+    // Only the signed-in team's broadcasts.
+    const { data: b } = await db.from("broadcasts").select("id, requires_ack").eq("id", id).eq("team_id", user.team.id).maybeSingle();
     if (!b) {
       refresh();
       return { ok: true, message: null }; // deleted in the meantime
@@ -65,12 +67,12 @@ export async function respondToBroadcast(id: string, acknowledge: boolean): Prom
   }
 }
 
-/** Root: take a broadcast down for everyone. */
+/** The lead: take one of their team's broadcasts down for everyone. */
 export async function deleteBroadcast(id: string): Promise<BroadcastResult> {
   try {
-    const user = await requireRoot();
+    const user = await requireLead();
     const db = createAdminClient();
-    const { data, error } = await db.from("broadcasts").delete().eq("id", id).select("title").maybeSingle();
+    const { data, error } = await db.from("broadcasts").delete().eq("id", id).eq("team_id", user.team.id).select("title").maybeSingle();
     if (error) throw new Error(error.message);
     if (data) await db.from("audit_log").insert({ actor_id: user.id, action: "broadcast.delete", target: id, details: { title: data.title } });
     refresh();

@@ -206,6 +206,7 @@ export function RecordForm({
   onSubmit,
   onCancel,
   onSaved,
+  onDelete,
 }: {
   /** The roster session's kind (em_sunday, ...): Sunday services get a closing song. */
   kind: string;
@@ -218,6 +219,8 @@ export function RecordForm({
   submitLabel: string;
   onSubmit: (input: RecordInput) => Promise<TrackingResult>;
   onCancel?: () => void;
+  /** Pending sessions: a Delete button beside the save button (asks once more before deleting). */
+  onDelete?: () => Promise<TrackingResult>;
   onSaved?: () => void;
 }) {
   const id = useId();
@@ -246,6 +249,7 @@ export function RecordForm({
   const [note, setNote] = useState(comments);
   const [result, setResult] = useState<TrackingResult | null>(null);
   const [pending, start] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const inGroup = (g: Group) => rows.filter((r) => r.closing === g.closing);
   const tickedIn = (g: Group) => inGroup(g).filter((r) => r.include).length;
@@ -419,6 +423,40 @@ export function RecordForm({
         >
           {pending ? "Saving…" : submitLabel}
         </button>
+        {onDelete &&
+          (confirmDelete ? (
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted">Delete for good?</span>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const r = await onDelete();
+                    if (!r.ok) {
+                      setResult(r);
+                      setConfirmDelete(false);
+                    }
+                  })
+                }
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {pending ? "Deleting…" : "Delete"}
+              </button>
+              <button type="button" disabled={pending} onClick={() => setConfirmDelete(false)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-background">
+                Keep
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirmDelete(true)}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-danger hover:bg-red-50 disabled:opacity-60"
+            >
+              Delete
+            </button>
+          ))}
         {onCancel && (
           <button type="button" onClick={onCancel} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-background">
             Cancel

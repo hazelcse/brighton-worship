@@ -2,23 +2,25 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { TeamLoader } from "@/components/team-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { GENDER_LABEL, INSTRUMENT_LABEL, SERVES_LABEL, isPlaceholderEmail, loadMember, ministryLabel } from "@/lib/team";
 import { updateMember } from "../actions";
 import { MemberForm } from "@/components/team/member-form";
 import { DeleteMemberButton } from "@/components/team/delete-member-button";
 import { ResetPasswordButton } from "@/components/team/reset-password-button";
 import { MemberRules } from "@/components/team/member-rules";
+import { rolesNoun, teamPerson } from "@/lib/team-config";
 import { PersonalRule } from "@/components/team/personal-rule";
 
 async function MemberView({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user.can("team.view")) notFound();
   const { id } = await params;
-  const loaded = await loadMember(id, { includeDevelopers: user.isRoot });
+  const user = await requireTeamUser(`/team/${id}`, "team");
+  if (!user.can("team.view")) notFound();
+  const loaded = await loadMember(id, user.team.id, { includeDevelopers: user.isRoot, observerOf: user.team.group }); // developer and observer accounts: root only
   if (!loaded) notFound();
   // Only root (and developers) see a member's gender; it isn't sent to anyone else.
-  const m = user.isRoot ? loaded : { ...loaded, gender: null };
+  // EM/CM and "serves at" read as unset in a team that doesn't use them (e.g. Youth).
+  const m = teamPerson(user.isLead ? loaded : { ...loaded, gender: null }, user.team.config);
   const ministry = ministryLabel(m.emPercent);
 
   return (
@@ -28,7 +30,16 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
       </Link>
       <header className="space-y-2">
         <p className="text-sm text-muted">
-          {m.isDeveloper ? "Developer account · not on the team or the roster" : m.uid != null ? `Member #${m.uid}` : "Member"}
+          {user.isRoot && !m.isDeveloper && !m.isObserver && `${user.team.name} · `}
+          {m.isDeveloper
+            ? "Developer account · not on the team or the roster"
+            : m.isObserver
+              ? `Observer account · read-only, on no team or roster`
+              : m.uid != null
+                ? `Member #${m.uid}`
+                : "Member"}
+          {/* Linked profiles: the same person on another team, with their own profile there. */}
+          {user.isLead && m.otherTeams.length > 0 && ` · also on ${m.otherTeams.join(" and ")}`}
         </p>
         <h1 className="font-display text-4xl font-semibold">{m.name}</h1>
         <div className="flex flex-wrap gap-2 text-sm">
@@ -43,15 +54,30 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </header>
 
-      {/* Root and developers: what this person shouldn't be rostered for. */}
-      {user.isRoot && !m.isDeveloper && <PersonalRule id={m.id} name={m.name} instruments={m.instruments} noRosterRoles={m.noRosterRoles} labels={INSTRUMENT_LABEL} />}
+      {/* Root looking at the observer account: only its email and password (it's on no team, so has no profile here). */}
+      {m.isObserver ? (
+        <section className="space-y-2 rounded-xl border border-border bg-surface p-4 sm:p-5">
+          <h2 className="text-lg font-semibold">Password</h2>
+          <p className="text-sm text-muted">{m.email}</p>
+          <ResetPasswordButton id={m.id} name={m.name} />
+        </section>
+      ) : (
+      <>
+      {/* Leads, root and developers: what this person shouldn't be rostered for (teams that use personal rules). */}
+      {user.isLead && !m.isDeveloper && user.team.config.memberFields.rules && <PersonalRule id={m.id} name={m.name} instruments={m.instruments} noRosterRoles={m.noRosterRoles} labels={INSTRUMENT_LABEL} noun={rolesNoun(user.team.config).toLowerCase()} />}
 
-      {user.can("roster.edit") && <MemberRules member={m} />}
+      {user.can("roster.edit") && <MemberRules member={m} team={user.team} />}
 
-      {user.isRoot ? (
+      {user.isLead ? (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <section className="space-y-4 rounded-xl border border-border bg-surface p-4 sm:p-5">
             <h2 className="text-lg font-semibold">Edit member</h2>
+            {m.otherTeams.length > 0 && (
+              <p className="text-sm text-muted">
+                Name, email and gender are shared with their {m.otherTeams.join(" and ")} profile. Everything else here is
+                for {user.team.name} only.
+              </p>
+            )}
             {isPlaceholderEmail(m.email) && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 This member has a placeholder email. Replace it with their real one so they can receive emails.
@@ -59,6 +85,7 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
             )}
             <MemberForm
               mode="edit"
+              teamConfig={user.team.config}
               action={updateMember.bind(null, m.id)}
               defaults={{ name: m.name, email: m.email, instruments: m.instruments, emPercent: m.emPercent, gender: m.gender, serves: m.serves }}
             />
@@ -68,9 +95,9 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
             <section className="space-y-2 rounded-xl border border-border bg-surface p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Permissions</h2>
               <p className="text-sm capitalize text-muted">
-                {m.isRoot ? "Root: everything" : m.isDeveloper ? "Developer: everything" : m.groups.length ? `Group: ${m.groups.join(", ")}` : "No permission group"}
+                {m.isLead ? "Lead: everything" : m.isDeveloper ? "Developer: everything" : m.groups.length ? `Group: ${m.groups.join(", ")}` : "No permission group"}
               </p>
-              {!m.isRoot && !m.isDeveloper && (
+              {!m.isLead && !m.isDeveloper && (
                 <Link href={`/team/permissions/users/${m.id}`} className="text-sm text-accent underline-offset-2 hover:underline">
                   View or change permissions
                 </Link>
@@ -82,13 +109,17 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
                 Passwords are stored as a secure hash, so nobody (root included) can see them. New members start on the
                 team&apos;s default password and choose their own the first time they log in.
               </p>
-              {!m.isRoot && (!m.isDeveloper || user.isDeveloper) && <ResetPasswordButton id={m.id} name={m.name} />}
+              {!m.isLead && (!m.isDeveloper || user.isDeveloper) && <ResetPasswordButton id={m.id} name={m.name} />}
             </section>
-            {!m.isRoot && (!m.isDeveloper || user.isDeveloper) && (
+            {!m.isLead && (!m.isDeveloper || user.isDeveloper) && (
               <section className="space-y-2 rounded-xl border border-red-200 bg-surface p-4 sm:p-5">
-                <h2 className="text-lg font-semibold">Delete member</h2>
-                <p className="text-sm text-muted">Removes their login and card. This can&apos;t be undone.</p>
-                <DeleteMemberButton id={m.id} name={m.name} />
+                <h2 className="text-lg font-semibold">{m.otherTeams.length ? `Remove from ${user.team.name}` : "Delete member"}</h2>
+                <p className="text-sm text-muted">
+                  {m.otherTeams.length
+                    ? `Takes them off ${user.team.name} only. Their login and their ${m.otherTeams.join(" and ")} profile stay.`
+                    : "Removes their login and card. This can't be undone."}
+                </p>
+                <DeleteMemberButton id={m.id} name={m.name} team={user.team.name} otherTeams={m.otherTeams} />
               </section>
             )}
           </div>
@@ -96,7 +127,7 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
       ) : (
         <dl className="grid gap-4 rounded-xl border border-border bg-surface p-4 text-sm sm:grid-cols-2 sm:p-5">
           <div>
-            <dt className="text-muted">Instruments</dt>
+            <dt className="text-muted">{rolesNoun(user.team.config)}</dt>
             <dd className="mt-0.5 font-medium">{m.instruments.map((i) => INSTRUMENT_LABEL[i] ?? i).join(", ") || "—"}</dd>
           </div>
           <div>
@@ -104,6 +135,8 @@ async function MemberView({ params }: { params: Promise<{ id: string }> }) {
             <dd className="mt-0.5 font-medium">{ministry ?? "—"}</dd>
           </div>
         </dl>
+      )}
+      </>
       )}
     </div>
   );

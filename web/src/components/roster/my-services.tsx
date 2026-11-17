@@ -2,13 +2,15 @@ import Link from "next/link";
 import { ROLE_LABEL, ROLE_SHORT, formatDate } from "@/lib/roster";
 import type { MyService } from "@/lib/sessions";
 import { BandName } from "@/components/sessions/band-name";
+import { ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 import { DragScroll } from "./drag-scroll";
 import { WindLeaf } from "./wind-leaf";
 
 const CARD = "flex flex-col gap-3 rounded-xl border border-border bg-surface p-4";
 
-/** One service: date, name, and the band (no songs, even once the plan is published). */
+/** One service: date, name, and the band, or a media team's crew (no songs, even once the plan is published). */
 function ServiceBody({ s }: { s: MyService }) {
+  if (s.crew) return <CrewBody s={s} />;
   return (
     <>
       <div>
@@ -30,6 +32,30 @@ function ServiceBody({ s }: { s: MyService }) {
                   +{ROLE_SHORT[r] ?? r}
                 </span>
               ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** A media team's service: its crew by role (full role names: there are no short ones), you highlighted in your role's colour. */
+function CrewBody({ s }: { s: MyService }) {
+  return (
+    <>
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wider text-muted">
+          {formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}
+        </p>
+        <p className="font-semibold leading-snug">{s.name}</p>
+      </div>
+      <ul className="space-y-0.5 text-sm">
+        {s.band.map((m) => (
+          <li key={`${m.id}-${m.role}`} className="flex items-baseline gap-2">
+            <span className="w-24 shrink-0 truncate text-xs text-muted">{CATALOGUE_LABEL[m.role] ?? m.role}</span>
+            <span className="min-w-0 flex-1 truncate">
+              <BandName name={m.name} role={m.role} you={m.you} />
             </span>
           </li>
         ))}

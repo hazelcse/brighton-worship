@@ -209,7 +209,7 @@ function RuleBuilder({
   rules,
   people,
   sessions,
-  isRoot,
+  isLead,
   onDone,
 }: {
   rosterId: string;
@@ -217,7 +217,7 @@ function RuleBuilder({
   rules: Rule[];
   people: People;
   sessions: RuleSession[];
-  isRoot: boolean;
+  isLead: boolean;
   onDone: () => void;
 }) {
   const [r, setR] = useState<Editing>(editing);
@@ -381,14 +381,14 @@ function RuleBuilder({
         {!r.hard && (
           <label className="block space-y-1 pt-1 text-sm">
             <span className="font-medium">Weight: {r.weight.toFixed(2)}</span>{" "}
-            <span className="text-muted">{isRoot ? "(0 = barely matters, 1 = matters most)" : "(set by root)"}</span>
+            <span className="text-muted">{isLead ? "(0 = barely matters, 1 = matters most)" : "(set by the lead)"}</span>
             <input
               type="range"
               min={0}
               max={1}
               step={0.05}
               value={r.weight}
-              disabled={!isRoot}
+              disabled={!isLead}
               onChange={(e) => setR((x) => ({ ...x, weight: Number(e.target.value) }))}
               className="range-thin w-full disabled:opacity-50"
             />
@@ -587,14 +587,14 @@ function RuleRow({
   rule,
   rules,
   people,
-  isRoot,
+  isLead,
   onEdit,
 }: {
   rosterId: string;
   rule: Rule;
   rules: Rule[];
   people: People;
-  isRoot: boolean;
+  isLead: boolean;
   onEdit: () => void;
 }) {
   const [weight, setWeight] = useState(rule.weight);
@@ -606,7 +606,7 @@ function RuleRow({
         {rule.permanent ? (
           <span
             className="rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-muted"
-            title="Always applied. It can't be edited, switched off or deleted, but root can change its weight."
+            title="Always applied. It can't be edited, switched off or deleted, but the lead can change its weight."
           >
             Permanent
           </span>
@@ -665,8 +665,8 @@ function RuleRow({
           </>
         )}
       </div>
-      {rule.params.template === "fairness" && (isRoot || Object.keys(rule.params.reduced ?? {}).length > 0) && (
-        <ServeLess reduced={rule.params.reduced ?? {}} people={people} editable={isRoot} />
+      {rule.params.template === "fairness" && (isLead || Object.keys(rule.params.reduced ?? {}).length > 0) && (
+        <ServeLess reduced={rule.params.reduced ?? {}} people={people} editable={isLead} />
       )}
       {!rule.hard && (
         <label className="flex items-center gap-3 text-xs text-muted">
@@ -677,7 +677,7 @@ function RuleRow({
             max={1}
             step={0.05}
             value={weight}
-            disabled={!isRoot}
+            disabled={!isLead}
             aria-label="Rule weight"
             onChange={(e) => setWeight(Number(e.target.value))}
             onPointerUp={() => start(async () => void (await setRuleWeight(rule.id, weight)))}
@@ -695,14 +695,14 @@ export function RulesEditor({
   rules,
   people,
   sessions,
-  isRoot,
+  isLead,
   editable,
 }: {
   rosterId: string;
   rules: Rule[];
   people: People;
   sessions: RuleSession[];
-  isRoot: boolean;
+  isLead: boolean;
   editable: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -744,7 +744,7 @@ export function RulesEditor({
       ) : (
         <ul className="divide-y divide-border">
           {list.map((r) => (
-            <RuleRow key={r.id} rosterId={rosterId} rule={r} rules={rules} people={people} isRoot={isRoot} onEdit={() => open({ ...r, isDefault: r.rosterId === null })} />
+            <RuleRow key={r.id} rosterId={rosterId} rule={r} rules={rules} people={people} isLead={isLead} onEdit={() => open({ ...r, isDefault: r.rosterId === null })} />
           ))}
         </ul>
       )}
@@ -758,7 +758,7 @@ export function RulesEditor({
           <h2 id="rules-title" className="text-lg font-semibold">
             2. Rules
           </h2>
-          <p className="text-sm text-muted">Default rules carry over to every roster; the rest are for this roster only.{isRoot ? " Drag a soft rule's weight to change how much it matters." : " Only root can change soft-rule weights."}</p>
+          <p className="text-sm text-muted">Default rules carry over to every roster; the rest are for this roster only.{isLead ? " Drag a soft rule's weight to change how much it matters." : " Only the lead can change soft-rule weights."}</p>
         </div>
         {editable && (
           <button
@@ -784,7 +784,7 @@ export function RulesEditor({
           <h2 id="rule-dialog-title" className="font-display text-2xl font-semibold">
             {editing?.id ? "Edit rule" : "Add a rule"}
           </h2>
-          {editing && <RuleBuilder key={editing.id ?? "new"} rosterId={rosterId} editing={editing} rules={rules} people={people} sessions={sessions} isRoot={isRoot} onDone={close} />}
+          {editing && <RuleBuilder key={editing.id ?? "new"} rosterId={rosterId} editing={editing} rules={rules} people={people} sessions={sessions} isLead={isLead} onDone={close} />}
         </div>
       </dialog>
     </section>

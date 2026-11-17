@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sessionInstruments } from "@/lib/teams";
 import { cleanAbsence, declineAbsence, type AbsenceInput } from "@/lib/absence";
 import {
   BAND_ROLES,
@@ -36,6 +37,13 @@ async function signedIn() {
   const user = await getCurrentUser();
   if (!user) throw new Error("You are signed out. Please log in again.");
   if (!user.can("roster.view")) throw new Error("You don't have access to the roster.");
+  return user;
+}
+
+/** Signed in, whatever their permissions (absences are personal: everyone manages their own). */
+async function signedInForAbsences() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("You are signed out. Please log in again.");
   return user;
 }
 
@@ -199,11 +207,12 @@ async function replace(db: Db, sessionId: string, fromId: string, toId: string, 
 async function settleBandRoles(db: Db, sessionId: string, rowId: string, also: string[], fromId: string, toId: string) {
   const held = also.filter((r) => BAND_ROLES.includes(r));
   if (!held.length) return;
-  const [{ data: newcomer }, { data: open }] = await Promise.all([
-    db.from("profiles").select("instruments").eq("id", toId).maybeSingle(),
+  // What they play on this session's team (their profile there, not another team's).
+  const [newcomer, { data: open }] = await Promise.all([
+    sessionInstruments(sessionId, toId),
     db.from("handover_requests").select("role").eq("session_id", sessionId).eq("status", "open"),
   ]);
-  const can = new Set((newcomer?.instruments as string[] | null) ?? []);
+  const can = new Set(newcomer);
   const asked = new Set((open ?? []).map((h) => h.role as string));
   const drop = held.filter((r) => !can.has(r) || asked.has(r));
   for (const r of held.filter((x) => !drop.includes(x))) {
@@ -620,7 +629,7 @@ export async function swapOptionsForAbsence(
  */
 export async function saveAbsenceWithCover(input: AbsenceInput & { covers: CoverChoice[] }): Promise<ServeResult & { clashes?: AbsenceClash[] }> {
   try {
-    const user = await signedIn();
+    const user = await signedInForAbsences();
     const clean = cleanAbsence(input);
     if ("error" in clean) return { ok: false, message: clean.error };
     const { startsOn, endsOn, reason } = clean;
@@ -794,14 +803,14 @@ export async function acceptHandover(id: string): Promise<ServeResult> {
     const db = createAdminClient();
     const h = await openHandover(db, id);
     if (h.target_id !== user.id) return { ok: false, message: "This was sent to someone else." };
-    const [{ data: mine }, { data: me }] = await Promise.all([
+    const [{ data: mine }, me] = await Promise.all([
       db.from("roster_assignments").select("id, role, also_roles").eq("session_id", h.session_id).eq("member_id", user.id).maybeSingle(),
-      db.from("profiles").select("instruments").eq("id", user.id).maybeSingle(),
+      sessionInstruments(h.session_id as string, user.id),
     ]);
     if (!mine || ["worship leader", "vocalist"].includes(mine.role as string)) {
       return { ok: false, message: `You need to be playing an instrument in this session to be ${bandRoleLabel(h.role).toLowerCase()}.` };
     }
-    if (!((me?.instruments as string[] | null) ?? []).includes(h.role)) {
+    if (!me.includes(h.role)) {
       return { ok: false, message: `${bandRoleLabel(h.role)} isn't one of your parts.` };
     }
     // Claim it first so two answers can't both go through.

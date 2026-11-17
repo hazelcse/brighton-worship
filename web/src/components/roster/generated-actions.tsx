@@ -46,12 +46,12 @@ export function LoadsButton({ children }: { children: React.ReactNode }) {
 /** Back to planning · Reset (after hand edits) · Save draft · Publish. */
 export function GeneratedActions({
   rosterId,
-  isRoot,
+  isLead,
   edited,
   problems,
 }: {
   rosterId: string;
-  isRoot: boolean;
+  isLead: boolean;
   /** Changed by hand since generating (and a snapshot exists to go back to). */
   edited: boolean;
   /** Hard problems: publishing is allowed, but asks first and they stay listed. */
@@ -69,7 +69,7 @@ export function GeneratedActions({
       >
         ← Back to planning
       </Link>
-      {isRoot && edited && (
+      {isLead && edited && (
         <button
           type="button"
           disabled={pending}

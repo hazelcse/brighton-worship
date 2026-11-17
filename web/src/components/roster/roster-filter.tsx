@@ -3,16 +3,25 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CellEditor, type EditPerson } from "./cell-editor";
 import { isHighlighted, useHighlight } from "./highlight";
-import { hhmm } from "@/lib/roster";
+import { hhmm, usesMinistry } from "@/lib/roster";
+import type { TeamConfig } from "@/lib/team-config";
 import type { AssignmentRow, SessionRow } from "@/lib/roster-data";
 import { RosterTable } from "./roster-results";
 import { SessionDialog } from "./session-planner";
 
 type Ministry = "em" | "cm";
-type Type = "sunday" | "pnp" | "adhoc";
+type Type = "sunday" | "saturday" | "pnp" | "adhoc";
+const ALL_TYPES: Type[] = ["sunday", "saturday", "pnp", "adhoc"];
 
-/** Sunday services, P&Ps, or ad-hoc events (anything added by hand, e.g. Christmas Eve). */
-const typeOf = (s: SessionRow): Type => (s.kind.endsWith("_pnp") ? "pnp" : s.kind === "custom" ? "adhoc" : "sunday");
+/** Sunday services, Saturday (Youth) services, P&Ps, or ad-hoc events (anything added by hand, e.g. Christmas Eve). */
+const typeOf = (s: SessionRow): Type =>
+  s.kind.endsWith("_pnp") ? "pnp" : s.kind === "custom" ? "adhoc" : s.kind === "saturday" ? "saturday" : "sunday";
+
+/** The Service chips this roster needs: its regular kinds (e.g. Youth: Saturday service), then Ad-hoc. */
+const typeOptions = (sessions: SessionRow[]) => {
+  const has = new Set(sessions.map(typeOf));
+  return TYPE_OPTIONS.filter((o) => o.value === "adhoc" || has.has(o.value));
+};
 
 function Chips<T extends string>({
   label,
@@ -39,7 +48,7 @@ function Chips<T extends string>({
             type="button"
             aria-pressed={on}
             // Keep at least one option on in each group.
-            onClick={() => onChange(toggle(value, o.value))}
+            onClick={() => onChange(toggle(value, o.value, options.map((x) => x.value)))}
             className={`h-8 rounded-full border px-3 text-sm font-medium ${on ? "border-ink bg-ink text-ink-foreground" : "border-border bg-surface text-muted hover:border-accent/50"}`}
           >
             {o.label}
@@ -56,6 +65,7 @@ const MINISTRY_OPTIONS: { value: Ministry; label: string }[] = [
 ];
 const TYPE_OPTIONS: { value: Type; label: string }[] = [
   { value: "sunday", label: "Sunday service" },
+  { value: "saturday", label: "Saturday service" },
   { value: "pnp", label: "P&P" },
   { value: "adhoc", label: "Ad-hoc" },
 ];
@@ -200,6 +210,10 @@ type Filters = {
   setMinistries: (v: Ministry[]) => void;
   types: Type[];
   setTypes: (v: Type[]) => void;
+  /** The Service options this roster offers (e.g. Youth: Saturday service and Ad-hoc). */
+  serviceOptions: { value: Type; label: string }[];
+  /** Offer the Ministry filter (not when no session is EM or CM, e.g. Youth). */
+  showMinistry?: boolean;
 };
 const FilterContext = createContext<Filters | null>(null);
 
@@ -207,15 +221,26 @@ const FilterContext = createContext<Filters | null>(null);
  * Shares the roster filters between the table and a dropdown elsewhere on the page: the roster editor
  * puts that dropdown (`MobileRosterFilter`) in the header's button row on phones, in place of the chips.
  */
-export function RosterFilterProvider({ children }: { children: React.ReactNode }) {
+export function RosterFilterProvider({
+  children,
+  showMinistry = true,
+  sessions,
+}: {
+  children: React.ReactNode;
+  showMinistry?: boolean;
+  /** The roster's sessions, for which Service options to offer. */
+  sessions: SessionRow[];
+}) {
   const [ministries, setMinistries] = useState<Ministry[]>(["em", "cm"]);
-  const [types, setTypes] = useState<Type[]>(["sunday", "pnp", "adhoc"]);
-  return <FilterContext.Provider value={{ ministries, setMinistries, types, setTypes }}>{children}</FilterContext.Provider>;
+  const [types, setTypes] = useState<Type[]>(ALL_TYPES);
+  const serviceOptions = typeOptions(sessions);
+  return <FilterContext.Provider value={{ ministries, setMinistries, types, setTypes, showMinistry, serviceOptions }}>{children}</FilterContext.Provider>;
 }
 
-/** Turn one option on or off, keeping at least one on in its group. */
-function toggle<T>(value: T[], v: T): T[] {
-  return value.includes(v) ? (value.length > 1 ? value.filter((x) => x !== v) : value) : [...value, v];
+/** Turn one option on or off, keeping at least one of the offered ones on in its group. */
+function toggle<T>(value: T[], v: T, offered: T[] = value): T[] {
+  const onOffered = value.filter((x) => offered.includes(x)).length;
+  return value.includes(v) ? (onOffered > 1 ? value.filter((x) => x !== v) : value) : [...value, v];
 }
 
 /** Phones only, on the roster editor: the shared filters' dropdown, at the left of the header's button row. */
@@ -227,7 +252,7 @@ export function MobileRosterFilter() {
 }
 
 /** Phones only: the Ministry and Service filters as one dropdown of checkboxes, the same size as the header buttons. */
-function FilterDropdown({ className, ...f }: Filters & { className: string }) {
+function FilterDropdown({ className, showMinistry = true, ...f }: Filters & { className: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -241,7 +266,8 @@ function FilterDropdown({ className, ...f }: Filters & { className: string }) {
       document.removeEventListener("keydown", esc);
     };
   }, [open]);
-  const off = MINISTRY_OPTIONS.length - f.ministries.length + TYPE_OPTIONS.length - f.types.length;
+  const off =
+    (showMinistry ? MINISTRY_OPTIONS.length - f.ministries.length : 0) + f.serviceOptions.filter((o) => !f.types.includes(o.value)).length;
   const group = <T extends string>(label: string, options: { value: T; label: string }[], value: T[], set: (v: T[]) => void) => (
     <fieldset className="space-y-0.5">
       <legend className="mb-1 px-2 text-xs font-medium uppercase tracking-wide text-muted">{label}</legend>
@@ -252,7 +278,7 @@ function FilterDropdown({ className, ...f }: Filters & { className: string }) {
             checked={value.includes(o.value)}
             // The last one on in a group can't be turned off.
             disabled={value.length === 1 && value.includes(o.value)}
-            onChange={() => set(toggle(value, o.value))}
+            onChange={() => set(toggle(value, o.value, options.map((x) => x.value)))}
             className="size-4 accent-ink"
           />
           {o.label}
@@ -281,8 +307,8 @@ function FilterDropdown({ className, ...f }: Filters & { className: string }) {
       </button>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1.5 w-52 space-y-3 rounded-xl border border-border bg-surface p-2 shadow-lg">
-          {group("Ministry", MINISTRY_OPTIONS, f.ministries, f.setMinistries)}
-          {group("Service", TYPE_OPTIONS, f.types, f.setTypes)}
+          {showMinistry && group("Ministry", MINISTRY_OPTIONS, f.ministries, f.setMinistries)}
+          {group("Service", f.serviceOptions, f.types, f.setTypes)}
         </div>
       )}
     </div>
@@ -300,9 +326,15 @@ export function FilteredRosterTable({
   thisWeekOf,
   locked,
   toolbarEnd,
+  splitsMinistry = true,
+  teamConfig,
 }: {
+  /** The team's config, for the session settings dialog (a media team: its crew, not the band). */
+  teamConfig?: TeamConfig;
   sessions: SessionRow[];
   assignments: AssignmentRow[];
+  /** Whether the team splits EM and CM (its config); a media team doesn't: no Ministry filter or EM/CM column. */
+  splitsMinistry?: boolean;
   /** This quarter's roster only: "sessionId|memberId" -> whether they've confirmed. */
   serveStatus?: Record<string, "pending" | "accepted" | "declined">;
   /** Mark out the week containing this day ("YYYY-MM-DD"), e.g. today on this quarter's roster. */
@@ -332,7 +364,9 @@ export function FilteredRosterTable({
   // Inside a RosterFilterProvider the filters are shared with MobileRosterFilter, which replaces the chips on phones.
   const shared = useContext(FilterContext);
   const [ownMinistries, setOwnMinistries] = useState<Ministry[]>(["em", "cm"]);
-  const [ownTypes, setOwnTypes] = useState<Type[]>(["sunday", "pnp", "adhoc"]);
+  const [ownTypes, setOwnTypes] = useState<Type[]>(ALL_TYPES);
+  // Only this roster's kinds of session, then Ad-hoc (Youth: Saturday service and Ad-hoc).
+  const serviceOptions = typeOptions(sessions);
   const { ministries, setMinistries, types, setTypes } = shared ?? {
     ministries: ownMinistries,
     setMinistries: setOwnMinistries,
@@ -387,6 +421,8 @@ export function FilteredRosterTable({
   );
   const ids = new Set(shown.map((s) => s.id));
   const active = shown.filter((s) => !s.cancelled).length;
+  // No EM or CM sessions (e.g. Youth), or a team without the split (media): no Ministry filter or EM/CM column.
+  const showMinistry = splitsMinistry && usesMinistry(sessions);
 
   return (
     // Clicks inside the roster keep a rule highlight; clicks elsewhere clear it.
@@ -394,9 +430,9 @@ export function FilteredRosterTable({
       {/* Phones: one line (8px apart); the session count gives way when it doesn't fit. */}
       <div className="flex items-center gap-x-2 gap-y-2 sm:flex-wrap sm:gap-x-5">
         {/* Phones: one Ministry + Service dropdown instead of the chips (the roster editor has it in its header). */}
-        {!shared && <FilterDropdown ministries={ministries} setMinistries={setMinistries} types={types} setTypes={setTypes} className="shrink-0 sm:hidden" />}
-        <Chips label="Ministry" options={MINISTRY_OPTIONS} value={ministries} onChange={setMinistries} phonesHidden />
-        <Chips label="Service" options={TYPE_OPTIONS} value={types} onChange={setTypes} phonesHidden />
+        {!shared && <FilterDropdown ministries={ministries} setMinistries={setMinistries} types={types} setTypes={setTypes} serviceOptions={serviceOptions} showMinistry={showMinistry} className="shrink-0 sm:hidden" />}
+        {showMinistry && <Chips label="Ministry" options={MINISTRY_OPTIONS} value={ministries} onChange={setMinistries} phonesHidden />}
+        <Chips label="Service" options={serviceOptions} value={types} onChange={setTypes} phonesHidden />
         {peopleFilter && <PeopleFilter people={people} value={picked} onChange={setPicked} />}
         {/* Phones: a 0-wide first item keeps line one, so a count too wide for the space left drops to a
             second line that's clipped away. From 640px the row wraps as usual and the count always shows. */}
@@ -417,6 +453,7 @@ export function FilteredRosterTable({
       ) : (
         <RosterTable
           sessions={shown}
+          showMinistry={showMinistry}
           assignments={assignments.filter((a) => ids.has(a.session_id))}
           onCellClick={edit && !locked ? (sessionId, role) => setCell({ sessionId, role }) : undefined}
           onSessionClick={edit?.quarter && !locked ? setSessionId : undefined}
@@ -467,6 +504,7 @@ export function FilteredRosterTable({
             {settingsOf && (
               <SessionDialog
                 key={settingsOf.id}
+                teamConfig={teamConfig}
                 rosterId={edit.rosterId}
                 quarter={edit.quarter}
                 onClose={closeSession}

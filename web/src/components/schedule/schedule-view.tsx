@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition, type TouchEvent } from "react";
 import { deleteAbsence, getSessionDetail, saveAbsence } from "@/app/(app)/roster/absences/actions";
 import { ROLE_SHORT, addDays, formatDate, formatTime, parseYmd, weekday, ymd } from "@/lib/roster";
+import { ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 import { rehearsalTime, sessionTime } from "@/lib/reminder";
 import type { SessionDetail } from "@/lib/sessions";
 import { SessionCard } from "@/components/sessions/session-card";
@@ -12,6 +13,21 @@ import type { AbsenceClash } from "@/lib/serving";
 import { AbsenceCoverDialog } from "./absence-cover-dialog";
 import { CoverPanel } from "./cover-panel";
 
+/**
+ * The calendar's team filter: which part of church a service or person belongs to. Root's are
+ * AREAS; an observer's are its group's team ids (teamFilter).
+ */
+export type Area = string;
+type AreaOption = { value: Area; label: string };
+const AREAS: AreaOption[] = [
+  { value: "em_worship", label: "EM Worship" },
+  { value: "em_media", label: "EM Media" },
+  { value: "cm", label: "CM" },
+  { value: "youth", label: "Youth" },
+];
+/** Shown when nothing in the filter is ticked, or when it shares an area with what's ticked (untagged: always). */
+const inAreas = (tags: Area[] | undefined, picked: Area[]) => !picked.length || !tags || tags.some((t) => picked.includes(t));
+
 export type Absence = {
   id: string;
   memberId: string;
@@ -19,6 +35,8 @@ export type Absence = {
   startsOn: string;
   endsOn: string;
   reason: string;
+  /** Root only: the areas of the teams this person is on (EM Worship/CM from their Main Worship share, EM Media from Main Media, Youth from Youth teams). */
+  areas?: Area[];
 };
 
 /** A rostered session (root only), e.g. EM Sunday Service, or its rehearsal (kind "rehearsal"). */
@@ -29,14 +47,21 @@ export type ServiceEvent = {
   kind: string;
   /** For a rehearsal: the service or event it's for. */
   forSession?: { date: string; name: string; kind: string };
+  /** Root only: EM Worship, EM Media, CM and/or Youth, for the area filter. */
+  areas?: Area[];
 };
 
-/** "EM" / "CM" from a session kind like "em_sunday", or null for a custom event. */
+/** "EM" / "CM" from a session kind like "em_sunday", "YF" for Youth's Saturday service, or null for a custom event. */
 function ministryOf(kind: string | undefined) {
-  return kind?.startsWith("em_") ? "EM" : kind?.startsWith("cm_") ? "CM" : null;
+  return kind?.startsWith("em_") ? "EM" : kind?.startsWith("cm_") ? "CM" : kind === "saturday" ? "YF" : null;
 }
 
-/** "EM Rehearsal", "CM Rehearsal", or "EM/CM Rehearsal" when both are that day. */
+/** "EM Svc", "CM Svc" or "EM/CM Svc" (whichever of these kinds are that day). */
+function ministriesLabel(services: ServiceEvent[], suffix: string) {
+  return `${[...new Set(services.map((s) => ministryOf(s.kind)).filter(Boolean))].sort().join("/")} ${suffix}`.trim();
+}
+
+/** "EM Rehearsal", "CM Rehearsal", or "EM/CM Rehearsal" when both are that day ("YF Rehearsal" for Youth's). */
 function rehearsalLabel(rehearsals: { forSession?: { kind: string } }[]) {
   const ministries = [...new Set(rehearsals.map((r) => ministryOf(r.forSession?.kind)).filter(Boolean))].sort();
   return ministries.length ? `${ministries.join("/")} Rehearsal` : "Rehearsal";
@@ -57,7 +82,13 @@ type Props = {
   services: ServiceEvent[];
   today: string;
   userId: string;
-  isRoot: boolean;
+  isLead: boolean;
+  /** An observer: sees everyone's absences but can't add any (no Create absence button). */
+  readOnly?: boolean;
+  /** An observer's filter: these teams (absences and services tagged with team ids), and no people. */
+  teamFilter?: AreaOption[];
+  /** An observer without absences: the calendar shows services only, and the list is upcoming services. */
+  servicesOnly?: boolean;
   /** The viewer's own sessions on published rosters. */
   mySessions?: MySession[];
   /** Opened from a request to cover: that day is highlighted and the panel offers take over / swap. */
@@ -71,11 +102,17 @@ const EVENTS = 16;
 const LANE = 16;
 const MORE = 14;
 
-/** Calendar chips: one "Sun Svc" however many Sunday services there are, and one "PnP". */
+/**
+ * Calendar chips, one per kind of event that day, naming the ministries: "EM/CM Svc" (Sunday
+ * services), "EM/CM PnP", "EM/CM Rehearsal", "YF Svc" (Youth's Saturday service), "Other".
+ */
 function serviceChips(services: ServiceEvent[]) {
   const chips: { label: string; dot: string }[] = [];
-  if (services.some((s) => s.kind.endsWith("_sunday"))) chips.push({ label: "Sun Svc", dot: SERVICE_DOT.sunday });
-  if (services.some((s) => s.kind.endsWith("_pnp"))) chips.push({ label: "PnP", dot: SERVICE_DOT.pnp });
+  const sunday = services.filter((s) => s.kind.endsWith("_sunday"));
+  if (sunday.length) chips.push({ label: ministriesLabel(sunday, "Svc"), dot: SERVICE_DOT.sunday });
+  const pnp = services.filter((s) => s.kind.endsWith("_pnp"));
+  if (pnp.length) chips.push({ label: ministriesLabel(pnp, "PnP"), dot: SERVICE_DOT.pnp });
+  if (services.some((s) => s.kind === "saturday")) chips.push({ label: "YF Svc", dot: SERVICE_DOT.saturday });
   const rehearsals = services.filter((s) => s.kind === "rehearsal");
   if (rehearsals.length) chips.push({ label: rehearsalLabel(rehearsals), dot: SERVICE_DOT.rehearsal });
   if (services.some((s) => s.kind === "custom")) chips.push({ label: "Other", dot: SERVICE_DOT.custom });
@@ -83,9 +120,10 @@ function serviceChips(services: ServiceEvent[]) {
 }
 
 /** Dot colours for services, Google Calendar style. */
-const SERVICE_DOT = { sunday: "bg-accent", pnp: "bg-[#5f7f9e]", rehearsal: "bg-[#c2a26a]", custom: "bg-muted" };
+const SERVICE_DOT = { sunday: "bg-accent", pnp: "bg-[#5f7f9e]", saturday: "bg-[#7f9a7a]", rehearsal: "bg-[#c2a26a]", custom: "bg-muted" };
 function serviceDot(kind: string) {
   if (kind === "rehearsal") return SERVICE_DOT.rehearsal;
+  if (kind === "saturday") return SERVICE_DOT.saturday;
   return kind.endsWith("_sunday") ? SERVICE_DOT.sunday : kind.endsWith("_pnp") ? SERVICE_DOT.pnp : SERVICE_DOT.custom;
 }
 
@@ -167,21 +205,31 @@ export function layoutWeek(start: string, absences: Absence[], maxLanes: number)
 
 /**
  * Root's "whose absences" filter: just a filter icon (no border) that opens a tick-box list. "Only me"
- * and "Everyone" first, then everyone else with an absence (searchable). Nothing ticked = everyone.
+ * and "Everyone" first, then everyone else with an absence. Nothing ticked = everyone.
  */
 function WhoFilter({
   who,
   setWho,
   userId,
   people,
+  areas,
+  setAreas,
+  options = AREAS,
+  teamsOnly = false,
 }: {
   who: string[];
   setWho: (who: string[]) => void;
   userId: string;
   people: { id: string; name: string }[];
+  /** Root: EM Worship / EM Media / CM / Youth tick boxes at the top (left out for leads, who see one team). */
+  areas?: Area[];
+  setAreas?: (areas: Area[]) => void;
+  /** The team tick boxes (root's areas by default). */
+  options?: AreaOption[];
+  /** An observer's filter: teams only, no people. */
+  teamsOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -196,9 +244,11 @@ function WhoFilter({
   }, [open]);
 
   const toggle = (id: string) => setWho(who.includes(id) ? who.filter((x) => x !== id) : [...who, id]);
-  const q = query.trim().toLowerCase();
-  const shown = q ? people.filter((p) => p.name.toLowerCase().includes(q)) : people;
-  const summary = who.length === 0 ? "Everyone" : who.length === 1 && who[0] === userId ? "Only me" : `${who.length} picked`;
+  const whoSummary = who.length === 0 ? "Everyone" : who.length === 1 && who[0] === userId ? "Only me" : `${who.length} picked`;
+  const picked = areas ?? [];
+  const teamSummary = options.filter((a) => picked.includes(a.value)).map((a) => a.label).join(" and ");
+  const summary = teamsOnly ? teamSummary || "Every team" : picked.length ? `${teamSummary} · ${whoSummary}` : whoSummary;
+  const narrowing = who.length > 0 || picked.length > 0;
   const row = "flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-background";
 
   return (
@@ -207,19 +257,38 @@ function WhoFilter({
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label={`Whose absences: ${summary}`}
+        aria-label={`${areas ? "Filter" : "Whose absences"}: ${summary}`}
         title={`Showing: ${summary}`}
         onClick={() => setOpen((o) => !o)}
         // No border: just the icon, accent-coloured while it's narrowing things down.
-        className={`relative rounded-lg p-2 hover:bg-background ${who.length ? "text-accent" : "text-muted hover:text-foreground"}`}
+        className={`relative rounded-lg p-2 hover:bg-background ${narrowing ? "text-accent" : "text-muted hover:text-foreground"}`}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M3 5h18M6 12h12M10 19h4" />
         </svg>
-        {who.length > 0 && <span aria-hidden className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent" />}
+        {narrowing && <span aria-hidden className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent" />}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1.5 flex max-h-[60vh] w-64 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+          {areas && setAreas && (
+            // Root: narrow services, rehearsals and absences to EM Worship, EM Media, CM and/or Youth (none ticked = all).
+            <div role="group" aria-label="Teams" className={`py-1 ${teamsOnly ? "" : "border-b border-border"}`}>
+              <p className="px-3 pb-0.5 pt-1.5 text-xs font-medium uppercase tracking-wider text-muted">Teams</p>
+              {options.map((a) => (
+                <label key={a.value} className={row}>
+                  <input
+                    type="checkbox"
+                    checked={areas.includes(a.value)}
+                    onChange={() => setAreas(areas.includes(a.value) ? areas.filter((x) => x !== a.value) : [...areas, a.value])}
+                    className="accent-accent"
+                  />
+                  {a.label}
+                </label>
+              ))}
+            </div>
+          )}
+          {!teamsOnly && (
+          <>
           <div className="border-b border-border py-1">
             <label className={row}>
               <input type="checkbox" checked={who.includes(userId)} onChange={() => toggle(userId)} className="accent-accent" />
@@ -230,28 +299,18 @@ function WhoFilter({
               Everyone
             </label>
           </div>
-          {people.length > 8 && (
-            <div className="border-b border-border p-2">
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search people"
-                aria-label="Search people"
-                className="h-8 w-full rounded-md border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-              />
-            </div>
-          )}
           <div role="group" aria-label="People" className="min-h-0 flex-1 overflow-y-auto py-1">
-            {shown.map((p) => (
+            {people.map((p) => (
               <label key={p.id} className={row}>
                 <input type="checkbox" checked={who.includes(p.id)} onChange={() => toggle(p.id)} className="accent-accent" />
                 <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${colourFor(p.id).dot}`} />
                 <span className="truncate">{p.name}</span>
               </label>
             ))}
-            {shown.length === 0 && <p className="px-3 py-2 text-sm text-muted">{people.length ? "No one matches" : "No one else has an absence"}</p>}
+            {people.length === 0 && <p className="px-3 py-2 text-sm text-muted">No one else has an absence</p>}
           </div>
+          </>
+          )}
         </div>
       )}
     </div>
@@ -263,7 +322,7 @@ function onDay(absences: Absence[], date: string) {
   return absences.filter((a) => a.startsOn <= date && a.endsOn >= date);
 }
 
-export function ScheduleView({ absences: all, services, today, userId, isRoot, mySessions = [], cover }: Props) {
+export function ScheduleView({ absences: all, services, today, userId, isLead, readOnly = false, teamFilter, servicesOnly = false, mySessions = [], cover }: Props) {
   const [month, setMonth] = useState(() => monthStart(cover?.session.date ?? today));
   // Days to point out while choosing a swap: every option, and the one picked.
   const [focus, setFocus] = useState<{ options: string[]; selected: string[] }>({ options: [], selected: [] });
@@ -283,25 +342,36 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
   // Root (and developers) pick whose absences show, in the list and the calendar: nobody picked =
   // everyone. Members only ever get their own. Covering for someone: start on just your own.
   const [who, setWho] = useState<string[]>(cover ? [userId] : []);
+  // Root: EM Worship / EM Media / CM / Youth (nothing ticked = every team). Only root's services and absences carry areas.
+  const [areas, setAreas] = useState<Area[]>([]);
+  const hasAreas = services.some((s) => s.areas) || all.some((a) => a.areas);
   const onlyMe = who.length === 1 && who[0] === userId;
   const absences = useMemo(
-    () => (!isRoot ? all.filter((a) => a.memberId === userId) : who.length ? all.filter((a) => who.includes(a.memberId)) : all),
-    [all, isRoot, who, userId],
+    () =>
+      (!isLead ? all.filter((a) => a.memberId === userId) : who.length ? all.filter((a) => who.includes(a.memberId)) : all).filter(
+        (a) => a.memberId === userId || inAreas(a.areas, areas),
+      ),
+    [all, isLead, who, userId, areas],
   );
   // The calendar's event row: rostered services, except when looking at just your own absences
   // (then your own sessions, as for members).
-  const showServices = isRoot && !onlyMe;
+  const showServices = isLead && !onlyMe;
   // Everyone else with an absence, A–Z, for the filter.
+  // An observer without absences: the services still to come, in date order.
+  const upcomingServices = useMemo(
+    () => (servicesOnly ? services.filter((s) => s.date >= today).sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name)) : []),
+    [services, servicesOnly, today],
+  );
   const people = useMemo(() => {
     const m = new Map<string, string>();
-    for (const a of all) if (a.memberId !== userId) m.set(a.memberId, a.memberName);
+    for (const a of all) if (a.memberId !== userId && inAreas(a.areas, areas)) m.set(a.memberId, a.memberName);
     return [...m].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }, [all, userId]);
+  }, [all, userId, areas]);
   const servicesByDate = useMemo(() => {
     const m = new Map<string, ServiceEvent[]>();
-    for (const s of services) m.set(s.date, [...(m.get(s.date) ?? []), s]);
+    for (const s of services) if (inAreas(s.areas, areas)) m.set(s.date, [...(m.get(s.date) ?? []), s]);
     return m;
-  }, [services]);
+  }, [services, areas]);
   // Otherwise the event row shows the viewer's own sessions.
   const mineByDate = useMemo(() => {
     const m = new Map<string, MySession[]>();
@@ -507,7 +577,7 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
                     const chips = showServices
                       ? serviceChips(servicesByDate.get(day) ?? [])
                       : (mineByDate.get(day) ?? []).map((m) => ({
-                          label: `${m.kind === "rehearsal" ? rehearsalLabel([m]) : [ministryOf(m.kind), m.kind.endsWith("_pnp") ? "PnP" : "Svc"].filter(Boolean).join(" ")} · ${ROLE_SHORT[m.role] ?? m.role}`,
+                          label: `${m.kind === "rehearsal" ? rehearsalLabel([m]) : [ministryOf(m.kind), m.kind.endsWith("_pnp") ? "PnP" : "Svc"].filter(Boolean).join(" ")} · ${ROLE_SHORT[m.role] ?? CATALOGUE_LABEL[m.role] ?? m.role}`,
                           dot: serviceDot(m.kind),
                         }));
                     if (!chips.length) return null;
@@ -563,10 +633,42 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
             }}
           />
         )}
+        {servicesOnly ? (
+        <section aria-label="Upcoming services" className="flex max-h-[28rem] min-h-0 flex-1 flex-col rounded-xl border border-border bg-surface lg:max-h-none">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+            <h2 className="text-lg font-semibold">Upcoming services</h2>
+          </div>
+          {upcomingServices.length ? (
+            <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+              {upcomingServices.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => openSession(s.id, s.kind === "rehearsal")}
+                    className="flex w-full items-baseline gap-3 px-4 py-2.5 text-left text-sm hover:bg-background"
+                  >
+                    <span className="w-24 shrink-0 text-muted">{formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <p className="text-center text-sm text-muted">No upcoming services</p>
+            </div>
+          )}
+        </section>
+        ) : (
         <section aria-label="Upcoming absences" className="flex max-h-[28rem] min-h-0 flex-1 flex-col rounded-xl border border-border bg-surface lg:max-h-none">
           <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
             <h2 className="text-lg font-semibold">Absences</h2>
-            {isRoot && <WhoFilter who={who} setWho={setWho} userId={userId} people={people} />}
+            {isLead &&
+              (teamFilter ? (
+                <WhoFilter who={who} setWho={setWho} userId={userId} people={people} areas={areas} setAreas={setAreas} options={teamFilter} teamsOnly />
+              ) : (
+                <WhoFilter who={who} setWho={setWho} userId={userId} people={people} {...(hasAreas ? { areas, setAreas } : {})} />
+              ))}
           </div>
           {upcoming.length ? (
             <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
@@ -591,7 +693,9 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
             </div>
           )}
         </section>
+        )}
         {/* Desktop: full width under the box. Mobile: a round floating button, bottom right. */}
+        {!readOnly && (
         <button
           type="button"
           onClick={() => openCreate()}
@@ -603,6 +707,7 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
           </svg>
           <span className="hidden text-sm font-medium md:inline">+ Create absence</span>
         </button>
+        )}
       </div>
 
       <dialog
@@ -620,7 +725,7 @@ export function ScheduleView({ absences: all, services, today, userId, isRoot, m
             mine={showServices ? [] : (mineByDate.get(selectedDay) ?? [])}
             absences={onDay(absences, selectedDay)}
             userId={userId}
-            canCreate={selectedDay >= today}
+            canCreate={!readOnly && selectedDay >= today}
             onPick={openAbsence}
             onCreate={() => openCreate(selectedDay)}
             onClose={() => dayDialogRef.current?.close()}
@@ -758,7 +863,7 @@ function DayList({
                 >
                   <span aria-hidden className={`h-2 w-2 shrink-0 translate-y-px rounded-full ${serviceDot(s.kind)}`} />
                   <span className="min-w-0 flex-1">
-                    {s.kind === "rehearsal" ? rehearsalLabel([s]) : s.name} · {ROLE_SHORT[s.role] ?? s.role}
+                    {s.kind === "rehearsal" ? rehearsalLabel([s]) : s.name} · {ROLE_SHORT[s.role] ?? CATALOGUE_LABEL[s.role] ?? s.role}
                     <RehearsalFor s={s.forSession} />
                   </span>
                   <span aria-hidden className="text-muted">›</span>

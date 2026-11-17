@@ -3,8 +3,10 @@ import { ROLE_LABEL, ROLE_SHORT, formatDate } from "@/lib/roster";
 import type { SessionDetail } from "@/lib/sessions";
 import { PartCues } from "@/components/sessions/part-cues";
 import { BandName } from "@/components/sessions/band-name";
+import { ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 
-const role = (r: string) => ROLE_LABEL[r] ?? r;
+/** A part's name: the band's from the roster, media roles (e.g. Wide Angle Cam) from the team catalogue. */
+const role = (r: string) => ROLE_LABEL[r] ?? CATALOGUE_LABEL[r] ?? r;
 const heading = "mb-1.5 text-xs font-medium uppercase tracking-wider text-muted";
 
 /** A part, with band leader / talkback as +BL / +TB like on the roster. */
@@ -88,10 +90,22 @@ function PlanSongs({ plan }: { plan: NonNullable<SessionDetail["plan"]> }) {
 
 /**
  * A session's card: date, name, your part, the songs once the plan's published (or a note that it
- * isn't yet), and the band. Links to the plan when you can open it. Used on the home page and in the
- * calendar.
+ * isn't yet), and the band (a media team's session: its crew). Links to the plan when you can open it.
+ * Used on the home page and in the calendar.
  */
-export function SessionCard({ s }: { s: SessionDetail }) {
+export function SessionCard({
+  s,
+  href,
+  extra,
+}: {
+  s: SessionDetail;
+  /** Where the card links instead of the plan itself (e.g. via a team switch). */
+  href?: string;
+  /** One more block at the bottom of the card, e.g. root's media crew for the service. */
+  extra?: React.ReactNode;
+}) {
+  // A media team's session: its crew (headed "Crew") where the band would be.
+  const people = s.crew ? "crew" : "band";
   const body = (
     <>
       <header className="bg-background/60 px-4 py-3">
@@ -115,8 +129,8 @@ export function SessionCard({ s }: { s: SessionDetail }) {
           </p>
         )}
       </section>
-      <section aria-label="Band" className="p-4">
-        <p className={heading}>Band</p>
+      <section aria-label={people === "crew" ? "Crew" : "Band"} className="p-4">
+        <p className={heading}>{people === "crew" ? "Crew" : "Band"}</p>
         {/* Two columns (filled top to bottom) once the card is wide enough, so it isn't one long list. */}
         <dl className="gap-x-6 text-sm @md:columns-2">
           {bandByPart(s.band).map(([part, members]) => (
@@ -139,12 +153,13 @@ export function SessionCard({ s }: { s: SessionDetail }) {
           ))}
         </dl>
       </section>
+      {extra && <div className="p-4">{extra}</div>}
     </>
   );
   // Header, songs and band as three blocks with lines between; @container lets the band go two-column.
   const box = "@container flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface";
   return s.plan?.canOpen ? (
-    <Link href={`/sessions/${s.plan.id}`} className={`${box} transition hover:border-accent/50`}>
+    <Link href={href ?? `/sessions/${s.plan.id}`} prefetch={href ? false : undefined} className={`${box} transition hover:border-accent/50`}>
       {body}
     </Link>
   ) : (

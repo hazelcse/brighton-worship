@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { SessionLoader } from "@/components/session-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatDate, quarterOf } from "@/lib/roster";
 import { buildsAnySession, loadBuildableSessions, type BuildableSession } from "@/lib/sessions";
 import { StageBadge } from "@/components/sessions/stage-badge";
@@ -43,9 +43,9 @@ function Row({ s }: { s: BuildableSession }) {
 }
 
 async function BuildView() {
-  const user = await requireUser();
+  const user = await requireTeamUser("/sessions/build");
   const all = buildsAnySession(user);
-  const loaded = await loadBuildableSessions(user.id, { all });
+  const loaded = await loadBuildableSessions(user.id, user.team.id, { all });
   // Plans already started (drafts and published) live on /sessions; this page is for starting new ones.
   const sessions = loaded.sessions.filter((s) => s.stage === "not_started");
   const { unconfirmed } = loaded;

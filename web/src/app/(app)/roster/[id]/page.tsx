@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatRange, makeSentence, quarterOf } from "@/lib/roster";
 import { loadAssignments, loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
 import { rosterProblems } from "@/lib/roster-check";
@@ -11,27 +11,28 @@ import { EditWarnings } from "@/components/roster/edit-warnings";
 import { EditPublishedButton } from "@/components/roster/revision-controls";
 import { FilteredRosterTable } from "@/components/roster/roster-filter";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { splitsMinistry } from "@/lib/team-config";
 
 /** Read-only view of a roster: every session, and (once generated) who's serving. */
 async function RosterDetail({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
+  const user = await requireTeamUser(`/roster/${(await params).id}`, "team");
   if (!user.can("roster.view")) notFound();
   const { id } = await params;
-  const data = await loadRoster(id);
+  const data = await loadRoster(id, user.team.id);
   if (!data) notFound();
   const { roster, sessions } = data;
   if (roster.status === "draft" && !user.can("roster.edit")) notFound();
   // Root's edit of a published roster is only seen by root, on the editing page.
   if (roster.status === "revision") {
-    if (!user.isRoot) notFound();
+    if (!user.isLead) notFound();
     redirect(`/roster/${id}/generated`);
   }
-  const revisionId = roster.status === "published" && user.isRoot ? await revisionOf(id) : null;
+  const revisionId = roster.status === "published" && user.isLead ? await revisionOf(id) : null;
 
   // Admins see any problems left in the roster (they stay after publishing until fixed).
   let problems: { id: string; text: string }[] = [];
   if (user.can("roster.edit")) {
-    const [{ result, check }, rules, people] = await Promise.all([loadResult(id), loadRules(id), loadPeople()]);
+    const [{ result, check }, rules, people] = await Promise.all([loadResult(id), loadRules(id, user.team.id), loadPeople(user.team)]);
     problems = rosterProblems(check, result, sessions, people, makeSentence(rules, people));
   }
 
@@ -50,7 +51,7 @@ async function RosterDetail({ params }: { params: Promise<{ id: string }> }) {
             Continue planning
           </Link>
         )}
-        {roster.status === "published" && user.isRoot && <EditPublishedButton rosterId={roster.id} revisionId={revisionId} />}
+        {roster.status === "published" && user.isLead && <EditPublishedButton rosterId={roster.id} revisionId={revisionId} />}
       </div>
 
       {revisionId && (
@@ -65,7 +66,7 @@ async function RosterDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
       )}
 
-      <FilteredRosterTable sessions={sessions} assignments={await loadAssignments(sessions.map((s) => s.id))} peopleFilter={user.isRoot} meId={user.id} />
+      <FilteredRosterTable splitsMinistry={splitsMinistry(user.team.config)} sessions={sessions} assignments={await loadAssignments(sessions.map((s) => s.id))} peopleFilter={user.isLead} meId={user.id} />
     </div>
   );
 }

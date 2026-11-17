@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, requirePermission } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { cleanAbsence, type AbsenceInput } from "@/lib/absence";
 import { absenceClashes, releaseCoverAfterAbsence, type AbsenceClash } from "@/lib/serving";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,6 +13,14 @@ export type AbsenceResult = {
   /** Not saved: it falls on sessions they're serving at, which need someone to cover them first. */
   clashes?: AbsenceClash[];
 };
+
+async function signedInUser() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("You are signed out. Please log in again.");
+  // Observers only look: they're on no team or roster, so have no absences to add.
+  if (user.isObserver) throw new Error("Observer accounts can't add absences.");
+  return user;
+}
 
 function fail(e: unknown): AbsenceResult {
   return { ok: false, message: e instanceof Error ? e.message : "Something went wrong." };
@@ -41,7 +49,8 @@ export async function saveAbsence(input: AbsenceInput): Promise<AbsenceResult> {
 
     const db = createAdminClient();
     const owner = input.id ? await requireOwner(input.id) : null;
-    const user = owner ? owner.user : await requirePermission("roster.view");
+    // Absences are personal: anyone signed in can add their own, whatever their permissions.
+    const user = owner ? owner.user : await signedInUser();
     const clashes = await absenceClashes(user.id, startsOn, endsOn);
     if (clashes.length) return { ok: false, message: null, clashes };
 
@@ -92,7 +101,8 @@ export async function deleteAbsence(id: string): Promise<AbsenceResult> {
  */
 export async function getSessionDetail(sessionId: string): Promise<SessionDetail | null> {
   const user = await getCurrentUser();
-  if (!user || !user.can("roster.view")) return null;
+  // Leads see any of their team's sessions; everyone else only ones they serve at (loadSessionDetail checks).
+  if (!user) return null;
   const id = sessionId.split(":")[0]; // "<id>:rehearsal" -> the session
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   return loadSessionDetail(user, id);

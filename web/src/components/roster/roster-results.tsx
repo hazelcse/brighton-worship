@@ -1,8 +1,10 @@
 import {
   MINISTRY_LABEL,
+  usesMinistry,
   ROLE_LABEL,
   ROLE_SHORT,
   ATTACHED_ROLES,
+  ROLES,
   addDays,
   formatDate,
   weekday,
@@ -13,7 +15,11 @@ import type {
   GenerationResult,
   SessionRow,
 } from "@/lib/roster-data";
+import { ROLE_CATALOGUE, ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 import { MissBadge } from "./miss-badge";
+
+/** A part's full name: the band's, or a media team's role (e.g. Wide Angle Cam). */
+const partLabel = (r: string) => ROLE_LABEL[r] ?? CATALOGUE_LABEL[r] ?? r;
 import { PastRowsFrame } from "./past-rows-toggle";
 
 const MINISTRY_STYLE = {
@@ -33,6 +39,8 @@ const COLUMNS = [
   "acoustic guitar",
   "bass",
   "drums",
+  // Media teams' roles, in catalogue order (only the ones a roster's sessions need show).
+  ...ROLE_CATALOGUE.map((r) => r.value as string).filter((r) => !ROLES.some((b) => b.value === r)),
 ];
 const HEADER: Record<string, string> = {
   "worship leader": "WL",
@@ -64,9 +72,12 @@ export function RosterTable({
   pastHidden,
   onTogglePast,
   meId,
+  showMinistry = usesMinistry(sessions),
 }: {
   sessions: SessionRow[];
   assignments: AssignmentRow[];
+  /** The EM/CM column (default: when some of these sessions are EM or CM). */
+  showMinistry?: boolean;
   /** When set (root on a draft), cells are buttons that open the cell editor. */
   onCellClick?: (sessionId: string, role: string) => void;
   /** When set, the date and service are buttons that open the session's settings (band, who can serve…). */
@@ -153,17 +164,19 @@ export function RosterTable({
             <th scope="col" className="px-2 py-1.5 font-semibold">
               Service
             </th>
-            <th scope="col" className="px-2 py-1.5 font-semibold">
-              EM/CM
-            </th>
+            {showMinistry && (
+              <th scope="col" className="px-2 py-1.5 font-semibold">
+                EM/CM
+              </th>
+            )}
             {columns.map((c) => (
               <th
                 key={c}
                 scope="col"
                 className="px-2 py-1.5 font-semibold"
-                title={ROLE_LABEL[c]}
+                title={partLabel(c)}
               >
-                {HEADER[c]}
+                {HEADER[c] ?? partLabel(c)}
               </th>
             ))}
           </tr>
@@ -197,13 +210,15 @@ export function RosterTable({
                   {s.name}
                 </SessionLink>
               </td>
-              <td className="px-2 py-1.5">
-                <span
-                  className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[s.ministry]}`}
-                >
-                  {MINISTRY_LABEL[s.ministry]}
-                </span>
-              </td>
+              {showMinistry && (
+                <td className="px-2 py-1.5">
+                  <span
+                    className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MINISTRY_STYLE[s.ministry]}`}
+                  >
+                    {MINISTRY_LABEL[s.ministry]}
+                  </span>
+                </td>
+              )}
               {columns.map((c) => {
                 const need = (s.composition as Record<string, number>)[c] ?? 0;
                 const people = (cell.get(`${s.id}|${c}`) ?? []).sort((a, b) =>
@@ -234,7 +249,7 @@ export function RosterTable({
                     ) : (
                       <CellList
                         editable={editable}
-                        label={`Change ${ROLE_LABEL[c]} (${s.name}, ${when})`}
+                        label={`Change ${partLabel(c)} (${s.name}, ${when})`}
                         onClick={() => onCellClick?.(s.id, c)}
                       >
                         {people.map((a) =>
@@ -443,14 +458,16 @@ export function WeightsPanel({
             </span>
           </p>
         ))}
-        <p className="flex justify-between gap-3">
-          <span className="min-w-0">
-            Split EM/CM by each person&apos;s % (built in)
-          </span>
-          <span className="shrink-0 font-medium">
-            {result.weights.em_cm_split}
-          </span>
-        </p>
+        {usesMinistry(sessions) && (
+          <p className="flex justify-between gap-3">
+            <span className="min-w-0">
+              Split EM/CM by each person&apos;s % (built in)
+            </span>
+            <span className="shrink-0 font-medium">
+              {result.weights.em_cm_split}
+            </span>
+          </p>
+        )}
       </div>
       </div>
     </details>
@@ -536,26 +553,35 @@ export function RulesPanel({
   );
 }
 
-/** Everyone's load (shown in a popup). */
+/**
+ * Everyone's load (shown in a popup). Teams without an EM/CM split or P&Ps (Youth) get no EM/CM,
+ * EM share or P&P columns, and the note above says only what applies.
+ */
 export function LoadsTable({
   result,
   people,
+  ministry = true,
+  pnp = true,
 }: {
   result: GenerationResult;
   people: People;
+  /** The roster has EM and CM sessions. */
+  ministry?: boolean;
+  /** The roster has P&Ps. */
+  pnp?: boolean;
 }) {
   const notRostered = people.filter(
     (p) => !result.loads.some((l) => l.member === p.id),
   );
   // Each person's parts in the usual role order; band leader / talkback as +BL / +TB, like the roster.
-  const order = Object.keys(ROLE_LABEL);
+  const order = [...Object.keys(ROLE_LABEL), ...COLUMNS];
   const instruments = new Map(
     people.map((p) => {
       const sorted = [...p.instruments].sort((a, b) => order.indexOf(a) - order.indexOf(b));
       return [
         p.id,
         {
-          main: sorted.filter((r) => !(ATTACHED_ROLES as readonly string[]).includes(r)).map((r) => ROLE_LABEL[r] ?? r).join(", "),
+          main: sorted.filter((r) => !(ATTACHED_ROLES as readonly string[]).includes(r)).map(partLabel).join(", "),
           also: sorted.filter((r) => (ATTACHED_ROLES as readonly string[]).includes(r)),
         },
       ];
@@ -564,21 +590,21 @@ export function LoadsTable({
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Main services and P&Ps are balanced separately. Weighted load = sessions
-        × session weight. For people who serve both EM and CM, their EM share is
-        shown against their target.
+        {pnp && "Main services and P&Ps are balanced separately. "}
+        Weighted load = sessions × session weight.
+        {ministry && " For people who serve both EM and CM, their EM share is shown against their target."}
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[42rem] text-left text-sm">
+        <table className={`w-full text-left text-sm ${ministry ? "min-w-[42rem]" : "min-w-[28rem]"}`}>
           <thead className="text-xs text-muted">
             <tr className="border-b border-border">
               <th className="py-2 pr-3 font-medium">Name</th>
               <th className="py-2 pr-3 font-medium">Instruments</th>
               <th className="py-2 pr-3 font-medium">Services</th>
-              <th className="py-2 pr-3 font-medium">P&amp;P</th>
+              {pnp && <th className="py-2 pr-3 font-medium">P&amp;P</th>}
               <th className="py-2 pr-3 font-medium">Weighted load</th>
-              <th className="py-2 pr-3 font-medium">EM / CM</th>
-              <th className="py-2 font-medium">EM share (target)</th>
+              {ministry && <th className="py-2 pr-3 font-medium">EM / CM</th>}
+              {ministry && <th className="py-2 font-medium">EM share (target)</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -611,11 +637,14 @@ export function LoadsTable({
                     ))}
                   </td>
                   <td className="py-1.5 pr-3">{l.main ?? l.services}</td>
-                  <td className="py-1.5 pr-3">{l.pnp ?? "–"}</td>
+                  {pnp && <td className="py-1.5 pr-3">{l.pnp ?? "–"}</td>}
                   <td className="py-1.5 pr-3">{l.weighted}</td>
+                  {ministry && (
                   <td className="py-1.5 pr-3 text-muted">
                     {l.em} / {l.cm}
                   </td>
+                  )}
+                  {ministry && (
                   <td className="py-1.5">
                     {both ? (
                       <span className={off > 15 ? "text-amber-700" : ""}>
@@ -631,6 +660,7 @@ export function LoadsTable({
                       </span>
                     )}
                   </td>
+                  )}
                 </tr>
               );
             })}

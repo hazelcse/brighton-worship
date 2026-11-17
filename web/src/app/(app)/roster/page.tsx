@@ -14,6 +14,59 @@ import { NewMenu } from "@/components/roster/new-menu";
 import { QuarterSwitchButton } from "@/components/roster/quarter-switch-button";
 import { BroadcastActionables } from "@/components/broadcasts";
 import { loadBroadcastActionables } from "@/lib/broadcasts";
+import { loadTeams } from "@/lib/teams";
+import type { TeamGroup } from "@/lib/team-config";
+
+/**
+ * Root's Schedule: root is on no team, so instead of one team's roster page it gets a button per
+ * team for that team's roster this quarter (an observer gets the same, for its group's teams). Each switches root to the team first (root works in one
+ * team at a time), then opens the roster; a team with nothing published just says so.
+ */
+async function RootRosters({ group }: { group?: TeamGroup }) {
+  const today = todayYmd();
+  // An observer: only its group's teams (e.g. Youth Worship and Youth Media).
+  const teams = (await loadTeams()).filter((t) => !group || t.group === group);
+  const rosters = await Promise.all(teams.map((t) => publishedRosterFor(today, t.id)));
+  const open = (slug: string, next: string) => `/teams/${slug}/open?next=${encodeURIComponent(next)}`;
+  return (
+    <div className="space-y-5">
+      <div className="space-y-1">
+        <h1 className="font-display text-4xl font-semibold">Rosters</h1>
+        <p className="text-sm text-muted">{quarterOf(today).label}: each team&apos;s current roster.</p>
+      </div>
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {teams.map((t, i) => {
+          const r = rosters[i];
+          return (
+            <li key={t.id}>
+              {/* Plain links (not prefetched): following one switches team. */}
+              {r ? (
+                <a
+                  href={open(t.slug, "/roster/current")}
+                  className="group flex h-full items-center justify-between gap-3 rounded-xl bg-ink px-4 py-3 text-ink-foreground transition hover:bg-ink/90"
+                >
+                  <span>
+                    <span className="block text-xs uppercase tracking-wider text-ink-foreground/60">{t.name}</span>
+                    <span className="font-medium">{formatRange(r.starts_on, r.ends_on)}</span>
+                  </span>
+                  <span aria-hidden className="transition group-hover:translate-x-0.5">→</span>
+                </a>
+              ) : (
+                // Nothing to open: the same dashed card, but not a link.
+                <div className="flex h-full items-center justify-between gap-3 rounded-xl border border-dashed border-border px-4 py-3">
+                  <span>
+                    <span className="block text-xs uppercase tracking-wider text-muted">{t.name}</span>
+                    <span className="text-sm text-muted">No roster published this quarter</span>
+                  </span>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 export const metadata: Metadata = { title: "Roster · Brighton Worship" };
 
@@ -29,7 +82,7 @@ function Panel({ title, id, children }: { title: string; id?: string; children: 
 }
 
 async function RosterView() {
-  const user = await requireUser();
+  const user = await requireUser("team");
   if (!user.can("roster.view")) {
     return (
       <p className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
@@ -37,16 +90,20 @@ async function RosterView() {
       </p>
     );
   }
+  if (user.isRoot) return <RootRosters />;
+  if (user.observerGroup) return <RootRosters group={user.observerGroup} />;
+  const team = user.team;
+  if (!team) return <RootRosters />;
   const today = todayYmd();
   const q = quarterOf(today);
   const next = nextQuarter(q);
   // Next quarter's roster shows up here as soon as it's published, for everyone who can see rosters.
-  const [roster, upcoming] = await Promise.all([publishedRosterFor(today), publishedRosterFor(next.start)]);
+  const [roster, upcoming] = await Promise.all([publishedRosterFor(today, team.id), publishedRosterFor(next.start, team.id)]);
   const canEdit = user.can("roster.edit");
   const [services, board, broadcasts] = await Promise.all([
-    loadMyServices(user.id),
+    loadMyServices(user.id, team.id),
     loadRequestsBoard(user.id),
-    user.isRoot ? loadBroadcastActionables() : Promise.resolve([]),
+    user.isLead ? loadBroadcastActionables(team.id) : Promise.resolve([]),
   ]);
 
   return (
@@ -105,14 +162,14 @@ async function RosterView() {
             >
               View past rosters
             </Link>
-            <NewMenu isRoot={user.isRoot} />
+            <NewMenu isLead={user.isLead} teamConfig={team.config} />
           </div>
         )}
       </div>
 
       {/* Roster updates are in the nav's inbox. */}
       <MyServices services={services} />
-      <Panel title={user.isRoot ? "Actionables" : "Requests"} id="requests">
+      <Panel title={user.isLead ? "Actionables" : "Requests"} id="requests">
         <RequestsBoard board={board} before={broadcasts.length > 0 && <BroadcastActionables items={broadcasts} />} />
       </Panel>
     </div>

@@ -6,6 +6,7 @@ import { adhocBandOptions, addAdhocSession, type AdhocPerson, type AdhocPick } f
 import { ATTACHED_ROLES, ROLES, ROLE_LABEL, SINGING_ROLES, formatDate, todayYmd } from "@/lib/roster";
 import { SessionDialog, newSessionDraft, type Draft } from "@/components/roster/session-planner";
 import { NewBroadcastDialog } from "@/components/broadcasts";
+import type { TeamConfig } from "@/lib/team-config";
 
 /** Slots per part: role -> who's in each place (null = not picked; the generator fills it on a draft). */
 type Picks = { slots: Record<string, (string | null)[]>; leaders: (string | null)[] };
@@ -136,7 +137,7 @@ function BandPicker({ s, picks, setPicks }: { s: Draft; picks: Picks; setPicks: 
 }
 
 /** Root: an ad-hoc session with its band, on whichever roster covers its date. */
-function AdhocDialog({ onClose }: { onClose: () => void }) {
+function AdhocDialog({ onClose, teamConfig }: { onClose: () => void; teamConfig?: TeamConfig }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [picks, setPicks] = useState<Picks>({ slots: {}, leaders: [] });
   const [done, setDone] = useState<string | null>(null);
@@ -182,6 +183,7 @@ function AdhocDialog({ onClose }: { onClose: () => void }) {
             </p>
             <SessionDialog
               rosterId=""
+              teamConfig={teamConfig}
               draft={newSessionDraft(today)}
               quarter={{ start: today, end: "" }}
               onClose={() => ref.current?.close()}
@@ -204,7 +206,7 @@ function AdhocDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** The Roster page's + button: a new roster, or (root) an ad-hoc session or a broadcast. */
-export function NewMenu({ isRoot }: { isRoot: boolean }) {
+export function NewMenu({ isLead, teamConfig }: { isLead: boolean; teamConfig?: TeamConfig }) {
   const [open, setOpen] = useState(false);
   const [adhoc, setAdhoc] = useState(false);
   const [broadcast, setBroadcast] = useState(false);
@@ -238,7 +240,7 @@ export function NewMenu({ isRoot }: { isRoot: boolean }) {
           <Link role="menuitem" href="/roster/new" className="block px-4 py-2.5 text-sm hover:bg-background">
             + New roster
           </Link>
-          {isRoot && (
+          {isLead && (
             <button
               type="button"
               role="menuitem"
@@ -251,7 +253,7 @@ export function NewMenu({ isRoot }: { isRoot: boolean }) {
               + New ad-hoc
             </button>
           )}
-          {isRoot && (
+          {isLead && (
             <>
               {/* Rosters above, messages below. */}
               <div role="separator" className="my-1 border-t border-border" />
@@ -270,7 +272,7 @@ export function NewMenu({ isRoot }: { isRoot: boolean }) {
           )}
         </div>
       )}
-      {adhoc && <AdhocDialog onClose={() => setAdhoc(false)} />}
+      {adhoc && <AdhocDialog onClose={() => setAdhoc(false)} teamConfig={teamConfig} />}
       {broadcast && <NewBroadcastDialog onClose={() => setBroadcast(false)} />}
     </div>
   );

@@ -1,4 +1,5 @@
 import "server-only";
+import { teamMemberIds } from "@/lib/teams";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrentUser } from "@/lib/auth";
 
@@ -39,13 +40,14 @@ const toBroadcast = (r: Row): Broadcast => ({
   createdBy: r.created_by,
 });
 
-/** Broadcasts still waiting on this person, newest first. */
+/** The signed-in team's broadcasts still waiting on this person, newest first. */
 export async function loadMyBroadcasts(user: CurrentUser): Promise<Broadcast[]> {
   // Developers aren't on the team (unless they're viewing as someone).
-  if (user.isDeveloper && !user.viewingAsPerson) return [];
+  // Brighton Serving (root and observers outside every team) has none.
+  if ((user.isDeveloper && !user.viewingAsPerson) || !user.team) return [];
   const db = createAdminClient();
   const [{ data: rows, error }, { data: done }] = await Promise.all([
-    db.from("broadcasts").select(SELECT).order("created_at", { ascending: false }),
+    db.from("broadcasts").select(SELECT).eq("team_id", user.team.id).order("created_at", { ascending: false }),
     db.from("broadcast_responses").select("broadcast_id").eq("member_id", user.id),
   ]);
   if (error) throw new Error(error.message);
@@ -56,12 +58,13 @@ export async function loadMyBroadcasts(user: CurrentUser): Promise<Broadcast[]> 
 export type AckPerson = { id: string; name: string; at: string | null };
 export type BroadcastStatus = Broadcast & { acknowledged: AckPerson[]; pending: AckPerson[]; total: number };
 
-/** Root: every broadcast that needs acknowledging, with who has and who hasn't. */
-export async function loadBroadcastActionables(): Promise<BroadcastStatus[]> {
+/** The lead: the team's broadcasts that need acknowledging, with who on the team has and who hasn't. */
+export async function loadBroadcastActionables(teamId: string): Promise<BroadcastStatus[]> {
   const db = createAdminClient();
+  const memberIds = await teamMemberIds(teamId);
   const [{ data: rows, error }, { data: people }] = await Promise.all([
-    db.from("broadcasts").select(SELECT).eq("requires_ack", true).order("created_at", { ascending: false }),
-    db.from("profiles").select("id, full_name, email").eq("is_active", true).eq("is_developer", false).order("full_name"),
+    db.from("broadcasts").select(SELECT).eq("team_id", teamId).eq("requires_ack", true).order("created_at", { ascending: false }),
+    db.from("profiles").select("id, full_name, email").in("id", memberIds).eq("is_active", true).eq("is_developer", false).order("full_name"),
   ]);
   if (error) throw new Error(error.message);
   const list = (rows ?? []) as Row[];

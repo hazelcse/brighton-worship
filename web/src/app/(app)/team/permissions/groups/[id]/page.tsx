@@ -6,21 +6,29 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ActionForm } from "@/components/action-form";
 import { updateGroup } from "../../actions";
 import { byCategory, loadPermissionCatalogue, requireAdminViewer } from "../../data";
+import { teamLeadId, teamMemberIds } from "@/lib/teams";
 
 const input =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
 async function GroupView({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminViewer(); // root only
+  const viewer = await requireAdminViewer(); // the lead only
   const { id } = await params;
   const db = createAdminClient();
+  const [memberIds, leadId] = await Promise.all([teamMemberIds(viewer.team.id), teamLeadId(viewer.team.id)]);
 
   const [{ data: group }, catalogue, { data: granted }, { data: members }, { data: people }] = await Promise.all([
-    db.from("groups").select("id, name, description").eq("id", id).maybeSingle(),
-    loadPermissionCatalogue(),
+    db.from("groups").select("id, name, description").eq("id", id).eq("team_id", viewer.team.id).maybeSingle(),
+    loadPermissionCatalogue(viewer.team.id),
     db.from("group_permissions").select("permission_key").eq("group_id", id),
     db.from("user_groups").select("user_id").eq("group_id", id),
-    db.from("profiles").select("id, uid, full_name, email, is_root").eq("is_root", false).eq("is_developer", false).order("uid", { nullsFirst: false }),
+    // This team's members, except its lead (the lead already has everything).
+    db
+      .from("profiles")
+      .select("id, uid, full_name, email")
+      .in("id", memberIds.filter((m) => m !== leadId))
+      .eq("is_developer", false)
+      .order("uid", { nullsFirst: false }),
   ]);
   if (!group) notFound();
 
@@ -72,7 +80,7 @@ async function GroupView({ params }: { params: Promise<{ id: string }> }) {
           <section className="overflow-hidden rounded-xl border border-border bg-surface">
             <div className="p-4">
               <h2 className="font-semibold">People in this group</h2>
-              <p className="text-sm text-muted">Tick everyone who should be in it. Root always has every permission.</p>
+              <p className="text-sm text-muted">Tick everyone who should be in it. The lead always has every permission.</p>
             </div>
             <input type="hidden" name="set_members" value="1" />
             <ul className="divide-y divide-border border-t border-border">

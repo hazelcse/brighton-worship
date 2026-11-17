@@ -1,5 +1,8 @@
 /**
- * Creates (or promotes) the single root user.
+ * Creates (or promotes) the single root account. Root is app-wide, like a developer: it has every
+ * permission in every team, opens any team from the login page, and creates teams (Manage teams).
+ * Each team's own head is its lead, chosen on Manage teams or the team's permissions page.
+ * Root is never on a team: ROOT_EMAIL must not belong to a team member.
  *
  *   npm run create-root
  *
@@ -42,6 +45,13 @@ async function main() {
   const { data: found } = await admin.from("profiles").select("id").eq("email", email).maybeSingle();
   if (found) {
     userId = found.id;
+    // Root sits above every team, so it must be its own account, not a team member's.
+    const { count } = await admin.from("team_members").select("team_id", { count: "exact", head: true }).eq("user_id", userId);
+    if (count) {
+      throw new Error(
+        `${email} is on ${count === 1 ? "a team" : `${count} teams`}, so it can't be root. Set ROOT_EMAIL to an email that isn't on any team.`,
+      );
+    }
     console.log(`User ${email} already exists. Making sure it is root…`);
   } else {
     const { data, error } = await admin.auth.admin.createUser({

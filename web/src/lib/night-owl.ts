@@ -11,7 +11,13 @@ export async function morningServiceTonight(now: Date = new Date()): Promise<{ n
   const { ymd, hour } = teamNow(now);
   if (hour >= 5) return null;
   const db = createAdminClient();
-  const { data: rosters } = await db.from("rosters").select("id").eq("status", "published");
+  // Sunday services are the worship teams' rosters.
+  const { data: teams } = await db.from("teams").select("id").eq("kind", "worship");
+  const { data: rosters } = await db
+    .from("rosters")
+    .select("id")
+    .eq("status", "published")
+    .in("team_id", (teams ?? []).map((t) => t.id as string));
   const ids = (rosters ?? []).map((r) => r.id);
   if (!ids.length) return null;
   const { data } = await db

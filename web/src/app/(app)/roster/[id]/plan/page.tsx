@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CalendarLoader } from "@/components/calendar-loader";
-import { requireUser } from "@/lib/auth";
+import { requireTeamUser } from "@/lib/auth";
 import { formatRange, hhmm, quarterOf } from "@/lib/roster";
 import { loadPeople, loadResult, loadRoster, loadRules } from "@/lib/roster-data";
 import { GenerateControls } from "@/components/roster/generate-controls";
@@ -14,16 +14,16 @@ import { DeleteDraftButton } from "@/components/roster/delete-draft-button";
 export const metadata: Metadata = { title: "Plan roster · Brighton Worship" };
 
 async function PlanView({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
+  const user = await requireTeamUser(`/roster/${(await params).id}/plan`, "team");
   if (!user.can("roster.edit")) notFound();
   const { id } = await params;
-  const [data, rules, people] = await Promise.all([loadRoster(id), loadRules(id), loadPeople()]);
+  const [data, rules, people] = await Promise.all([loadRoster(id, user.team.id), loadRules(id, user.team.id), loadPeople(user.team)]);
   if (!data) notFound();
   const { roster, sessions } = data;
   const { result } = await loadResult(roster.id);
   // Root's edit of a published roster: its sessions can be changed, but it isn't generated again.
   const revision = roster.status === "revision";
-  if (revision && !user.isRoot) notFound();
+  if (revision && !user.isLead) notFound();
   const editable = roster.status === "draft" || revision;
   const q = quarterOf(roster.starts_on);
   const active = sessions.filter((s) => !s.cancelled);
@@ -62,6 +62,7 @@ async function PlanView({ params }: { params: Promise<{ id: string }> }) {
 
       <SessionPlanner
         rosterId={roster.id}
+        teamConfig={user.team.config}
         editable={editable}
         quarter={{ start: roster.starts_on, end: roster.ends_on }}
         sessions={sessions.map((s) => ({
@@ -85,7 +86,7 @@ async function PlanView({ params }: { params: Promise<{ id: string }> }) {
         rosterId={roster.id}
         rules={rules}
         people={people}
-        isRoot={user.isRoot}
+        isLead={user.isLead}
         editable={user.can("roster.edit") && !revision}
         sessions={sessions.map((s) => ({ date: s.date, kind: s.kind, name: s.name, ministry: s.ministry, cancelled: s.cancelled, composition: s.composition }))}
       />

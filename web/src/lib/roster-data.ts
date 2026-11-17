@@ -1,6 +1,8 @@
+import { teamProfiles } from "@/lib/teams";
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Composition, Ministry, People, Rule, RuleParams, SessionKind } from "@/lib/roster";
+import { teamPerson, type TeamConfig } from "@/lib/team-config";
+import { type Composition, type Ministry, type People, type Rule, type RuleParams, type SessionKind } from "@/lib/roster";
 import type { RosterCheck } from "@/lib/roster-check";
 
 /** Where a rule was missed: these people on these dates (no people = everyone on those dates). */
@@ -38,21 +40,24 @@ export type SessionRow = {
   rehearsal_time: string | null;
 };
 
-export async function listRosters(): Promise<RosterRow[]> {
+/** One team's rosters. */
+export async function listRosters(teamId: string): Promise<RosterRow[]> {
   const { data, error } = await createAdminClient()
     .from("rosters")
     .select("id, starts_on, ends_on, status, created_at, published_at, generated_at")
+    .eq("team_id", teamId)
     .neq("status", "revision") // edits of published rosters aren't rosters of their own
     .order("starts_on", { ascending: false });
   if (error) throw error;
   return (data ?? []) as RosterRow[];
 }
 
-/** The published roster covering a date, if any. */
-export async function publishedRosterFor(date: string): Promise<RosterRow | null> {
+/** A team's published roster covering a date, if any. */
+export async function publishedRosterFor(date: string, teamId: string): Promise<RosterRow | null> {
   const { data } = await createAdminClient()
     .from("rosters")
     .select("id, starts_on, ends_on, status, created_at, published_at")
+    .eq("team_id", teamId)
     .eq("status", "published")
     .lte("starts_on", date)
     .gte("ends_on", date)
@@ -60,10 +65,11 @@ export async function publishedRosterFor(date: string): Promise<RosterRow | null
   return (data as RosterRow) ?? null;
 }
 
-export async function loadRoster(id: string): Promise<{ roster: RosterRow; sessions: SessionRow[] } | null> {
+/** One of the team's rosters (null for another team's). */
+export async function loadRoster(id: string, teamId: string): Promise<{ roster: RosterRow; sessions: SessionRow[] } | null> {
   const db = createAdminClient();
   const [{ data: roster }, { data: sessions }] = await Promise.all([
-    db.from("rosters").select("id, starts_on, ends_on, status, revision_of, created_at, published_at").eq("id", id).maybeSingle(),
+    db.from("rosters").select("id, starts_on, ends_on, status, revision_of, created_at, published_at").eq("id", id).eq("team_id", teamId).maybeSingle(),
     db.from("roster_sessions").select("*").eq("roster_id", id).order("date").order("kind"),
   ]);
   if (!roster) return null;
@@ -73,11 +79,12 @@ export async function loadRoster(id: string): Promise<{ roster: RosterRow; sessi
   };
 }
 
-/** Rules that apply to this roster: the defaults plus its own. */
-export async function loadRules(rosterId: string): Promise<Rule[]> {
+/** Rules that apply to this roster: the team's defaults plus its own. */
+export async function loadRules(rosterId: string, teamId: string): Promise<Rule[]> {
   const { data, error } = await createAdminClient()
     .from("roster_rules")
     .select("id, hard, weight, enabled, permanent, roster_id, template, params")
+    .eq("team_id", teamId)
     .or(`roster_id.is.null,roster_id.eq.${rosterId}`)
     .order("permanent", { ascending: false })
     .order("created_at");
@@ -93,11 +100,12 @@ export async function loadRules(rosterId: string): Promise<Rule[]> {
   }));
 }
 
-/** Every rule (defaults and each roster's own), with the roster a roster-only rule belongs to. */
-export async function loadAllRules(): Promise<(Rule & { roster: { id: string; starts_on: string; status: string } | null })[]> {
+/** Every rule of a team (defaults and each roster's own), with the roster a roster-only rule belongs to. */
+export async function loadAllRules(teamId: string): Promise<(Rule & { roster: { id: string; starts_on: string; status: string } | null })[]> {
   const { data, error } = await createAdminClient()
     .from("roster_rules")
     .select("id, hard, weight, enabled, permanent, roster_id, template, params, rosters(id, starts_on, status)")
+    .eq("team_id", teamId)
     .order("permanent", { ascending: false })
     .order("created_at");
   if (error) throw error;
@@ -113,22 +121,31 @@ export async function loadAllRules(): Promise<(Rule & { roster: { id: string; st
   }));
 }
 
-/** Active team members, for rule pickers and capacity checks. */
-export async function loadPeople(): Promise<People> {
+/** A team's active members, for rule pickers and capacity checks. */
+export async function loadPeople(team: { id: string; config: TeamConfig }): Promise<People> {
+  // What each member plays, their EM/CM share and "serves at" come from their profile on this team.
+  const profiles = await teamProfiles(team.id);
   const { data, error } = await createAdminClient()
     .from("profiles")
-    .select("id, full_name, email, instruments, em_percent, serves, is_active")
+    .select("id, full_name, email, is_active")
+    .in("id", [...profiles.keys()])
     .eq("is_active", true)
     .eq("is_developer", false) // developer accounts are never rostered
     .order("full_name");
   if (error) throw error;
-  return (data ?? []).map((p) => ({
-    id: p.id as string,
-    name: (p.full_name as string) || (p.email as string),
-    instruments: (p.instruments as string[]) ?? [],
-    emPercent: p.em_percent as number | null,
-    serves: ((p.serves as string) ?? "both") as "both" | "sunday" | "pnp",
-  }));
+  return (data ?? []).map((p) => {
+    const t = profiles.get(p.id as string)!;
+    return teamPerson(
+      {
+        id: p.id as string,
+        name: (p.full_name as string) || (p.email as string),
+        instruments: t.instruments,
+        emPercent: t.emPercent,
+        serves: t.serves,
+      },
+      team.config,
+    );
+  });
 }
 
 export type AwayRow = { memberId: string; startsOn: string; endsOn: string; reason: string };

@@ -3,13 +3,18 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { formatTime } from "@/lib/roster";
 import { morningServiceTonight } from "@/lib/night-owl";
-import { getSessionUser } from "@/lib/auth";
+import { TEAM_HOME, getSessionUser } from "@/lib/auth";
 import { LoginButton } from "@/components/login-dialog";
+import { TeamLogin } from "@/components/team-login";
+import { chosenLoginKind, KIND_TITLE, loadTeams, type TeamKind } from "@/lib/teams";
 
 /** Sends already-signed-in users straight to the app. Streams in after the static shell. */
 async function RedirectIfSignedIn() {
   const user = await getSessionUser();
-  if (user) redirect(user.mustChangePassword ? "/change-password" : "/home");
+  if (!user) return null;
+  // Their team's own home (a media team's is /media); root and observers always get /home.
+  const home = user.team && !user.isRoot && !user.isObserver ? TEAM_HOME[user.team.kind] : "/home";
+  redirect(user.mustChangePassword ? "/change-password" : home);
   return null;
 }
 
@@ -36,17 +41,43 @@ export default function LandingPage() {
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(180,83,9,0.22),transparent_65%)]"
       />
+      <Suspense fallback={<TitleFallback />}>
+        <TeamTitleAndLogin>
+          <Suspense fallback={null}>
+            <GoToSleep />
+          </Suspense>
+        </TeamTitleAndLogin>
+      </Suspense>
+    </main>
+  );
+}
+
+/**
+ * One title per kind of team that exists ("Brighton Worship", "Brighton Media"), opening on the one
+ * chosen last time. Hold it to switch.
+ */
+async function TeamTitleAndLogin({ children }: { children: React.ReactNode }) {
+  const [teams, initial] = await Promise.all([loadTeams(), chosenLoginKind()]);
+  const kinds = (Object.keys(KIND_TITLE) as TeamKind[]).filter((k) => teams.some((t) => t.kind === k));
+  return (
+    <TeamLogin teams={kinds.map((k) => ({ slug: k, name: KIND_TITLE[k] }))} initial={initial}>
+      {children}
+    </TeamLogin>
+  );
+}
+
+/** Shown for the moment before the team list arrives. */
+function TitleFallback() {
+  return (
+    <>
       <h1 className="relative text-center font-display text-6xl font-semibold leading-none tracking-tight sm:text-8xl lg:text-9xl">
         Brighton
         <br />
-        Worship
+        &nbsp;
       </h1>
-      <Suspense fallback={null}>
-        <GoToSleep />
-      </Suspense>
       <div className="relative mt-12">
-        <LoginButton />
+        <LoginButton team="worship" teamName="Brighton Worship" />
       </div>
-    </main>
+    </>
   );
 }

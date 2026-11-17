@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, inTeam } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { teamProfiles } from "@/lib/teams";
 import { ATTACHED_ROLES, ROLE_LABEL, SINGING_ROLES, defaultSessions, quarterOf, todayYmd } from "@/lib/roster";
+import { teamPerson } from "@/lib/team-config";
 import { cleanComposition, validateSession, type SessionInput } from "@/lib/session-input";
 
 /**
@@ -37,10 +39,11 @@ export type AdhocPick = { member: string; role: string; bandLeader: boolean };
 type Roster = { id: string; status: string; starts_on: string; ends_on: string };
 
 /** The roster an ad-hoc session on this date joins: the published one covering it, else the draft, else none yet. */
-async function targetRoster(db: Db, date: string): Promise<Roster | null> {
+async function targetRoster(db: Db, date: string, teamId: string): Promise<Roster | null> {
   const { data } = await db
     .from("rosters")
     .select("id, status, starts_on, ends_on")
+    .eq("team_id", teamId)
     .in("status", ["published", "draft"])
     .lte("starts_on", date)
     .gte("ends_on", date);
@@ -50,26 +53,28 @@ async function targetRoster(db: Db, date: string): Promise<Roster | null> {
 
 async function signedInRoot() {
   const user = await getCurrentUser();
-  if (!user?.isRoot) throw new Error("Only root can add ad-hoc sessions.");
-  return user;
+  if (!user?.isLead) throw new Error("Only the lead can add ad-hoc sessions.");
+  return inTeam(user);
 }
 
 const isDay = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 /** Everyone who could be picked for an ad-hoc session on `date` (rehearsal on `rehearsal`, if any). */
 export async function adhocBandOptions(date: string, rehearsal: string | null): Promise<AdhocPerson[]> {
-  await signedInRoot();
+  const user = await signedInRoot();
   if (!isDay(date)) return [];
   const db = createAdminClient();
   const days = [date, ...(isDay(rehearsal) ? [rehearsal] : [])];
-  const roster = await targetRoster(db, date);
+  // What each member plays here, their EM/CM share and "serves at": their profile on this team.
+  const [roster, profiles] = await Promise.all([targetRoster(db, date, user.team.id), teamProfiles(user.team.id)]);
+  const memberIds = [...profiles.keys()];
   // The session's month as a date range (roster_sessions.date is a date, so LIKE "2026-11-%" errors).
   const [y, m] = date.split("-").map(Number);
   const monthStart = `${date.slice(0, 7)}-01`;
   const nextMonthStart = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
 
   const [{ data: people }, { data: away }, { data: sameDay }, { data: monthSessions }] = await Promise.all([
-    db.from("profiles").select("id, full_name, email, instruments, em_percent, serves").eq("is_active", true).eq("is_developer", false).order("full_name"),
+    db.from("profiles").select("id, full_name, email").in("id", memberIds).eq("is_active", true).eq("is_developer", false).order("full_name"),
     db.from("absences").select("member_id, starts_on, ends_on, reason").lte("starts_on", days.reduce((a, b) => (a > b ? a : b))).gte("ends_on", days.reduce((a, b) => (a < b ? a : b))),
     // Already serving that day, on any live or draft roster.
     db
@@ -95,19 +100,21 @@ export async function adhocBandOptions(date: string, rehearsal: string | null): 
   return (people ?? []).map((p) => {
     const absence = (away ?? []).find((a) => a.member_id === p.id && days.some((d) => a.starts_on <= d && a.ends_on >= d));
     const atRehearsal = absence && !(absence.starts_on <= date && absence.ends_on >= date);
-    return {
+    const t = profiles.get(p.id as string)!;
+    // A team without EM/CM or P&Ps (Youth) ignores those settings.
+    return teamPerson({
       id: p.id as string,
       name: (p.full_name as string) || (p.email as string),
-      instruments: (p.instruments as string[]) ?? [],
-      emPercent: p.em_percent as number | null,
-      serves: ((p.serves as string) ?? "both") as AdhocPerson["serves"],
+      instruments: t.instruments,
+      emPercent: t.emPercent,
+      serves: t.serves,
       load: Math.round((load.get(p.id as string) ?? 0) * 10) / 10,
       unavailable: absence
         ? `absent${atRehearsal ? " at the rehearsal" : ""}${absence.reason && absence.reason !== "Absence" ? ` (${absence.reason})` : ""}`
         : serving.has(p.id as string)
           ? `already on ${serving.get(p.id as string)}`
           : null,
-    };
+    }, user.team.config);
   });
 }
 
@@ -161,12 +168,12 @@ export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): 
     if (leaders > (s.composition["band leader"] ?? 0)) return { ok: false, message: "Too many BL/TBs for this band." };
 
     // Which roster it joins (a new draft for that quarter if there's none yet).
-    let roster = await targetRoster(db, s.date);
+    let roster = await targetRoster(db, s.date, user.team.id);
     if (!roster) {
-      const { data, error } = await db.from("rosters").insert({ starts_on: q.start, ends_on: q.end, created_by: user.id }).select("id, status, starts_on, ends_on").single();
+      const { data, error } = await db.from("rosters").insert({ starts_on: q.start, ends_on: q.end, created_by: user.id, team_id: user.team.id }).select("id, status, starts_on, ends_on").single();
       if (error) throw error;
       roster = data as Roster;
-      const { error: sErr } = await db.from("roster_sessions").insert(defaultSessions(q).map((x) => ({ ...x, roster_id: roster!.id })));
+      const { error: sErr } = await db.from("roster_sessions").insert(defaultSessions(q, user.team.config.sessionKinds, user.team.config.compositions, user.team.kind !== "media").map((x) => ({ ...x, roster_id: roster!.id })));
       if (sErr) throw sErr;
       await db.from("audit_log").insert({ actor_id: user.id, action: "roster.create", target: roster.id, details: { quarter: q.label, for: "ad-hoc session" } });
     }
@@ -212,6 +219,7 @@ export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): 
       if (band.length) {
         const { error } = await db.from("roster_rules").insert(
           band.map((b) => ({
+            team_id: user.team.id,
             template: "date",
             params: {
               member: b.member,

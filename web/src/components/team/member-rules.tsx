@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { TeamConfig } from "@/lib/team-config";
 import { frequencyExemptions, quarterOf, ruleSentence, rulesAbout, type MemberRuleReason } from "@/lib/roster";
 import { loadAllRules, loadPeople } from "@/lib/roster-data";
 import { SERVES_LABEL, type Serves } from "@/lib/team";
@@ -14,10 +15,14 @@ const REASON: Record<MemberRuleReason, { label: string; style: string }> = {
 /** Admin view: the roster rules that apply to this member specifically (not "everyone" rules). */
 export async function MemberRules({
   member,
+  team,
 }: {
   member: { id: string; name: string; instruments: string[]; emPercent: number | null; serves: Serves };
+  /** The signed-in team: its rules and members. */
+  team: { id: string; config: TeamConfig };
 }) {
-  const [all, people] = await Promise.all([loadAllRules(), loadPeople()]);
+  const [all, people] = await Promise.all([loadAllRules(team.id), loadPeople(team)]);
+  const showServes = team.config.memberFields.serves;
   // Defaults, plus rules of rosters still in use (not archived ones).
   const rules = all.filter((r) => r.rosterId === null || (r.roster && r.roster.status !== "archived"));
   const mine = rulesAbout(member, rules);
@@ -31,8 +36,13 @@ export async function MemberRules({
           Roster rules for {member.name}
         </h2>
         <p className="text-sm text-muted">
-          Serves at: <span className="font-medium text-foreground">{SERVES_LABEL[member.serves]}</span>
-          {" · "}Share of the load: <span className="font-medium text-foreground">{share ?? 1}</span>
+          {showServes && (
+            <>
+              Serves at: <span className="font-medium text-foreground">{SERVES_LABEL[member.serves]}</span>
+              {" · "}
+            </>
+          )}
+          Share of the load: <span className="font-medium text-foreground">{share ?? 1}</span>
           {share !== undefined && " (serves less)"}
         </p>
       </div>

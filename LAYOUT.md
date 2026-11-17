@@ -23,7 +23,7 @@ Widths are in CSS pixels at normal (100%) browser zoom. "From 640px up" means wi
 
 | What | Measurement | Classes | Set in |
 |---|---|---|---|
-| Page content area (every signed-in page) | Max **992px** wide, centred. Side padding **16px** on phones, **24px** from 640px up. **24px** top and bottom. **Exception:** the roster editor (`/roster/[id]/generated`), Tracking (`/sessions/tracking`) and the session workbench (`/sessions/[id]`), which render `<WidePage />`, are wider: max **(window width + 992px) ÷ 2**, so its edges sit halfway between the nav's edges and the window's edges (e.g. 1216px in a 1440px window) | `mx-auto w-full max-w-page px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]` | `web/src/app/(app)/layout.tsx` |
+| Page content area (every signed-in page) | Max **992px** wide, centred. Side padding **16px** on phones, **24px** from 640px up. **24px** top and bottom. **Exception:** the roster editor (`/roster/[id]/generated`), Tracking (`/sessions/tracking`), the session workbench (`/sessions/[id]`) and root's home page (`/home` signed in as root), which render `<WidePage />`, are wider: max **(window width + 992px) ÷ 2**, so its edges sit halfway between the nav's edges and the window's edges (e.g. 1216px in a 1440px window) | `mx-auto w-full max-w-page px-4 py-6 sm:px-6 has-[[data-wide-page]]:max-w-[calc(50vw+31rem)]` | `web/src/app/(app)/layout.tsx` |
 | Nav bar | Dark background spans the full window. Contents max **992px**, centred, **56px** tall, **16px / 24px** side padding, **8px** between items | `h-14 max-w-page gap-2 px-4 sm:px-6` | `web/src/components/app-nav.tsx` |
 | Nav bar while loading | Same as the nav bar: 56px tall, max 992px | `h-14 max-w-page px-4 sm:px-6` | `web/src/components/app-nav.tsx` |
 | Mobile sidebar | **288px** wide, never more than **85%** of the screen | `w-72 max-w-[85vw]` | `web/src/components/app-nav.tsx` |
@@ -67,6 +67,9 @@ These depend on the root font size staying at the browser default (16px): nothin
   hidden.
 - 11 Nov 2026: the owner asked for the session builder (workbench, `/sessions/[id]`) to use the same
   wide width. The session list for building (`/sessions/build`) stays 768px.
+- 17 Nov 2026: the owner asked for root's home page to use the wide layout (`<WidePage />`) with the
+  Youth service and Main service side by side (Youth left, 48px apart from 1024px). Everyone else's
+  home page stays the 672px column.
 - 13 Nov 2026: the owner asked for the song bank's "!" (needs review) button to go; "Needs review"
   is now a Status choice in the Filters dropdown, which also gained an Artist list.
 

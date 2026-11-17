@@ -107,6 +107,39 @@ export function serviceType(kind: string, serviceName: string): string {
   return serviceName;
 }
 
+/**
+ * Root's Tracking: every worship team's tracked sessions, each as one service with its media crew.
+ * `group`: the team's group (Main or Youth). `crew`: who was on the group's media roster that day,
+ * by role; null for a service without a media crew (CM services, P&P for CM, ad hoc).
+ */
+export type ServiceRecord = SessionRecord & {
+  group: "main" | "youth";
+  team: string;
+  crew: { role: string; names: string[] }[] | null;
+};
+
+/** What root's Tracking filters by: Youth (YF), or a Main service's ministry. */
+export type ServiceGroup = "yf" | "cm" | "em";
+export const SERVICE_GROUPS: readonly ServiceGroup[] = ["yf", "cm", "em"];
+export const SERVICE_GROUP_TEXT: Record<ServiceGroup, string> = { yf: "YF", cm: "CM", em: "EM" };
+
+/** Which of YF, CM and EM a service counts for (a Main session for both ministries counts for both). */
+export function serviceGroups(r: Pick<ServiceRecord, "group" | "ministry">): ServiceGroup[] {
+  if (r.group === "youth") return ["yf"];
+  return r.ministry === "em" ? ["em"] : r.ministry === "cm" ? ["cm"] : ["em", "cm"];
+}
+
+const SERVICE_LABEL: Record<string, string> = {
+  em_sunday: "EM Sunday service",
+  cm_sunday: "CM Sunday service",
+  em_pnp: "EM PnP",
+  cm_pnp: "CM PnP",
+  saturday: "Youth service",
+};
+
+/** The kind of service, as root's Tracking names it: "EM Sunday service", …, or "Ad hoc". */
+export const serviceLabel = (kind: string) => SERVICE_LABEL[kind] ?? "Ad hoc";
+
 /** A link's short label, e.g. "youtube.com". */
 export function linkLabel(url: string): string {
   try {

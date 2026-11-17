@@ -11,6 +11,7 @@ Built-in hard rules (never relaxed)
   * at most one session per person per date
   * nobody is rostered on a date they've marked absent, or for a service whose rehearsal falls on
     one: they get no variable for that session at all
+  * nobody is rostered on a date they already serve in another team (its published roster): same
 Built-in hard rules that can fail (relaxed with a huge penalty so we can report *why*)
   * every slot in every band is filled
   * the user's hard rules
@@ -21,6 +22,8 @@ Soft objectives (penalised by weight)
     "share the load fairly" rule
   * spacing: spread each person's services out; extra services inside any 1/2/3-week window cost,
     so the closer two services are the more they cost (weight from the permanent "space out" rule)
+  * spacing and "N weeks between services" rules also count each person's services in the last
+    weeks of the previous quarter (Person.served_before), so a break isn't broken across the new year
   * EM/CM split: people serving both have their weighted load split by their EM percentage
   * singer balance (a permanent rule, reported like a user soft rule): in each band with 2+
     singers, no more than half of them (rounded up) of one gender
@@ -44,6 +47,17 @@ MAIN_ROLES = ["worship leader", "vocalist", "keys", "synth/pads", "electric guit
 ATTACHED_ROLES = ["band leader"]
 SINGING = {"worship leader", "vocalist"}
 INSTRUMENTS = [r for r in MAIN_ROLES if r not in SINGING]
+
+
+# Media teams' roles (web/src/lib/team-config.ts ROLE_CATALOGUE): each one a part of its own.
+MEDIA_ROLES = ["media ic", "wide angle cam", "close up cam", "roving cam", "director", "video mixer",
+               "projectionist", "lights", "soundboard"]
+
+
+def is_main(role: str) -> bool:
+    """A part someone fills on its own: the band's main roles, or a media team's role (e.g.
+    "wide angle cam"). Band leader / talkback is attached to another part instead."""
+    return role in MAIN_ROLES or role in MEDIA_ROLES
 
 # Objective scaling (everything must be an integer)
 HARD_PENALTY = 10_000_000  # per unit of a hard violation (unfilled slot, broken hard rule)
@@ -80,6 +94,12 @@ class Person:
     serves: str = "both"  # both | sunday | pnp
     absent: set[str] = field(default_factory=set)  # "YYYY-MM-DD" dates they've marked as away (hard: never rostered)
     gender: str | None = None  # male | female | None (not set): used by the singer balance rule
+    # "YYYY-MM-DD" -> another team's name: they already serve there that day (on its published
+    # roster), so this team's roster leaves them off that date like an absence (hard).
+    elsewhere: dict[str, str] = field(default_factory=dict)
+    # "YYYY-MM-DD" dates they served on this team's previous published roster, in the weeks just
+    # before this quarter: break and spacing rules count them, so a gap carries over the boundary.
+    served_before: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -193,6 +213,8 @@ def check_assignments(sessions: list[Session], people: list[Person],
                 issues.append({**base, "kind": "absent"})
             elif s.rehearsal and s.rehearsal in person.absent:
                 issues.append({**base, "kind": "absent_rehearsal"})
+            if s.date in person.elsewhere:
+                issues.append({**base, "kind": "other_team", "team": person.elsewhere[s.date]})
             if role not in person.instruments:
                 issues.append({**base, "kind": "skill"})
             if not (s.ministry == "any" or (s.ministry == "em" and serves_em(person)) or (s.ministry == "cm" and serves_cm(person))):
@@ -231,9 +253,11 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         for p in people:
             # Absences are a hard rule: no variable at all, so they can never be rostered that day,
             # nor for a service whose rehearsal they'll miss.
-            if not eligible(p, s) or s.date in p.absent or (s.rehearsal and s.rehearsal in p.absent):
+            if not eligible(p, s) or s.date in p.absent or (s.rehearsal and s.rehearsal in p.absent) or s.date in p.elsewhere:
                 continue
-            for r in MAIN_ROLES:
+            # The band's parts in their usual order (the solver searches in this order), then a
+            # media crew's roles.
+            for r in [*MAIN_ROLES, *(r for r in s.composition if r not in MAIN_ROLES and is_main(r))]:
                 if s.composition.get(r, 0) > 0 and r in p.instruments:
                     x[p.id, s.id, r] = m.NewBoolVar(f"x_{p.id[:6]}_{s.id[:6]}_{r}")
             for t in ATTACHED_ROLES:
@@ -297,7 +321,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         for role, need in s.composition.items():
             if need <= 0:
                 continue
-            pool = x if role in MAIN_ROLES else a
+            pool = x if is_main(role) else a
             vars_ = [v for (pid, sid, r), v in pool.items() if sid == s.id and r == role]
             short = m.NewIntVar(0, need, f"short_{s.id[:6]}_{role}")
             if fixed is None:
@@ -395,6 +419,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         unit = max(1, round(spacing_rule.weight * RULE_UNIT / 3))
         for person in people:
             my_dates = [dt for dt in dates if (person.id, dt) in z]
+            past = sorted(dt for dt in person.served_before if d(dt) < q_start)
             for weeks in (1, 2, 3):
                 span = 7 * weeks  # dates less than or equal to span days apart share a window
                 for i, d1 in enumerate(my_dates):
@@ -403,6 +428,15 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
                         continue
                     ex = m.NewIntVar(0, len(inside) - 1, f"sp{weeks}_{person.id[:6]}_{d1}")
                     at_least(ex, sum(z[person.id, dt] for dt in inside) - 1)
+                    penalties.append((unit, ex, "spacing", person.id))
+                # The window starting at their latest service last quarter already holds one, so
+                # each of this quarter's services inside it costs.
+                for d1 in past[-1:]:
+                    inside = [dt for dt in my_dates if 0 < (d(dt) - d(d1)).days <= span]
+                    if not inside:
+                        continue
+                    ex = m.NewIntVar(0, len(inside), f"sp{weeks}_{person.id[:6]}_prev{d1}")
+                    at_least(ex, sum(z[person.id, dt] for dt in inside))
                     penalties.append((unit, ex, "spacing", person.id))
 
     genders = {p.id: p.gender for p in people}
@@ -447,8 +481,22 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
                 def wk(dt: str) -> int:
                     return (d(dt) - monday0).days // 7
 
+                # Their services in the last weeks of the previous quarter (negative weeks).
+                past_weeks = sorted({wk(dt) for dt in person.served_before if d(dt) < q_start})
+
                 if op in (">=", ">", "="):  # minimum gap between two services
                     span = weeks + 1 if op in (">=", "=") else weeks + 2
+                    # The run starting at their last week of service before the quarter already
+                    # holds a service, so every service this quarter inside it is a miss (e.g. 27
+                    # Dec then 3 Jan). Their latest one reaches furthest, so it's the only one needed.
+                    for w0 in past_weeks[-1:]:
+                        inside = [dt for dt in my_dates if w0 <= wk(dt) < w0 + span]
+                        if not inside:
+                            continue
+                        v = m.NewIntVar(0, len(inside), f"{tag}_{person.id[:6]}_p{-w0}")
+                        at_least(v, sum(z[person.id, dt] for dt in inside))
+                        note(rule.id, v, [person.id], inside)
+                        rule_where[rule.id][-1]["served_by"] = person.id  # narrowed to the dates they serve below
                     # Each run of `span` weeks starting at one of their weeks may hold one service;
                     # every extra service in it is one miss (a sliding window solves much faster
                     # than checking every pair of dates).
@@ -463,7 +511,13 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
                     # at most N clear weeks: every N + 1 weeks in a row hold one of their services
                     length = weeks + 1 if op in ("<=", "=") else weeks
                     last = wk(q_end.isoformat())
-                    for w0 in range(0, last - length + 2):
+                    # Someone who served last quarter: the runs that start before the quarter count
+                    # too (their last service there starts the clock). People with no service in
+                    # those weeks (e.g. new members) start counting from the quarter.
+                    first = -(length - 1) if past_weeks else 0
+                    for w0 in range(first, last - length + 2):
+                        if any(w0 <= pw < w0 + length for pw in past_weeks):
+                            continue  # already holds one of their services from last quarter
                         inside = [dt for dt in my_dates if w0 <= wk(dt) < w0 + length]
                         v = m.NewIntVar(0, 1, f"{tag}_{person.id[:6]}_m{w0}")
                         at_least(v, 1 - sum(z[person.id, dt] for dt in inside))
@@ -537,7 +591,8 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
                 insts = [i for i in INSTRUMENTS if s.composition.get(i, 0) > 0]
                 if not insts:
                     continue
-                pool = [q for q in people if eligible(q, s) and s.date not in q.absent and not (s.rehearsal and s.rehearsal in q.absent)]
+                pool = [q for q in people if eligible(q, s) and s.date not in q.absent and not (s.rehearsal and s.rehearsal in q.absent)
+                        and s.date not in q.elsewhere]
                 bl_band = [xv for (pid, sid, r), xv in x.items() if sid == s.id and r in INSTRUMENTS and bl in skills[pid]]
                 # the BL/TB plus at least one other BL/TB-capable player in the band
                 mate = flag(sum(bl_band), 2, f"{tag}_mate_{s.id[:6]}") if len(bl_band) >= 2 else None
@@ -573,7 +628,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             penalties.append((coef, v, "hard_rule" if rule.hard else "soft_rule", rule.id))
 
     # ---- built-in soft objectives --------------------------------------------------
-    total_weighted = sum(round(s.weight * LOAD_SCALE) * sum(n for r, n in s.composition.items() if r in MAIN_ROLES) for s in sessions)
+    total_weighted = sum(round(s.weight * LOAD_SCALE) * sum(n for r, n in s.composition.items() if is_main(r)) for s in sessions)
     loads: dict[str, cp_model.IntVar] = {}
     cat_top: dict[str, float] = {}
     for s in sessions:
@@ -665,6 +720,10 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             sid = w["bl_at"]
             holder = sorted({pid for (pid, s_, t), av in a.items() if s_ == sid and solver.Value(av)})
             return {"members": holder, "dates": w["dates"]}
+        if "served_by" in w:
+            pid = w["served_by"]
+            on = {s.date for s in sessions for (p_, s_, r), xv in x.items() if p_ == pid and s_ == s.id and solver.Value(xv)}
+            return {"members": w["members"], "dates": [dt for dt in w["dates"] if dt in on]}
         if "singers_at" not in w:
             return w
         sid = w["singers_at"]
@@ -690,8 +749,9 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             if sid == s.id and solver.Value(v):
                 also = [t for t in ATTACHED_ROLES if (pid, sid, t) in a and solver.Value(a[pid, sid, t])]
                 rows.append({"member": pid, "name": names[pid], "role": r, "also": also})
-        order = {r: i for i, r in enumerate(MAIN_ROLES)}
-        res.assignments[s.id] = sorted(rows, key=lambda row: (order[row["role"]], row["name"]))
+        # The band's order, then a media crew's roles in the session's own order.
+        order = {r: i for i, r in enumerate([*MAIN_ROLES, *(r for r in s.composition if r not in MAIN_ROLES)])}
+        res.assignments[s.id] = sorted(rows, key=lambda row: (order.get(row["role"], len(order)), row["name"]))
 
     for s, role, short in unfilled_vars:
         k = solver.Value(short)

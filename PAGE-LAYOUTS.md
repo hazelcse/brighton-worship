@@ -17,11 +17,20 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 ## The frame every signed-in page sits in
 
 - **Nav bar** (`web/src/components/app-nav.tsx`): `sticky top-0 z-30 bg-ink`, 56px tall. Contents
-  `mx-auto flex h-14 max-w-page px-4 sm:px-6`: "Brighton Worship", the menu (from md), and the
+  `mx-auto flex h-14 max-w-page px-4 sm:px-6`: "Brighton Worship" (Youth Worship and Youth Media:
+  followed by a small orange-400 superscript "YF", 0.55em, same font; also in the mobile sidebar;
+  media teams: "Brighton Media"), the menu (from md; Main Media: Schedule and Team only), and the
   **inbox** (36px icon with an orange unread count) + account icon pushed right. Below md:
   hamburger + 288px slide-in sidebar. In the sidebar, Schedule (Roster, Absences), Sessions and (developers) Develop
   open the same indented sub-list with a thin line on its left (16px items); Develop's "Reset app
   data" is in light red.
+- **Profile menu** (account icon): name and email, then the person's team. Someone on more than one
+  team gets a full-width **Team** dropdown there instead (their teams in team order, the current one
+  picked); choosing a team switches to it at once and opens its home (`switchTeam`,
+  `web/src/components/team-switcher.tsx`). Developers instead get **View or act as**: Developer,
+  Lead, the current team's groups, then "A person" — a dropdown of everyone on every team, under one
+  heading per team (someone on two teams is listed under both); picking someone on another team
+  switches to that team first.
 - **Inbox** (`web/src/components/inbox.tsx`, for anyone who can see the roster): the roster
   updates, newest first (new ones tinted, linked ones clickable). A popup under the icon, 384px
   wide, right-aligned, max 512px tall with the list scrolling; below 640px it spans the window
@@ -67,7 +76,9 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
   `overflow-x-auto rounded-xl border` table (the viewer's own part cells, not the date, get a 2px
   soft orange (orange-300 at 70%) inset border; root and developers get it only on published rosters, not the roster editor; a 32px round eye button at the right end of
   the filter row (black with a white eye when on, white with a black border and eye when off), shown at every width when the viewer is on the roster, turns it off and on, remembered per browser), `text-[13px]`, sticky
-  header. **Phones (below 640px)**: the Ministry and Service chips are one `h-10` "Filter"
+  header. The **Service** chips are only the roster's own kinds of session, then Ad-hoc (Main: Sunday
+  service, P&P, Ad-hoc; Youth: Saturday service, Ad-hoc); Ministry only when it has EM or CM
+  sessions. **Phones (below 640px)**: the Ministry and Service chips are one `h-10` "Filter"
   dropdown (tick boxes under Ministry and Service, at least one on in each; plain border, never
   orange) at the left of the filter row; the roster editor has it in its header instead. The filter
   row stays on one line on phones (8px gaps), and the "N sessions" count is left out when it doesn't fit. Scrolls sideways (one column per role); below 640px the Date column stays frozen at the
@@ -77,8 +88,26 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 
 ### Outside the app frame
 
-**`/` Login** (`web/src/app/page.tsx`): full-screen dark (`bg-ink`), everything centred. Title
-"Brighton / Worship" `font-display`, 60px → 96px (sm) → 128px (lg). Log in button below.
+**`/` Login** (`web/src/app/page.tsx`, `components/team-login.tsx`): full-screen dark (`bg-ink`),
+everything centred. Title "Brighton / Worship" `font-display`, 60px → 96px (sm) → 128px (lg). Log in
+button below. **Press and hold the title** (450ms, like the roster quarter card; keyboard: hold
+Space/Enter) to switch between the kinds of team: "Brighton / Worship" ↔ "Brighton / Media", with
+the same flip-in animation. Logging in opens the person's team of the kind showing (Main Worship,
+Youth Worship, Main Media, Youth Media, ...); the dialog says "to Brighton Media". Root (on no team)
+can log in from either and gets its own view. The page opens on the kind chosen last time
+(`bw-login` cookie). Until the list arrives the title shows "Brighton" alone.
+
+**`/media`**: the media teams' home, laid out like `/home` (same 672px column, countdown, notices
+and broadcasts, then the next session's card) with the crew in place of the band: the card's last
+block is **Crew** (role → names in the team's role order, your own name in bold), and its songs are
+the worship service it crews once that plan is published (not a link: media members don't open
+plans). No plan-published or publish-due notices. Loader: cameras, stage lights and a clapperboard.
+It sits in the same frame as every signed-in page: the shared nav bar ("Brighton Media", leading back to `/media`; profile menu with the team
+dropdown, View as and Log out as above) and the 992px column. Main Media's bar holds **Schedule**
+(Roster, Absences) and **Team**, which open the worship app's roster, absences and team directory
+pages for their own team; Youth Media's holds none yet. No Sessions or Songs for media teams. Other
+worship-app pages send media team members back to `/media`, and media pages send worship members
+to `/home` (`requireUser(kind)`; `"team"` pages also let in `usesTeamPages` media teams).
 
 **`/change-password`**: dark full screen, one centred 384px card (`max-w-sm rounded-2xl p-6`),
 title `font-display text-3xl`, form, "Log out" link.
@@ -90,6 +119,17 @@ the dark countdown card (`rounded-xl bg-ink p-6`), then broadcasts and notices t
 (`space-y-3`: broadcast cards, then the accent-tinted notices list), then the next session's card
 (songs, then band in two columns once the card is wide enough). With no upcoming session: the
 dashed "not on any upcoming sessions" box, then broadcasts and notices.
+- **Root** (on no team) gets the **wide** page (`<WidePage />`, max (window + 992px) ÷ 2) and no
+  countdown: title, broadcasts and notices, then two columns from 1024px (48px apart, top-aligned):
+  **Youth service** (the coming Saturday) on the left and **Main service** (the coming Sunday) on
+  the right; stacked below 1024px (Youth first, 24px apart). Each has a
+  heading row (name left, long date right), the worship team's session cards for that day (the
+  usual card: songs, then band; the card opens the plan, switching root to that team), or a dashed
+  note when nothing's published. Each is a **service card** (`service-card.tsx`): the session card
+  plus, for services with a media crew (EM Sunday, EM PnP, YF Saturday), a last **Media crew** block:
+  one line per role (96px role column, two columns once the card is wide enough, like the band), grouped under "team · session" only when
+  there's more than one, or "No media crew on a published roster yet". If no service that day has a
+  crew, any crew rostered that day gets a card of its own under them.
 - Notices, in order: "you haven't confirmed", plans due to be published, plans published or
   updated, then **band changes** (someone else changed the band of an upcoming session they're on:
   roster edits, take-overs, swaps), worded as in the inbox, each with "See
@@ -97,6 +137,12 @@ dashed "not on any upcoming sessions" box, then broadcasts and notices.
   they leave the page (`profiles.home_band_seen_at`, `web/src/components/home-notices.tsx`).
 
 ### Roster
+
+**`/roster` as root** (Schedule → Roster): not the landing below. Title "Rosters" with the quarter
+under it, then one button per team (grid, 1 → 2 per row from 640px): a dark button (team name over
+the date range, →) for a team with a roster published this quarter, opening it (`/roster/current`);
+otherwise a dashed card ("No roster published this quarter") that isn't a link. Every button
+switches root to that team first.
 
 **`/roster` (landing)**: full width, fills the window height (`min-h-[calc(100dvh-8.5rem)]`,
 `gap-4`). Top row: dark "This quarter's roster" card (max 576px) and, when published, a 224px
@@ -134,12 +180,19 @@ week's rows are bold between two heavy lines; earlier weeks are faded (`opacity-
 hidden. A small triangle in the left side padding (16px wide, so it fits the phone gutter), centred
 on this week's heavy top line, shows / hides them (▸ hidden, ▾ shown; `past-rows-toggle.tsx`).
 
-**`/roster/absences`**: full width. From 1024px: calendar on the left, a **320px** side column on
+**`/roster/absences`** (everyone signed in: no permission needed for your own absences; leads and
+root also see others' and every service): full width. From 1024px: calendar on the left, a **320px** side column on
 the right, the whole thing filling the window height. Calendar: month header with Today and
 arrows, 7-column grid (96px rows on phones, stretching at lg). Side column: cover panel (if any)
 and the scrolling **Absences** list (root and developers: a borderless filter icon opening a tick-box list, "Only me" and "Everyone" first,
-then each person with an absence, searchable; it filters the calendar too), with "+ Create absence"
-under it. Below 768px the create button floats bottom-right as a round 56px button, and swiping
+then each person with an absence (no search); it filters the calendar too), with "+ Create absence"
+under it. **Root** sees every team's services, rehearsals and absences, and its filter starts with a
+**Teams** group (EM Worship, EM Media, CM, Youth tick boxes; none = all) above "Only me"/"Everyone":
+it narrows the calendar's services and rehearsals, the absences and the people list. EM Worship = EM
+sessions and people with an EM share; EM Media = Main Media's sessions and members (it only crews
+the EM service); CM = CM sessions and people with a CM share; Youth = Youth teams' sessions and
+members. Event chips name the ministries: "EM/CM Svc", "EM/CM PnP",
+"EM/CM Rehearsal", "YF Svc" (green dot), "YF Rehearsal", "Other". Below 768px the create button floats bottom-right as a round 56px button, and swiping
 the calendar sideways changes month (left = next, right = previous; mostly-horizontal swipes of
 50px+ only, with a short slide-in).
 
@@ -165,14 +218,24 @@ Edit (or ×, save), Republish. Stacked (below 1024px) there's 16px between the d
 button row. **Phones (below 640px)**: the Ministry and Service chips are replaced by one `h-10`
 "Filter" dropdown (`MobileRosterFilter`, styled like FilterMenu; checkboxes grouped under Ministry
 and Service, at least one on in each) at the left of the button row, with Load / Reset / Edit
-right-aligned on the same row. Body: roster table; from **1280px** a 256px side column (warnings,
+right-aligned on the same row. The **Loads** popup's table: Name, Instruments, Services, P&P (only
+with P&Ps), Weighted load, EM / CM and EM share (target) (only with EM/CM sessions); the note above
+it says only what applies (Youth: just "Weighted load = sessions × session weight."), and the
+weights panel's "Split EM/CM" row is likewise left out. Body: roster table; from **1280px** a 256px side column (warnings,
 result, rules, weights) sits to its right, otherwise it drops below the table.
 
 ### Sessions
 
+**`/sessions` as root** (nav: **Services** › Services, Tracking): not the page below. Title
+"Services" + subtitle, then every worship team's services on published rosters over the next 28
+days, by date: a muted date heading (14px), then that day's service cards (as on root's home: session,
+band, media crew where the service has one) in a grid, 1 → 2 per row from 1024px, top-aligned, 16px
+apart; sections 24px apart. Nothing in that time: a dashed note. Opening a card switches root to its team.
+
 **`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right; on
 **phones (below 640px)** that button is hidden and a 40px dark "+" (like the roster's New button,
-named "Build session") sits centred under the cards instead. Root (and the developer) also get a
+named "Build session") sits centred under the cards instead. The lead, developers and anyone with
+"See every published session plan" (`sessions.view`) also get a
 40px-tall switch button (the word "Me" or "Team" for the current view, 14px medium, then two
 opposite arrows; no border or background; muted, accent on "Team") left of "+ Build session", on phones too: it toggles `/sessions?view=all` (every upcoming
 published session) and `/sessions` (their own), and the subtitle says which. Link cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" pill, name, songs with key chips.
@@ -247,7 +310,7 @@ has a "← Song bank" back link (an arrow with a line) and shows its title (with
 pills and "Use for…" button, then the songsheet preview card, then its sequence,
 links and notes, then the "Open song page ↗" link.
 
-**`/sessions/tracking`** (root): **wider than the nav**, the same width as the roster editor
+**`/sessions/tracking`** (a team's lead; root's version is described after this one): **wider than the nav**, the same width as the roster editor
 (`data-wide-page`: max (window + 992px) ÷ 2), so more table columns show. Title "Tracking", dark **+** with a pending count
 badge, and just left of it a 40px "Export CSV" button (downloads the sessions shown after filters
 and search, every column, `web/src/lib/tracking-csv.ts`); while table rows are ticked, a red-outlined 40px **bin** sits just left of the + (opens
@@ -267,9 +330,33 @@ tint orange; sessions marked as no session have no checkbox and show their reaso
 row. List view: collapsible rows (date 112px → 144px at sm), details in two columns from 768px;
 each row ends with a pencil then a bin (same popup, for that one session).
 
-**`/sessions/tracking/pending`** (root): full width. Back link, title "Pending sessions", intro.
-Accordion list of sessions; each opens the record form (band 1 → 2 → 4 columns, song rows in four
-columns from 640px, two link fields).
+**`/sessions/tracking` as root**: same width, header, search and actions as above, but no table:
+there is no Columns menu and no Table/List switch, and the list holds **every worship team's**
+services (Main and Youth together, newest first, `loadAllServices` in
+`web/src/lib/tracking-data.ts`). The Filters dropdown becomes one 40px button labelled with what's
+shown ("YF, CM, EM" when nothing is ticked) whose menu (176px) has three checkboxes, **YF**, **CM**
+and **EM**, plus "Show all" once one is ticked. A Main session for both ministries counts as EM and as CM.
+Each row: chevron, date, a pill (YF, EM, CM or EM/CM), then the service in medium weight: EM Sunday
+service, CM Sunday service, EM PnP, CM PnP, Youth service, or "Ad hoc · <its name>". The row
+ends with a pencil then a bin, as above. Opening a row shows up to three boxes (bordered, 16px
+padding, 12px apart, top-aligned): **Media team** (role → names, from the group's media roster
+that day; only for EM Sunday service, EM PnP and Youth service), **Worship team** (the band, under
+the team's name) and **Session** (songs, livestream links, comments). Three across from 1024px when
+there's a media team, otherwise two across from 768px; stacked below that. The pencil swaps the
+boxes for the usual record form. On phones the second toolbar row has only Export CSV and the +, at
+the right.
+
+**`/sessions/tracking/pending`** (root): full width. Back link, title "Pending sessions", intro, and
+a dark 40px **+** on the right of the title (`new-session.tsx`): a dialog (max 768px, scrolls
+within 90% of the window height) to add a whole new session by hand — date (today or earlier),
+Session (the team's regular kinds, or "Other (ad-hoc)"), Ministry (EM and CM / EM / CM, only for
+Other on teams that split them), Name (placeholder: the kind's name), then the record form — saved
+straight into tracking. Accordion list of sessions; each opens the record form (band 1 → 2 → 4
+columns, song rows in four columns from 640px, two link fields), with a red-outlined **Delete**
+beside "Save to tracking": it turns into "Delete for good?" with a red Delete and Keep; deleting
+takes the session off Pending for good without tracking it, and the next one opens.
+- Deleting tracked sessions (Tracking's delete) removes them for good: ones from a roster don't come
+  back to Pending (`roster_sessions.tracking_removed`).
 
 ### Songs
 
@@ -365,6 +452,64 @@ their places, hold, gather back into the middle and become a plain (empty) Latin
 shrinks back as the band flies out again, in a 5s loop with no gap. With reduce motion the band
 sits still and the cross isn't shown.
 
+### Root's view
+
+Root is on no team and sees the worship app frame with the bar's name "Brighton Serving", no
+Songs link, and **Team** as a plain link (no dropdown) to the Teams overview (`/teams`).
+Brighton Serving is outside every team: at login root is in no team, and Home, Schedule → Roster
+(root's per-team overview, below), Absences, Services and Tracking cover every team, worship and
+media. Pages about one team (`/team`, `/team/permissions`, a roster's own pages, Tracking's
+Pending) show the team root opened ("Work in (team)" or any link on a team's page). Opened with
+no team, they go to **`/teams/pick`** first: "Which team?" and a grid of team cards (1 → 2 per
+row: name, group · kind), each opening that team at the page asked for. While in a team the bar's
+Root pill reads "Root · (team name)", the name "Brighton Serving" leads back out (`/serving`), and
+the profile menu has "In (team) · Back to Brighton Serving". In that team root can do
+everything its lead can. Root's `/team` has a "(team name) · Other teams" line above the toolbar;
+`/team/[id]` starts its label with the team name, and `/team/permissions` shows it under the title.
+
+**`/teams`** (root; developers via "Manage teams" in the profile menu): 992px column. Title
+"Teams", a grid of team cards (1 → 2 per row: name, group · kind, member count, lead or "No lead
+yet"), an **Observers** card (one part per group, split by a rule: the observer's name, an
+"observer" badge, email, "sees absences" / "no absences" and "manages permissions" / "can't change
+permissions", with a collapsible "Remove observer" confirm; or, with none, a 2-column form: name,
+email, then "Can see absences" and "Can manage permissions" tick boxes, both ticked for Youth),
+then a collapsible "+ New team" form (name, group Main/Youth, worship/media, lead's email
+and name, maximum permissions by category).
+
+**`/teams/[slug]`**: 992px column. Back link, team name title with group, kind and member count,
+and a "Work in (team)" button on the right. Cards: **Settings** (read-only list from the team's
+config: regular sessions, EM/CM split, Sunday/P&P choice, and for media the worship team it works
+on), **Lead** (the lead, or a "Create lead" form: email, and name for a new account; "Change lead"
+once there is one), **Members** (the heading itself, no arrow; on hover it turns accent and an accent underline grows out from the centre, opens the team's gallery `/team`; names, 1 → 2 → 3
+columns, each linking to that member's page; every link switches root to this team first), and a collapsible "Name and maximum permissions" form.
+
+### The observer's view
+
+An observer (one read-only account per group, on no team, created on `/teams`) sees the same frame as root:
+"Brighton Serving" with its group's tag (YF for Youth), links Schedule (Roster, Absences), Team and
+**Services** (no Songs, no Tracking), and an "Observer" pill next to the profile button (as root
+gets "Root" and developers "Dev"). Everything is limited to its group's teams:
+
+- **Home**: the **wide** page. Greeting and a muted line, then one section per day in the coming
+  week (today + 6) with a service: a muted date heading, then that day's service cards (session,
+  band, media crew; 1 → 2 per row from 1024px), e.g. the Saturday service and any ad hoc events. A
+  day with only a media crew shows it in its own card. No countdown, notices or broadcasts.
+- **Roster** and **Services**: root's pages, filtered to the group's teams.
+- **Absences**: no Create absence button and no "Create absence" in the day popup. An observer that
+  sees absences gets a lead's calendar (everyone on the group's teams, every service), but its filter
+  icon opens team tick boxes only (e.g. Youth Worship, Youth Media; none ticked = every team), no
+  people. One that doesn't gets no absences at all: the calendar shows only the services and
+  rehearsals, and the side box is **Upcoming services** (date in a 96px muted column, then the name;
+  each opens the session panel) instead of Absences, and its Schedule menu calls the page
+  **Calendar** instead of Absences.
+- **Team**: above the gallery, a row of pill links, one per group team (the current one dark), and
+  "Manage permissions" on the right (only an observer that manages permissions); following a pill switches team. The gallery has no "+ User".
+- **Manage permissions** (only an observer that manages permissions): as a lead's (team name under the title, Transfer lead at the bottom). A
+  lead's page shows the permission list with "Lead: allowed / Deny" for each.
+
+Root sees the observer in the group's directories (a sky "observer" badge, not counted in "N of M
+members"); its `/team/[id]` has only a Password card.
+
 ### Team
 
 **`/team`**: full width, no title. Toolbar: instrument and ministry pickers and search (224px
@@ -373,15 +518,20 @@ from 640px) on the left; root gets "+ User" and "Manage permissions" on the righ
 of the two pickers (styled like FilterMenu, icon and arrow only, no word; tick boxes grouped under Instrument and Ministry,
 nothing ticked = no filter, plus Clear; opens right-aligned to the button), then for root a black "+ ▾" dropdown holding "+ New user"
 and "Manage permissions" (menu opens right-aligned). Count line, then the **gallery cards** grid (4 per row on desktop)
-with instrument chips.
+with instrument chips. Media teams say "role" wherever worship teams say "instrument" (pickers, chips,
+the form), and every picker lists only the team's own roles (`config.roles`). In the new-user form, an
+email that already has an account on another team brings up a link box above the Save row
+("… already has an account on Main Worship. Link it to this team?", Yes, link / No, cancel).
 
-**`/team/[id]`**: full width. Back link; label, name title, chip row. Root and developers: a Personal rule card ("can serve A, B, C, but should not be rostered for A, B", Edit → a full-width-on-phones, 288px-from-640px tick-box dropdown of their instruments, Save / Cancel). Member rules card. Root sees
+**`/team/[id]`**: full width. Back link; label (plus "· also on <team>" for a lead, root or developer viewing someone on two teams),
+name title, chip row. Root and developers, on teams that use personal rules (Main and Youth Worship, Main Media): a Personal rule card ("can serve A, B, C, but should not be rostered for A, B", Edit → a full-width-on-phones, 288px-from-640px tick-box dropdown of their instruments (roles on Main Media), Save / Cancel). Member rules card. Root sees
 two columns from 1024px (3 : 2): "Edit member" left; permissions, password and delete cards
-right. Others see one details card.
+right; for someone also on another team, "Edit member" starts with a line saying name, email and gender
+are shared with that profile. Others see one details card.
 
-**`/team/permissions`** (root): full width, sections 40px apart. Title "Manage permissions".
+**`/team/permissions`** (the team's lead, root, developers): full width, sections 40px apart. Title "Manage permissions".
 Permission groups as link cards (1 → 2 → 3 per row) plus a collapsible "+ New permission group"
-form; **People** list; transfer-root card (red border).
+form; **People** list (this team's members); transfer-lead card (red border).
 
 **`/team/permissions/groups/[id]`**: full width. Back link, group name title. Name/description
 card, then two columns from 1024px: permissions by category, and people checklist; save button at
