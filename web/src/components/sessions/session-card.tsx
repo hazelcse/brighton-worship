@@ -97,18 +97,21 @@ export function SessionCard({
   s,
   href,
   extra,
+  headerTint,
 }: {
   s: SessionDetail;
   /** Where the card links instead of the plan itself (e.g. via a team switch). */
   href?: string;
   /** One more block at the bottom of the card, e.g. root's media crew for the service. */
   extra?: React.ReactNode;
+  /** The header's background class instead of the default, e.g. root's per-service tint. */
+  headerTint?: string;
 }) {
   // A media team's session: its crew (headed "Crew") where the band would be.
   const people = s.crew ? "crew" : "band";
   const body = (
     <>
-      <header className="bg-background/60 px-4 py-3">
+      <header className={`${headerTint ?? "bg-background/60"} px-4 py-3`}>
         <p className="text-xs font-medium uppercase tracking-wider text-muted">
           {formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}
         </p>

@@ -43,6 +43,20 @@ export function Crew({ crew }: { crew: CrewMember[] }) {
 }
 
 /**
+ * Each service's header tint: soft, low-saturation colours that sit with the warm off-white
+ * background. EM is warm (sage, clay), CM cool (slate blue, lavender), ad hoc a dusty rose,
+ * YF Saturday a soft straw yellow.
+ */
+const SERVICE_TINT: Record<string, string> = {
+  em_sunday: "bg-[#e9ede3]",
+  cm_sunday: "bg-[#e4e9ef]",
+  em_pnp: "bg-[#f1e7dc]",
+  cm_pnp: "bg-[#ebe6ef]",
+  custom: "bg-[#f0e3e3]",
+  saturday: "bg-[#f2ecd6]",
+};
+
+/**
  * A service as root sees it: its session (plan and band) and, for services that have one (EM Sunday,
  * EM PnP, YF Saturday), its media crew at the bottom. Opening it switches root to the worship team
  * first (root works in one team at a time), then opens the plan.
@@ -52,6 +66,7 @@ export function ServiceCard({ service }: { service: Service }) {
   return (
     <SessionCard
       s={service.session}
+      headerTint={SERVICE_TINT[service.session.kind]}
       href={plan ? `/teams/${service.teamSlug}/open?next=/sessions/${plan.id}` : undefined}
       extra={service.crew ? <Crew crew={service.crew} /> : undefined}
     />
