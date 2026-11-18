@@ -51,7 +51,7 @@ INSTRUMENTS = [r for r in MAIN_ROLES if r not in SINGING]
 
 
 # Media teams' roles (web/src/lib/team-config.ts ROLE_CATALOGUE): each one a part of its own.
-MEDIA_ROLES = ["media ic", "wide angle cam", "close up cam", "roving cam", "director", "video mixer",
+MEDIA_ROLES = ["media ic", "director", "video mixer", "close up cam", "wide angle cam", "roving cam",
                "projectionist", "lights", "soundboard"]
 
 
@@ -237,18 +237,16 @@ def check_assignments(sessions: list[Session], people: list[Person],
                     issues.append({**base, "kind": "skill", "role": t})
                 also.append(t)
             rows.append({"member": pid, "role": role, "also": also})
-        # more people than the band needs
-        for role in {r["role"] for r in rows} | {t for r in rows for t in r["also"]}:
-            n = sum(1 for r in rows if r["role"] == role or role in r["also"])
-            if n > s.composition.get(role, 0):
-                issues.append({"session": s.id, "member": None, "role": role, "kind": "extra", "count": n - s.composition.get(role, 0)})
+        # (More people in a part than it needs isn't a problem: no "extra" issue.)
         clean[s.id] = rows
     return issues, clean
 
 
 def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quarter: tuple[str, str],
-          time_limit: float = 30.0, fixed: dict[str, list[dict]] | None = None) -> Result:
-    """Optimise a roster, or (with `fixed`, already cleaned by check_assignments) score a given one."""
+          time_limit: float = 30.0, fixed: dict[str, list[dict]] | None = None, hard_only: bool = False) -> Result:
+    """Optimise a roster, or (with `fixed`, already cleaned by check_assignments) score a given one.
+    `hard_only`: only the hard rules and unfilled places (no soft rules, fairness, spacing, EM/CM split
+    or variety), for the quick check after each hand edit. Loads are still counted."""
     m = cp_model.CpModel()
     q_start, q_end = d(quarter[0]), d(quarter[1])
     fixed_x = {(a["member"], sid, a["role"]) for sid, lst in (fixed or {}).items() for a in lst}
@@ -407,6 +405,8 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
     variety_rule = next((r for r in rules if r.template == "variety"), None)
     builtin = [r for r in (fairness_rule, spacing_rule, variety_rule) if r]
     rules = [r for r in rules if r.template not in ("fairness", "spacing", "variety")]  # handled below, not constraints
+    if hard_only:
+        rules = [r for r in rules if r.hard]
 
     # Variety: every time two people serve together again after the first time costs a little, so
     # teams get mixed up. Built after the main model (see below): it's solved as a second pass.
@@ -431,7 +431,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
 
     # Spacing: in every window of 1, 2 and 3 weeks, each service beyond the first costs; short
     # windows overlap, so two services a week apart cost the most (3 units), two weeks apart 2, three 1.
-    if spacing_rule and spacing_rule.weight > 0:
+    if spacing_rule and spacing_rule.weight > 0 and not hard_only:
         unit = max(1, round(spacing_rule.weight * RULE_UNIT / 3))
         for person in people:
             my_dates = [dt for dt in dates if (person.id, dt) in z]
@@ -660,7 +660,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         loads[person.id] = load
         factor = min(1.0, max(0.1, reduced.get(person.id, 1.0)))
         fair_coef = round(fairness_weight * 10 / factor)
-        if fair_coef > 0:  # weight 0 switches balancing off
+        if fair_coef > 0 and not hard_only:  # weight 0 switches balancing off
             # Balanced per category (services vs P&P), so P&Ps can't make up for missing Sundays.
             # Within a category the heaviest session counts 10, so both categories pull equally hard.
             for cat, top in cat_top.items():
@@ -680,7 +680,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         em_l = sum(w * e for w, e in em_terms) if em_terms else 0
         cm_l = sum(w * e for w, e in cm_terms) if cm_terms else 0
         em_loads[person.id], cm_loads[person.id] = em_l, cm_l
-        if person.em_percent is not None and 0 < person.em_percent < 100:
+        if not hard_only and person.em_percent is not None and 0 < person.em_percent < 100:
             target = person.em_percent
             dev = m.NewIntVar(0, 100 * total_weighted, f"split_{person.id[:6]}")
             # |100 * EM - target% * (EM + CM)|
@@ -689,7 +689,7 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
             # a whole session (10 units) on the wrong side costs about SPLIT_WEIGHT x a weight-1 rule miss
             penalties.append((max(1, round(SPLIT_WEIGHT * RULE_UNIT / (100 * LOAD_SCALE))), dev, "split", person.id))
 
-    use_variety = bool(variety_rule and variety_rule.weight > 0)
+    use_variety = bool(variety_rule and variety_rule.weight > 0) and not hard_only
     if fixed is not None and use_variety:
         penalties += add_variety()  # scoring a given roster: just count the repeats
     main_obj = sum(c * e for c, e, _, _ in penalties)

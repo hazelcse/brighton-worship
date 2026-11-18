@@ -21,14 +21,14 @@ export const ROLES = [
   { value: "band leader", label: "Band Leader / Talkback", short: "BL/TB" },
 ] as const;
 export type Role = (typeof ROLES)[number]["value"];
-/** The media teams' roles (a media roster's parts). team-config's ROLE_CATALOGUE lists these too. */
+/** The media teams' roles (a media roster's parts), in the order they're shown. team-config's ROLE_CATALOGUE lists these too. */
 export const CREW_ROLES = [
   { value: "media ic", label: "Media IC", short: "IC" },
-  { value: "wide angle cam", label: "Wide Angle Cam", short: "Wide" },
-  { value: "close up cam", label: "Close Up Cam", short: "Close" },
-  { value: "roving cam", label: "Roving Cam", short: "Roving" },
   { value: "director", label: "Director", short: "Dir" },
   { value: "video mixer", label: "Video Mixer", short: "Mixer" },
+  { value: "close up cam", label: "Close Up Cam", short: "Close" },
+  { value: "wide angle cam", label: "Wide Angle Cam", short: "Wide" },
+  { value: "roving cam", label: "Roving Cam", short: "Roving" },
   { value: "projectionist", label: "Projectionist", short: "Proj" },
   { value: "lights", label: "Lights", short: "Lights" },
   { value: "soundboard", label: "Soundboard", short: "Sound" },

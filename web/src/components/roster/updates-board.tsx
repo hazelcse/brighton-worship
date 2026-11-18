@@ -155,7 +155,7 @@ export function updateText(u: UpdateItem): React.ReactNode {
     case "roster_band_changed":
       return (
         <>
-          {b(u.actor)} changed the band for {b(`${u.session?.name ?? "a session"} – ${u.session ? day(u.session.date) : ""}`)}
+          {b(u.actor)} changed the {u.crew ? "crew" : "band"} for {b(`${u.session?.name ?? "a session"} – ${u.session ? day(u.session.date) : ""}`)}
           {u.detail && <>: {u.detail}</>}
         </>
       );

@@ -4,6 +4,7 @@ import {
   ROLE_LABEL,
   ROLE_SHORT,
   ATTACHED_ROLES,
+  CREW_ROLES,
   ROLES,
   addDays,
   formatDate,
@@ -306,6 +307,9 @@ export function RosterTable({
   );
 }
 
+/** A media team's session: its people are a crew, not a band. */
+const isCrew = (s: SessionRow) => Object.keys(s.composition ?? {}).some((r) => CREW_ROLES.some((c) => c.value === r));
+
 /** A session's date or name: plain text, or (when editable) a button that opens its settings. */
 function SessionLink({ session, onClick, children }: { session: SessionRow; onClick?: (id: string) => void; children: React.ReactNode }) {
   if (!onClick) return <>{children}</>;
@@ -313,7 +317,7 @@ function SessionLink({ session, onClick, children }: { session: SessionRow; onCl
     <button
       type="button"
       onClick={() => onClick(session.id)}
-      aria-label={`Change ${session.name}, ${formatDate(session.date, { day: "numeric", month: "short" })}: band, who can serve, times`}
+      aria-label={`Change ${session.name}, ${formatDate(session.date, { day: "numeric", month: "short" })}: ${isCrew(session) ? "crew" : "band"}, who can serve, times`}
       className="-mx-1 rounded px-1 py-0.5 text-left hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
     >
       {children}

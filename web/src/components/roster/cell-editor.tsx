@@ -347,17 +347,6 @@ export function CellEditor({
           );
         })}
       </ul>
-      {/* More people than the band needs: said under the last name, and updated as places are changed. */}
-      {(() => {
-        const filled = slots.filter((sl) => sl.member).length;
-        if (filled <= need) return null;
-        const part = ROLE_LABEL[role].toLowerCase();
-        return (
-          <p role="status" className="-mt-2 text-sm text-danger">
-            {filled - need} more {part} than the band needs (it needs {need}).
-          </p>
-        );
-      })()}
       <button
         type="button"
         onClick={() => setSlots((xs) => [...xs, { member: null, also: [], was: null }])}

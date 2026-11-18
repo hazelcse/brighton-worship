@@ -86,7 +86,7 @@ export const PRESETS: Record<TeamGroup, Record<TeamKind, TeamConfig>> = {
     },
     media: {
       sessionKinds: ["em_sunday", "em_pnp"],
-      roles: ["media ic", "wide angle cam", "roving cam", "close up cam", "director", "video mixer", "projectionist", "lights"],
+      roles: ["media ic", "director", "video mixer", "close up cam", "wide angle cam", "roving cam", "projectionist", "lights"],
       memberFields: { ministry: false, serves: false, rules: true },
       sessionsFrom: "main-worship",
       compositions: {

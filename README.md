@@ -399,10 +399,11 @@ OR-Tools CP-SAT. One yes/no variable per person × session × role they can do.
   part are greyed out in the other pickers. If someone doing BL/TB leaves the part, it has to stay
   covered: ticked on someone in the part who can do it, or handed to a bandmate who can (checked
   again by editCell on the server). Generating saves a snapshot (rosters.generated_assignments); each edit
-  is re-scored by the worker (POST /rosters/{id}/evaluate, same engine with the assignment
-  pinned) and saved in rosters.check. Hard problems (empty places, wrong skill/ministry, clashes,
-  broken hard rules) show in a red box that can't be closed and stays after publishing; soft
-  warnings (score 5%+ worse, a soft rule missed more, more back-to-back weeks) can be closed.
+  is checked by the worker for hard problems only (POST /rosters/{id}/evaluate, same engine with
+  the assignment pinned and only hard rules, about 0.2s; no re-scoring of soft rules, fairness or
+  spacing) and saved in rosters.check. Hard problems (empty places, wrong skill/ministry, clashes,
+  broken hard rules) show in a red box that can't be closed and stays after publishing. More people
+  in a part than it needs isn't flagged. The side panels' soft results stay as generated.
   "Reset to generated" restores the snapshot.
 - Session weight and band can be set per session, or for every session of one kind at once in
   the "Session defaults" popup on the planning page.

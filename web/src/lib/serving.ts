@@ -190,6 +190,8 @@ export type UpdateItem = {
   reason: string | null;
   /** For roster changes: what changed, in words (the part before → after, a session's new time…). */
   detail: string | null;
+  /** About a media team's roster: its people are a crew, not a band. */
+  crew?: boolean;
   createdAt: string;
   /** Not seen before (and not the viewer's own doing). */
   isNew: boolean;
@@ -1206,6 +1208,7 @@ const updatesFor = cache(async (userId: string, isLead: boolean, isRoot: boolean
       member: name(u.member_id),
       reason: user.isLead || u.actor_id === user.id ? u.reason : null,
       detail: (u.detail as string | null) ?? null,
+      crew: teamKind.get(u.team_id as string) === "media",
       createdAt: u.created_at,
       isNew: u.actor_id !== user.id && new Date(u.created_at).getTime() > seenAt,
       byMe: u.actor_id === user.id,

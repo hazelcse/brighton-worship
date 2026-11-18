@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sessionInstruments } from "@/lib/teams";
+import { CREW_ROLES } from "@/lib/roster";
 import { cleanAbsence, declineAbsence, type AbsenceInput } from "@/lib/absence";
 import {
   BAND_ROLES,
@@ -360,8 +361,9 @@ export async function takeOver(coverId: string): Promise<ServeResult> {
     if (!(await canCover(c.session_id, c.role, c.member_id, user.id))) {
       return {
         ok: false,
-        message:
-          "You can't cover this: you need to play the part (and any band leader / talkback nobody else in the band can take over), be free that day and not already be serving.",
+        message: CREW_ROLES.some((r) => r.value === c.role)
+          ? "You can't cover this: you need to be able to do the part, be free that day and not already be serving."
+          : "You can't cover this: you need to play the part (and any band leader / talkback nobody else in the band can take over), be free that day and not already be serving.",
       };
     }
     // Claim it first so two people can't both take it.

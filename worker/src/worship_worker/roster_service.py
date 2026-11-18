@@ -1,8 +1,8 @@
 """Load a roster from the database, run the engine, and save the result.
 
 generate  optimise a draft, replace its assignments, and keep a snapshot of what was generated
-evaluate  score the draft's current (possibly hand-edited) assignments against that snapshot and
-          save the problems found in rosters.check
+evaluate  check the draft's current (possibly hand-edited) assignments for hard problems (no
+          scoring) and save them in rosters.check
 """
 
 from __future__ import annotations
@@ -193,9 +193,13 @@ def _pct(was: float, now: float) -> int:
 
 
 def evaluate(db: Client, roster_id: str, full: bool = False) -> dict | None:
-    """Score the current assignments; save and return rosters.check (None when nothing was edited,
-    unless `full`: then the problems are always checked, since the stored generation result no
-    longer describes a republished roster)."""
+    """Check the current (hand-edited) assignments for hard problems only; save and return
+    rosters.check (None when nothing was edited, unless `full`: then the problems are always
+    checked, since the stored generation result no longer describes a republished roster).
+
+    No scoring: soft rules, fairness, spacing, EM/CM split and variety aren't worked out again after
+    an edit (that took two full solves per edit). The side panels keep the generated roster's soft
+    results; the hard ones (unfilled places, broken hard rules) and the loads are the edited roster's."""
     roster, sessions, people, rules = _load(db, roster_id)
     current = _current_assignments(db, [s.id for s in sessions])
     generated = roster.get("generated_assignments") or []
@@ -211,50 +215,26 @@ def evaluate(db: Client, roster_id: str, full: bool = False) -> dict | None:
         fixed.setdefault(r["session_id"], []).append({"member": r["member_id"], "role": r["role"], "also": r.get("also_roles") or []})
     issues, clean = check_assignments(sessions, people, fixed)
     quarter = (roster["starts_on"], roster["ends_on"])
-    res = solve(sessions, people, rules, quarter, 20.0, fixed=clean)
-
-    # Baseline: the generated roster scored with today's rules and weights (they may have changed
-    # since generating), so the comparison is like for like.
-    gen_fixed: dict[str, list[dict]] = {}
-    for r in generated:
-        if r["session_id"] in active:
-            gen_fixed.setdefault(r["session_id"], []).append({"member": r["member_id"], "role": r["role"], "also": r.get("also_roles") or []})
-    _, gen_clean = check_assignments(sessions, people, gen_fixed)
-    base = solve(sessions, people, rules, quarter, 20.0, fixed=gen_clean)
-    gen_result = {"objective": base.objective, "soft": base.soft, "spacing": base.spacing, "variety": base.variety}
+    res = solve(sessions, people, rules, quarter, 10.0, fixed=clean, hard_only=True)
 
     hard = list(issues)
     hard += [{"kind": "unfilled", "session": u["session"], "role": u["role"], "count": u["missing"], "member": None} for u in res.unfilled]
     hard += [{"kind": "hard_rule", "rule": h["rule"], "count": h["violations"]} for h in res.hard_broken]
 
-    soft: list[dict] = []
-    gen_obj = gen_result.get("objective") or {}
-    was, now = _soft_score(gen_obj), _soft_score(res.objective)
-    change = _pct(was, now)
-    points = round((now - was) / RULE_UNIT, 1)  # the total is dominated by fairness, so % hides real changes
-    if points >= SCORE_WARN_POINTS:
-        soft.append({"kind": "score", "points": points})
-    for part in ("fairness", "spacing", "split", "variety"):
-        p_was, p_now = int(gen_obj.get(part, 0)), int(res.objective.get(part, 0))
-        if p_now > p_was and _pct(p_was, p_now) >= PART_WARN_PCT:
-            soft.append({"kind": part, "pct": _pct(p_was, p_now)})
-    gen_soft = {x["rule"]: x["violations"] for x in gen_result.get("soft") or []}
-    for x in res.soft:
-        before = gen_soft.get(x["rule"], 0)
-        if x["violations"] > before:
-            soft.append({"kind": "soft_rule", "rule": x["rule"], "was": before, "now": x["violations"]})
-    gen_sp, now_sp = gen_result.get("spacing") or {}, res.spacing or {}
-    if now_sp.get("within_1_week", 0) > gen_sp.get("within_1_week", 0):
-        soft.append({"kind": "back_to_back", "was": gen_sp.get("within_1_week", 0), "now": now_sp["within_1_week"]})
-
+    # This check's hard results and loads; the soft results (rule misses, scores, spacing, variety)
+    # stay as generated, since they aren't worked out again.
     result = asdict(res)
     result.pop("assignments")
+    gen = roster.get("result") or {}
+    for k in ("soft", "objective", "spacing", "variety", "weights"):
+        if k in gen:
+            result[k] = gen[k]
     check = {
         "checked_at": datetime.now(UTC).isoformat(),
         "edited_cells": edited_cells,
         "hard": hard,
-        "soft": soft,
-        "score": {"generated": was, "edited": now, "change_pct": change, "change_points": points},
+        "soft": [],
+        "score": {"generated": 0, "edited": 0, "change_pct": 0, "change_points": 0},
         "result": result,
     }
     db.table("rosters").update({"check": check, "updated_at": check["checked_at"]}).eq("id", roster_id).execute()

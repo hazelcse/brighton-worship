@@ -6,7 +6,7 @@ export type RosterCheck = {
   checked_at: string;
   edited_cells: string[]; // "sessionId|role"
   hard: {
-    kind: "unfilled" | "hard_rule" | "skill" | "ministry" | "serves" | "two_roles" | "double_date" | "attached_singer" | "extra" | "inactive" | "absent" | "absent_rehearsal" | "other_team";
+    kind: "unfilled" | "hard_rule" | "skill" | "ministry" | "serves" | "two_roles" | "double_date" | "attached_singer" | "inactive" | "absent" | "absent_rehearsal" | "other_team";
     session?: string;
     member?: string | null;
     role?: string;
@@ -47,7 +47,8 @@ export function describeCheck(
   };
   const who = (id?: string | null) => people.find((p) => p.id === id)?.name ?? "A removed member";
 
-  const hard = check.hard.map((h, i): Warning => {
+  // More people in a part than it needs isn't a problem (older checks may still list it as "extra").
+  const hard = check.hard.filter((h) => (h.kind as string) !== "extra").map((h, i): Warning => {
     const id = `h:${h.kind}:${h.session ?? ""}:${h.member ?? ""}:${h.role ?? ""}:${h.rule ?? ""}:${i}`;
     switch (h.kind) {
       case "unfilled":
@@ -74,8 +75,6 @@ export function describeCheck(
         return { id, text: `${who(h.member)} is in two sessions on the same day (${where(h.other)} and ${where(h.session)}).` };
       case "attached_singer":
         return { id, text: `${who(h.member)} can't be ${lower(h.role)} while singing (${where(h.session)}).` };
-      case "extra":
-        return { id, text: `${where(h.session)} has ${h.count} more ${lower(h.role)} than the band needs.` };
       case "inactive":
         return { id, text: `${where(h.session)} still has someone who's no longer on the team.` };
     }
@@ -139,7 +138,7 @@ export function problemCells(
   sentence: (ruleId: string) => string,
 ): Record<string, string> {
   const entries: RosterCheck["hard"] = check
-    ? check.hard
+    ? check.hard.filter((h) => (h.kind as string) !== "extra") // (see describeCheck)
     : (result?.unfilled ?? []).map((u) => ({ kind: "unfilled" as const, session: u.session, role: u.role, count: u.missing }));
   const texts = describeCheck(
     { checked_at: "", edited_cells: [], hard: entries, soft: [], score: { generated: 0, edited: 0, change_pct: 0 }, result: result as GenerationResult },
