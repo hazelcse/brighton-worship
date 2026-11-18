@@ -175,7 +175,7 @@ export async function applyRevision(revisionId: string, userId: string, db: Db =
   const { data: rev } = await db.from("rosters").select("id, status, revision_of, revision_base").eq("id", revisionId).maybeSingle();
   if (!rev || rev.status !== "revision" || !rev.revision_of) throw new Error("There's no edit in progress for this roster.");
   const publishedId = rev.revision_of as string;
-  const { data: pub } = await db.from("rosters").select("status").eq("id", publishedId).maybeSingle();
+  const { data: pub } = await db.from("rosters").select("status, team_id").eq("id", publishedId).maybeSingle();
   if (pub?.status !== "published") throw new Error("This roster isn't the published one any more.");
   const base = (rev.revision_base as RevisionBase | null) ?? { sessions: {}, assignments: [] };
 
@@ -215,6 +215,12 @@ export async function applyRevision(revisionId: string, userId: string, db: Db =
       if (note) sessionNotes.set(src, note);
       if (live.kind === "custom") {
         await followCustomSession(db, publishedId, { date: String(live.date), name: String(live.name) }, { date: String(after.date), name: String(after.name) });
+        // A linked ad hoc service: moved, it leaves the link; renamed, the linked teams' sessions follow.
+        const links = await import("@/lib/service-links");
+        const linkId = (live as { link_id?: string | null }).link_id ?? null;
+        if (!same(live.date, after.date))
+          await links.afterLinkedSessionMoved(db, src, linkId, false, { actorId: userId, teamId: String(pub.team_id), name: String(live.name) });
+        else if (linkId && !same(live.name, after.name)) await links.renameLinked(db, src, String(after.name));
       }
     } else {
       // Added in the revision.
@@ -302,6 +308,12 @@ export async function applyRevision(revisionId: string, userId: string, db: Db =
   if (deleted.length) {
     const { error } = await db.from("roster_sessions").delete().in("id", deleted);
     if (error) throw error;
+    // The other teams' sessions they were linked to stay, with the same name.
+    const { afterLinkedSessionMoved } = await import("@/lib/service-links");
+    for (const id of deleted) {
+      const live = liveSessions.get(id) as { link_id?: string | null; name?: string } | undefined;
+      await afterLinkedSessionMoved(db, id, live?.link_id ?? null, true, { actorId: userId, teamId: String(pub.team_id), name: String(live?.name ?? "") });
+    }
   }
 
   // --- Telling people -----------------------------------------------------------------------

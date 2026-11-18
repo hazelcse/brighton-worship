@@ -26,8 +26,10 @@ import { teamProfiles } from "@/lib/teams";
 import { cleanComposition, compositionProblem, isDate, validateSession, type SessionInput } from "@/lib/session-input";
 import { bandRoleCandidates, createServeRequests } from "@/lib/serving";
 import { followCustomSession } from "@/lib/roster-revision";
+import { afterLinkedSessionMoved, renameLinked } from "@/lib/service-links";
 
-export type ActionState = { ok: boolean; message: string | null };
+/** `id`: what was made (e.g. a new session), when the caller needs it. */
+export type ActionState = { ok: boolean; message: string | null; id?: string };
 
 function fail(e: unknown): ActionState {
   return { ok: false, message: e instanceof Error ? e.message : "Something went wrong." };
@@ -187,13 +189,14 @@ async function draftFor(rosterId: string, user?: { isLead: boolean }) {
 }
 
 export async function addSession(rosterId: string, input: SessionInput): Promise<ActionState> {
+  let id: string;
   try {
     const user = await requirePermission("roster.edit");
     const roster = await draftFor(rosterId, user);
     const s = { ...input, composition: cleanComposition(input.composition), weight: Number(input.weight) };
     const problem = validateSession(s, roster);
     if (problem) return { ok: false, message: problem };
-    const { error } = await createAdminClient().from("roster_sessions").insert({
+    const { data: added, error } = await createAdminClient().from("roster_sessions").insert({
       roster_id: rosterId,
       date: s.date,
       kind: "custom",
@@ -205,14 +208,15 @@ export async function addSession(rosterId: string, input: SessionInput): Promise
       rehearsal_date: s.rehearsal_date || null,
       start_time: s.start_time || null,
       rehearsal_time: (s.rehearsal_date && s.rehearsal_time) || null,
-    });
+    }).select("id").single();
     if (error) throw error;
+    id = added.id as string;
     await audit(user.id, "roster.add_session", rosterId, { date: s.date, name: s.name });
   } catch (e) {
     return fail(e);
   }
   revalidatePath(`/roster/${rosterId}/plan`);
-  return { ok: true, message: "Session added." };
+  return { ok: true, message: "Session added.", id };
 }
 
 /** Set the weight and band of every session with this name in a draft (e.g. all "CM Prayer & Praise"). */
@@ -258,7 +262,7 @@ export async function updateSession(
     const user = await requirePermission("roster.edit");
     if (removals.length && !user.isLead) return { ok: false, message: "Only the lead can change who's serving." };
     const db = createAdminClient();
-    const { data: row } = await db.from("roster_sessions").select("roster_id, kind, date, name").eq("id", sessionId).maybeSingle();
+    const { data: row } = await db.from("roster_sessions").select("roster_id, kind, date, name, link_id").eq("id", sessionId).maybeSingle();
     if (!row) return { ok: false, message: "Session not found." };
     rosterId = row.roster_id;
     const roster = await draftFor(rosterId, user);
@@ -282,7 +286,15 @@ export async function updateSession(
       .eq("id", sessionId);
     if (error) throw error;
     if (row.kind === "cm_pnp") await syncCmRehearsals(rosterId, [row.date, s.date]);
-    if (row.kind === "custom") await followCustomSession(db, rosterId, { date: row.date, name: row.name }, { date: s.date, name: s.name.trim() });
+    if (row.kind === "custom") {
+      await followCustomSession(db, rosterId, { date: row.date, name: row.name }, { date: s.date, name: s.name.trim() });
+      // A linked ad hoc service: moved to another day, it leaves the link; renamed, the teams it's
+      // linked to take the new name too. (A revision's copy is linked through its published
+      // session: that happens when the revision is republished.)
+      if (row.date !== s.date)
+        await afterLinkedSessionMoved(db, sessionId, row.link_id as string | null, false, user.team ? { actorId: user.id, teamId: user.team.id, name: row.name } : undefined);
+      else if (row.name !== s.name.trim() && row.link_id) await renameLinked(db, sessionId, s.name.trim());
+    }
     for (const r of Array.isArray(removals) ? removals : []) {
       const member = String(r.member);
       const role = String(r.role);
@@ -376,13 +388,15 @@ export async function deleteSession(sessionId: string): Promise<ActionState> {
   try {
     const user = await requirePermission("roster.edit");
     const db = createAdminClient();
-    const { data: row } = await db.from("roster_sessions").select("roster_id, kind").eq("id", sessionId).maybeSingle();
+    const { data: row } = await db.from("roster_sessions").select("roster_id, kind, link_id, name").eq("id", sessionId).maybeSingle();
     if (!row) return { ok: false, message: "Session not found." };
     rosterId = row.roster_id;
     const roster = await draftFor(rosterId, user);
     if (row.kind !== "custom") return { ok: false, message: "Regular sessions can't be deleted. Mark them as “no session” instead." };
     const { error } = await db.from("roster_sessions").delete().eq("id", sessionId);
     if (error) throw error;
+    // The other teams' sessions it was linked to stay, with the same name.
+    await afterLinkedSessionMoved(db, sessionId, row.link_id as string | null, true, user.team ? { actorId: user.id, teamId: user.team.id, name: row.name as string } : undefined);
     message = await afterSessionChange(rosterId, roster.status);
   } catch (e) {
     return fail(e);
@@ -671,7 +685,7 @@ export async function editCell(
     const db = createAdminClient();
     const { data: session } = await db
       .from("roster_sessions")
-      .select("id, name, date, rehearsal_date, composition")
+      .select("id, name, kind, date, rehearsal_date, composition")
       .eq("id", sessionId)
       .eq("roster_id", rosterId)
       .maybeSingle();
@@ -696,17 +710,22 @@ export async function editCell(
     if (twice) return { ok: false, message: `${nameOf(twice)} is already serving ${session.name} as ${(ROLE_LABEL[role] ?? role).toLowerCase()}.` };
 
     // Anyone newly put in can't already be serving that day, or be absent that day or at the rehearsal.
+    // (An ad hoc event and a standard service the same day don't clash: the event is taken to be later.)
     const inCellNow = before.filter((b) => b.role === role).map((b) => b.member_id as string);
     const added = [...new Set(members.filter((m) => !inCellNow.includes(m)))];
     if (added.length) {
       const { data: sameDay } = await db
         .from("roster_assignments")
-        .select("member_id, role, roster_sessions!inner(id, name, date, roster_id, cancelled)")
+        .select("member_id, role, roster_sessions!inner(id, name, kind, date, roster_id, cancelled)")
         .in("member_id", added)
         .eq("roster_sessions.roster_id", rosterId)
         .eq("roster_sessions.date", session.date as string)
         .eq("roster_sessions.cancelled", false);
-      const clash = (sameDay ?? []).find((a) => !(a.role === role && (a.roster_sessions as unknown as { id: string }).id === sessionId));
+      const adhoc = (k: unknown) => (k ?? "custom") === "custom";
+      const clash = (sameDay ?? []).find((a) => {
+        const other = a.roster_sessions as unknown as { id: string; kind: string | null };
+        return !(a.role === role && other.id === sessionId) && adhoc(other.kind) === adhoc(session.kind);
+      });
       if (clash) {
         const s = clash.roster_sessions as unknown as { name: string };
         return { ok: false, message: `${nameOf(clash.member_id as string)} is already on ${s.name} (${(ROLE_LABEL[clash.role as string] ?? clash.role).toLowerCase()}) that day.` };

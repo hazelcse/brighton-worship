@@ -76,6 +76,36 @@ export async function deleteRecords(ids: string[]): Promise<TrackingResult> {
   }
 }
 
+/**
+ * A media lead takes sessions out of their Tracking (Services \u203a Tracking), for good: the roster
+ * keeps them (marked tracking_removed). Only their own team's sessions that have happened; "no
+ * session" rows aren't deleted.
+ */
+export async function deleteCrewRecords(ids: string[]): Promise<TrackingResult> {
+  try {
+    const user = await requireLead();
+    if (user.team.kind !== "media") throw new Error("Only a media team's lead can do this here.");
+    const wanted = [...new Set(ids)].filter((id) => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id));
+    if (!wanted.length) throw new Error("Nothing to delete.");
+    const db = createAdminClient();
+    const { data: rosters } = await db.from("rosters").select("id").eq("team_id", user.team.id);
+    const { data, error } = await db
+      .from("roster_sessions")
+      .update({ tracking_removed: true })
+      .in("id", wanted)
+      .in("roster_id", (rosters ?? []).map((r) => r.id as string))
+      .eq("cancelled", false)
+      .lte("date", todayYmd())
+      .select("id");
+    if (error) throw new Error(error.message);
+    revalidatePath("/services/tracking");
+    const n = data?.length ?? 0;
+    return { ok: true, message: `Deleted ${n} session${n === 1 ? "" : "s"}.` };
+  } catch (e) {
+    return { ok: false, message: message(e) };
+  }
+}
+
 /** Root corrects a tracked session. */
 export async function updateRecord(id: string, input: RecordInput): Promise<TrackingResult> {
   try {

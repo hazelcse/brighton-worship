@@ -578,29 +578,30 @@ async function mediaTeamOf(db: Db, sessionId: string): Promise<Team | null> {
 }
 
 /**
- * The worship service a media session crews, for its songs: the worship team's (same group) session
- * that day of the same kind, else of the same name, else the one service with a media crew that day
- * (EM Sunday, EM PnP, YF Saturday). Its published plan, as songs only (media members don't open plans).
+ * The worship service a media session crews, for its songs: a standard service is the worship
+ * team's (same group) session that day of the same kind; an ad hoc one, the worship session it's
+ * linked to (lib/service-links.ts), if any. Its published plan, as songs only (media members don't
+ * open plans).
  */
 async function crewedServicePlan(
   db: Db,
   userId: string,
   group: TeamGroup,
-  s: { date: string; kind: string; name: string },
+  s: { date: string; kind: string; name: string; linkId: string | null },
 ): Promise<SessionDetail["plan"]> {
+  if (s.kind === "custom" && !s.linkId) return null;
   const worshipIds = (await loadTeams()).filter((t) => t.group === group && t.kind === "worship").map((t) => t.id);
   if (!worshipIds.length) return null;
-  const { data } = await db
+  let q = db
     .from("roster_sessions")
     .select("id, name, kind, rosters!inner(team_id, status)")
     .in("rosters.team_id", worshipIds)
     .eq("rosters.status", "published")
     .eq("date", s.date)
     .eq("cancelled", false);
-  const day = data ?? [];
-  const crewed = day.filter((x) => CREW_KINDS.has(x.kind ?? ""));
-  const service =
-    (s.kind !== "custom" && day.find((x) => x.kind === s.kind)) || day.find((x) => x.name === s.name) || (crewed.length === 1 ? crewed[0] : undefined);
+  q = s.kind === "custom" ? q.eq("link_id", s.linkId!) : q.eq("kind", s.kind);
+  const { data } = await q;
+  const service = (data ?? [])[0];
   const plan = service ? (await sessionDetail(db, userId, service.id as string))?.plan : null;
   return plan ? { ...plan, canOpen: false, cues: [] } : null;
 }
@@ -608,7 +609,7 @@ async function crewedServicePlan(
 /** Build one session's details for this viewer (no access check: callers do that). */
 async function sessionDetail(db: Db, userId: string, sessionId: string): Promise<SessionDetail | null> {
   const [{ data: row }, { data: band }, { data: serve }, { data: plan }] = await Promise.all([
-    db.from("roster_sessions").select("id, date, name, kind, rehearsal_date, start_time, rehearsal_time").eq("id", sessionId).maybeSingle(),
+    db.from("roster_sessions").select("id, date, name, kind, rehearsal_date, start_time, rehearsal_time, link_id").eq("id", sessionId).maybeSingle(),
     db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", sessionId),
     db.from("serve_requests").select("status").eq("session_id", sessionId).eq("member_id", userId).maybeSingle(),
     db
@@ -669,7 +670,7 @@ async function sessionDetail(db: Db, userId: string, sessionId: string): Promise
       }))
       .sort((a, b) => (order.get(a.role) ?? 99) - (order.get(b.role) ?? 99) || a.name.localeCompare(b.name)),
     plan: media
-      ? await crewedServicePlan(db, userId, media.group, { date: row.date, kind: row.kind ?? "custom", name: row.name })
+      ? await crewedServicePlan(db, userId, media.group, { date: row.date, kind: row.kind ?? "custom", name: row.name, linkId: (row.link_id as string | null) ?? null })
       : plan
       ? {
           id: plan.id,
@@ -863,117 +864,179 @@ export type CrewMember = { id: string; name: string; role: string; team: string;
 const CREW_KINDS = new Set(["em_sunday", "em_pnp", "saturday"]);
 
 /**
- * A service, as root sees it: a worship team's session on a published roster (its plan and band)
- * and, for the services that have one, the media crew of the same group serving that day.
+ * A service, as root and the observer see it. Usually a worship team's session on a published
+ * roster (its plan and band) with, for the services that have one, the media crew of the same
+ * group: for a standard service, the media team's session of the same kind that day; for an ad hoc
+ * one, the media sessions linked to it (lib/service-links.ts). A media team's session that crews no
+ * worship session (e.g. an ad hoc event needing only a crew) is a service of its own: `session` is
+ * then the media session (its crew where the band would be) and `crew` is null.
  */
 export type Service = {
   date: string;
   group: TeamGroup;
-  /** The worship team, and its slug for opening its plans (root works in one team at a time). */
+  /** The session's team, and its slug for opening its plans (root works in one team at a time). */
   team: string;
   teamSlug: string;
   session: SessionDetail;
-  /** The media crew (empty when none is published yet); null for a service without one (CM, custom). */
+  /** The media crew (empty when none is published yet); null for a service without one (CM, unlinked ad hoc). */
   crew: CrewMember[] | null;
+  /** Every team serving at it (the session's team, then the crew's). */
+  teamIds: string[];
+  /** Each of those teams' own session in it (team id -> roster session id), for its Services page. */
+  sessionIdByTeam: Record<string, string>;
 };
 
+type ServiceRow = { id: string; date: string; name: string; kind: string; linkId: string | null; team: Team };
+
 /**
- * Every worship team's services from `from` to `to` (inclusive), plus each group's media crew by date.
- * With `group`, only that group's teams (an observer's view).
+ * Every service from `from` to `to` (inclusive), soonest first. With `group`, only that group's
+ * teams (an observer's view, or a team's own).
  */
-async function servicesBetween(viewerId: string, from: string, to: string, group?: TeamGroup) {
+async function servicesBetween(viewerId: string, from: string, to: string, group?: TeamGroup): Promise<Service[]> {
   const db = createAdminClient();
-  const teams = (await loadTeams()).filter((t) => !group || t.group === group);
+  const everyTeam = await loadTeams();
+  const teams = everyTeam.filter((t) => !group || t.group === group);
+  if (!teams.length) return [];
   const teamById = new Map(teams.map((t) => [t.id, t]));
-  const onRosters = async (kind: "worship" | "media") => {
-    const ids = teams.filter((t) => t.kind === kind).map((t) => t.id);
-    if (!ids.length) return [];
-    const { data } = await db
-      .from("roster_sessions")
-      .select("id, date, name, kind, start_time, rosters!inner(team_id, status)")
-      .in("rosters.team_id", ids)
-      .eq("rosters.status", "published")
-      .gte("date", from)
-      .lte("date", to)
-      .eq("cancelled", false)
-      .order("date")
-      .order("start_time", { nullsFirst: false })
-      .order("name");
-    return (data ?? []).map((r) => ({
-      id: r.id as string,
-      date: r.date as string,
-      name: r.name as string,
-      kind: (r.kind as string | null) ?? "custom",
-      team: teamById.get((r.rosters as unknown as { team_id: string }).team_id)!,
-    }));
-  };
-  const [worship, media] = await Promise.all([onRosters("worship"), onRosters("media")]);
-  const [details, { data: crewRows }] = await Promise.all([
-    Promise.all(worship.map((w) => sessionDetail(db, viewerId, w.id))),
-    media.length
-      ? db.from("roster_assignments").select("member_id, role, session_id").in("session_id", media.map((m) => m.id))
+  const { data } = await db
+    .from("roster_sessions")
+    .select("id, date, name, kind, start_time, link_id, rosters!inner(team_id, status)")
+    .in("rosters.team_id", teams.map((t) => t.id))
+    .eq("rosters.status", "published")
+    .gte("date", from)
+    .lte("date", to)
+    .eq("cancelled", false)
+    .order("date")
+    .order("start_time", { nullsFirst: false })
+    .order("name");
+  const rows: ServiceRow[] = (data ?? []).map((r) => ({
+    id: r.id as string,
+    date: r.date as string,
+    name: r.name as string,
+    kind: (r.kind as string | null) ?? "custom",
+    linkId: (r.link_id as string | null) ?? null,
+    team: teamById.get((r.rosters as unknown as { team_id: string }).team_id)!,
+  }));
+  const worship = rows.filter((r) => r.team.kind === "worship");
+  const media = rows.filter((r) => r.team.kind === "media");
+
+  // Ad hoc worship sessions linked to a media team's session (published or still a draft): they
+  // have a crew, even if it isn't published yet.
+  const linkIds = [...new Set(worship.flatMap((w) => (w.kind === "custom" && w.linkId ? [w.linkId] : [])))];
+  const { data: linkRows } = linkIds.length
+    ? await db.from("roster_sessions").select("link_id, rosters!inner(team_id, status)").in("link_id", linkIds).in("rosters.status", ["published", "draft"])
+    : { data: [] };
+  const allTeams = new Map(everyTeam.map((t) => [t.id, t]));
+  const crewedLinks = new Set(
+    (linkRows ?? [])
+      .filter((r) => allTeams.get((r.rosters as unknown as { team_id: string }).team_id)?.kind === "media")
+      .map((r) => r.link_id as string),
+  );
+
+  // Each worship session's crew: same kind that day (standard), or linked to it (ad hoc).
+  const used = new Set<string>();
+  const paired = worship.map((w) => {
+    const crew = media.filter((m) =>
+      w.kind === "custom"
+        ? Boolean(w.linkId) && m.linkId === w.linkId
+        : m.kind === w.kind && m.date === w.date && m.team.group === w.team.group,
+    );
+    for (const m of crew) used.add(m.id);
+    const hasCrew = w.kind === "custom" ? Boolean(w.linkId && crewedLinks.has(w.linkId)) : CREW_KINDS.has(w.kind);
+    return { w, crew, hasCrew };
+  });
+  // Media sessions that crew no worship session: services of their own.
+  const alone = media.filter((m) => !used.has(m.id));
+
+  const crewIds = [...used];
+  const [details, aloneDetails, { data: crewRows }] = await Promise.all([
+    Promise.all(paired.map(({ w }) => sessionDetail(db, viewerId, w.id))),
+    Promise.all(alone.map((m) => sessionDetail(db, viewerId, m.id))),
+    crewIds.length
+      ? db.from("roster_assignments").select("member_id, role, session_id").in("session_id", crewIds)
       : Promise.resolve({ data: [] as { member_id: string; role: string; session_id: string }[] }),
   ]);
   const people = await names(db, [...new Set((crewRows ?? []).map((r) => r.member_id as string))]);
   const mediaById = new Map(media.map((m) => [m.id, m]));
-  // Each group's crew by date: "main|2026-11-22" -> who's on Main Media's roster that day.
-  const crew = new Map<string, CrewMember[]>();
-  for (const r of crewRows ?? []) {
-    const m = mediaById.get(r.session_id as string)!;
-    const key = `${m.team.group}|${m.date}`;
-    crew.set(key, [
-      ...(crew.get(key) ?? []),
-      { id: r.member_id as string, name: people.get(r.member_id as string) ?? "Someone", role: r.role as string, team: m.team.name, session: m.name },
-    ]);
-  }
-  const services: Service[] = worship.flatMap((w, i) => {
-    const d = details[i];
-    if (!d) return [];
-    return [
-      {
-        date: w.date,
-        group: w.team.group,
-        team: w.team.name,
-        teamSlug: w.team.slug,
-        // Root can open any published plan.
-        session: { ...d, plan: d.plan && { ...d.plan, canOpen: true } },
-        crew: CREW_KINDS.has(w.kind) ? (crew.get(`${w.team.group}|${w.date}`) ?? []) : null,
-      },
-    ];
-  });
-  return { services, crew };
+  const crewOf = (sessionIds: string[]): CrewMember[] =>
+    (crewRows ?? [])
+      .filter((r) => sessionIds.includes(r.session_id as string))
+      .map((r) => {
+        const m = mediaById.get(r.session_id as string)!;
+        return { id: r.member_id as string, name: people.get(r.member_id as string) ?? "Someone", role: r.role as string, team: m.team.name, session: m.name };
+      });
+
+  // In the order the sessions came (date, start time, name), but a day's ad hoc services after its
+  // standard ones (they're taken to be later in the day).
+  const order = new Map(
+    [...rows]
+      .sort((a, b) => a.date.localeCompare(b.date) || Number(a.kind === "custom") - Number(b.kind === "custom"))
+      .map((r, i) => [r.id, i]),
+  );
+  const services: (Service & { at: number })[] = [
+    ...paired.flatMap(({ w, crew, hasCrew }, i) => {
+      const d = details[i];
+      if (!d) return [];
+      return [
+        {
+          at: order.get(w.id)!,
+          date: w.date,
+          group: w.team.group,
+          team: w.team.name,
+          teamSlug: w.team.slug,
+          // Root can open any published plan.
+          session: { ...d, plan: d.plan && { ...d.plan, canOpen: true } },
+          crew: hasCrew || crew.length ? crewOf(crew.map((m) => m.id)) : null,
+          teamIds: [...new Set([w.team.id, ...crew.map((m) => m.team.id)])],
+          sessionIdByTeam: Object.fromEntries([...crew.map((m) => [m.team.id, m.id]), [w.team.id, w.id]]),
+        },
+      ];
+    }),
+    ...alone.flatMap((m, i) => {
+      const d = aloneDetails[i];
+      if (!d) return [];
+      return [{ at: order.get(m.id)!, date: m.date, group: m.team.group, team: m.team.name, teamSlug: m.team.slug, session: d, crew: null, teamIds: [m.team.id], sessionIdByTeam: { [m.team.id]: m.id } }];
+    }),
+  ];
+  services.sort((a, b) => a.at - b.at);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return services.map(({ at, ...s }) => s);
 }
 
 /**
- * Root's Services page: every worship team's services over the next `days` days, soonest first. An
+ * Root's Services page: every team's services over the next `days` days, soonest first. An
  * observer's: only its group's (`group`).
  */
 export async function loadServices(viewerId: string, days = 28, group?: TeamGroup): Promise<Service[]> {
   const today = todayYmd();
-  return (await servicesBetween(viewerId, today, addDays(today, days - 1), group)).services;
+  return servicesBetween(viewerId, today, addDays(today, days - 1), group);
 }
 
-/** One day of an observer's coming week: that day's services and any media crew without one. */
+/**
+ * A team's Services page: the services it serves at over the next `days` days. Its standard
+ * services (with the other teams serving at them) and its own ad hoc ones, linked or not; another
+ * team's ad hoc service shows only once it's linked to one of this team's.
+ */
+export async function loadTeamServices(viewerId: string, team: Pick<Team, "id" | "group">, days = 28): Promise<Service[]> {
+  return (await loadServices(viewerId, days, team.group)).filter((s) => s.teamIds.includes(team.id));
+}
+
+/** One day of an observer's coming week: that day's services. */
 export type ServiceDay = {
   date: string;
   services: Service[];
-  /** The group's media crew that day, when no service that day has a crew to show it in. */
-  looseCrew: CrewMember[];
 };
 
 /**
  * An observer's home page: every day in the coming week (today and the six after) on which its
  * group has a service on a published roster, e.g. the YF Saturday service and any ad hoc events,
- * with each one's session, band and media crew. Days with only a media crew show that crew.
+ * with each one's session, band and media crew (or the crew alone, for one that only has a crew).
  */
 export async function loadGroupWeek(viewerId: string, group: TeamGroup): Promise<ServiceDay[]> {
   const today = todayYmd();
-  const { services, crew } = await servicesBetween(viewerId, today, addDays(today, 6), group);
-  const dates = new Set([...services.map((s) => s.date), ...[...crew.keys()].map((k) => k.split("|")[1])]);
-  return [...dates].sort().map((date) => {
-    const onDay = services.filter((s) => s.date === date);
-    return { date, services: onDay, looseCrew: onDay.some((s) => s.crew) ? [] : (crew.get(`${group}|${date}`) ?? []) };
-  });
+  const services = await servicesBetween(viewerId, today, addDays(today, 6), group);
+  const dates = [...new Set(services.map((s) => s.date))].sort();
+  return dates.map((date) => ({ date, services: services.filter((s) => s.date === date) }));
 }
 
 /** One group's coming service, for root's home page. */
@@ -984,8 +1047,6 @@ export type ServiceOverview = {
   date: string;
   /** That day's services (e.g. EM and CM Sunday services), each with its plan, band and crew. */
   services: Service[];
-  /** The group's media crew that day, when no service that day has a crew to show it in. */
-  looseCrew: CrewMember[];
 };
 
 /**
@@ -994,16 +1055,112 @@ export type ServiceOverview = {
  */
 export async function loadServiceOverview(viewerId: string): Promise<ServiceOverview[]> {
   const today = todayYmd();
-  const [{ services, crew }, teams] = await Promise.all([servicesBetween(viewerId, today, addDays(today, 6)), loadTeams()]);
+  const [services, teams] = await Promise.all([servicesBetween(viewerId, today, addDays(today, 6)), loadTeams()]);
   return TEAM_GROUPS.map((group): ServiceOverview => {
     const date = nextWeekday(today, GROUP_SERVICE_DAY[group]);
-    const onDay = services.filter((s) => s.group === group && s.date === date);
     return {
       group,
       team: teams.find((t) => t.group === group && t.kind === "worship")?.name ?? null,
       date,
-      services: onDay,
-      looseCrew: onDay.some((s) => s.crew) ? [] : (crew.get(`${group}|${date}`) ?? []),
+      services: services.filter((s) => s.group === group && s.date === date),
     };
   });
+}
+
+/** One team's part in a service: its session, with its band or crew. */
+export type ServiceTeam = {
+  team: { id: string; name: string; kind: string; slug: string };
+  rosterStatus: string;
+  session: SessionDetail;
+};
+
+/** A service as one of its teams' leads sees it on their Services page. */
+export type ServiceDetailView = {
+  date: string;
+  name: string;
+  kind: string;
+  /** The lead's own team's session in it. */
+  ownSessionId: string;
+  /** Every team serving at it, the lead's own first. */
+  teams: ServiceTeam[];
+  /**
+   * The session (songs and sequence): the worship team's plan. null when no worship team serves
+   * at it (e.g. an ad hoc service needing only a crew); `plan` null when it isn't published yet.
+   */
+  session: { team: string; plan: PlanSection[] | null; planId: string | null; canOpen: boolean } | null;
+};
+
+/**
+ * A service, from one of its teams' session (`sessionId`, on that team's published roster): every
+ * team serving at it (standard: the group's sessions of the same kind that day; ad hoc: the
+ * sessions linked to it, published or draft) and the worship team's published plan. Null if the
+ * session isn't the team's, or isn't on a published roster.
+ */
+export async function loadServiceDetail(viewerId: string, team: Team, sessionId: string): Promise<ServiceDetailView | null> {
+  const db = createAdminClient();
+  const { data: own } = await db
+    .from("roster_sessions")
+    .select("id, date, name, kind, link_id, cancelled, rosters!inner(team_id, status)")
+    .eq("id", sessionId)
+    .maybeSingle();
+  const ownRoster = own?.rosters as unknown as { team_id: string; status: string } | undefined;
+  if (!own || own.cancelled || ownRoster?.team_id !== team.id || ownRoster.status !== "published") return null;
+  const kind = (own.kind as string | null) ?? "custom";
+  const everyTeam = await loadTeams();
+  const groupTeams = everyTeam.filter((t) => t.group === team.group);
+  const teamById = new Map(groupTeams.map((t) => [t.id, t]));
+
+  // The other teams' sessions in it: by kind and date (standard), or by link (ad hoc).
+  let members: { id: string; teamId: string; status: string }[] = [{ id: own.id, teamId: team.id, status: "published" }];
+  if (kind !== "custom" || own.link_id) {
+    let q = db
+      .from("roster_sessions")
+      .select("id, rosters!inner(team_id, status)")
+      .in("rosters.team_id", groupTeams.map((t) => t.id))
+      .eq("cancelled", false)
+      .neq("id", own.id);
+    q = kind === "custom" ? q.eq("link_id", own.link_id as string).in("rosters.status", ["published", "draft"]) : q.eq("date", own.date).eq("kind", kind).eq("rosters.status", "published");
+    const { data } = await q;
+    const others = (data ?? []).map((r) => {
+      const ro = r.rosters as unknown as { team_id: string; status: string };
+      return { id: r.id as string, teamId: ro.team_id, status: ro.status };
+    });
+    // One per team (the first, published before draft).
+    const seen = new Set([team.id]);
+    for (const o of others.sort((a, b) => (a.status === "published" ? 0 : 1) - (b.status === "published" ? 0 : 1))) {
+      if (seen.has(o.teamId)) continue;
+      seen.add(o.teamId);
+      members.push(o);
+    }
+  }
+  members = members.filter((m) => teamById.has(m.teamId));
+
+  const details = await Promise.all(members.map((m) => sessionDetail(db, viewerId, m.id)));
+  const teams: ServiceTeam[] = members.flatMap((m, i) => {
+    const d = details[i];
+    const t = teamById.get(m.teamId)!;
+    return d ? [{ team: { id: t.id, name: t.name, kind: t.kind, slug: t.slug }, rosterStatus: m.status, session: d }] : [];
+  });
+
+  // The session: the worship team's published plan, in full (songs and their sequences).
+  const worship = teams.find((t) => t.team.kind === "worship");
+  let session: ServiceDetailView["session"] = null;
+  if (worship) {
+    const { data: ws } = await db
+      .from("worship_sessions")
+      .select(
+        "id, worship_session_sections(id, name, position, worship_session_items(id, position, kind, song_id, lead_id, title, type, bpm, key, transpose_to, artist, sequence, custom_elements, links, notes, sheet))",
+      )
+      .eq("roster_session_id", worship.session.rosterSessionId)
+      .eq("status", "published")
+      .maybeSingle();
+    session = {
+      team: worship.team.name,
+      plan: ws ? normalisePlan(ws.worship_session_sections) : null,
+      planId: (ws?.id as string | undefined) ?? null,
+      // Only the worship team's own lead opens the plan itself.
+      canOpen: Boolean(ws) && worship.team.id === team.id,
+    };
+  }
+  return { date: own.date as string, name: own.name as string, kind, ownSessionId: own.id as string, teams, session };
 }

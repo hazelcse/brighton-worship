@@ -7,6 +7,7 @@ import { devObserverSettings, devViewPeople, devViewTeams } from "@/lib/dev-view
 import { countUnseenSongUpdates, updateKindsFor } from "@/lib/song-updates";
 import { loadUpdates } from "@/lib/serving";
 import { loadNewlyPublished, loadPublishDue } from "@/lib/sessions";
+import { loadNewlyPublishedForCrew } from "@/lib/projection";
 
 /** Reads the session, so it sits behind Suspense (required with Cache Components). */
 async function SignedInNav() {
@@ -16,7 +17,8 @@ async function SignedInNav() {
   const [people, realObserverPerms, viewTeams] = user.isDeveloper
     ? await Promise.all([devViewPeople(), devObserverSettings(), devViewTeams()])
     : [[], undefined, undefined];
-  const [songUpdates, inbox, published, publishDue, memberOf] = await Promise.all([
+  const mediaTeam = user.team?.kind === "media" && !user.isRoot && !user.isObserver ? user.team : null;
+  const [songUpdates, inbox, published, publishDue, memberOf, projection] = await Promise.all([
     countUnseenSongUpdates(user.id, updateKindsFor(user)),
     // Roster updates live in the nav's inbox (with its own unread count), not on the Roster page.
     // An observer is on no roster, so has none.
@@ -37,6 +39,8 @@ async function SignedInNav() {
               .sort((a, b) => a.position - b.position)
               .map((t) => ({ slug: t.slug, name: t.name })),
           ),
+    // A media team: plans the worship team published (or changed) for services they're linked to.
+    mediaTeam ? loadNewlyPublishedForCrew({ id: user.id, isLead: user.isLead }, mediaTeam) : Promise.resolve([]),
   ]);
   // Plans published for them to see, plus their own plans due to be published within two weeks.
   const sessionBadge = published.length + publishDue.length;
@@ -70,6 +74,7 @@ async function SignedInNav() {
           badges: {
             ...(songUpdates ? { "/songs": songUpdates } : {}),
             ...(sessionBadge ? { "/sessions": sessionBadge } : {}),
+            ...(projection.length ? { "/projection": projection.length } : {}),
           },
           inbox,
           viewAs: user.viewAs,

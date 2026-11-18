@@ -156,10 +156,18 @@ export type UpdateKind =
   | "roster_band_changed"
   // A team lead added someone to their team, or removed them: told to root only (detail: their name).
   | "member_added"
-  | "member_removed";
+  | "member_removed"
+  // Another team's lead linked their ad hoc service to one of this team's sessions, or unlinked it
+  // (by hand, or by moving or deleting theirs): told to this team's lead (detail: "Main Media's
+  // Baptism"; reason: "deleted" / "moved" / null).
+  | "service_linked"
+  | "service_unlinked";
 
 /** The kinds a republished roster sends, one per person affected. */
 export const ROSTER_CHANGE_KINDS: UpdateKind[] = ["roster_added", "roster_removed", "roster_part_changed", "roster_session_changed", "roster_band_changed"];
+
+/** Another team's lead linking to or unlinking from one of this team's sessions: its lead hears. */
+export const LINK_KINDS: UpdateKind[] = ["service_linked", "service_unlinked"];
 
 /** A lead adding or removing someone: about a team, not a session, and only root hears. */
 export const MEMBER_KINDS: UpdateKind[] = ["member_added", "member_removed"];
@@ -991,15 +999,24 @@ const updatesFor = cache(async (userId: string, isLead: boolean, isRoot: boolean
   const since = new Date(Date.now() - UPDATE_LIFETIME_DAYS * 24 * 60 * 60 * 1000).toISOString();
   // Only the signed-in team's sessions: a lead or admin of one team doesn't hear about another's.
   // Root also hears about leads adding or removing people, on every team.
-  const [sessions, { data: memberRows }, { data: teamRows }] = await Promise.all([
+  // A team's lead also hears about other teams linking to (or unlinking from) its sessions.
+  const leadOfTeam = user.isLead && !user.isRoot && teamId;
+  const [sessions, { data: memberRows }, { data: teamRows }, { data: linkRows }] = await Promise.all([
     publishedSessions(db, teamId ?? undefined),
     user.isRoot
       ? db.from("roster_updates").select(columns).in("kind", MEMBER_KINDS).gte("created_at", since).order("created_at", { ascending: false }).limit(100)
       : Promise.resolve({ data: [] as never[] }),
-    user.isRoot ? db.from("teams").select("id, name") : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    db.from("teams").select("id, name, kind"),
+    leadOfTeam
+      ? db.from("roster_updates").select(columns).in("kind", LINK_KINDS).eq("team_id", teamId).gte("created_at", since).order("created_at", { ascending: false }).limit(100)
+      : Promise.resolve({ data: [] as never[] }),
   ]);
+  const teamKind = new Map((teamRows ?? []).map((t) => [t.id as string, t.kind as string]));
+  // Sessions on a published roster now (before cancelled ones are added for naming): a link notice
+  // opens the lead's service page only for these.
+  const live = new Set(sessions.keys());
   const teamName = new Map((teamRows ?? []).map((t) => [t.id as string, t.name as string]));
-  if (!sessions.size && !memberRows?.length) return [];
+  if (!sessions.size && !memberRows?.length && !linkRows?.length) return [];
   // Roster changes are also about sessions since cancelled or deleted: fetched on their own.
   let changes = db.from("roster_updates").select(columns).in("kind", ROSTER_CHANGE_KINDS).gte("created_at", since);
   // Bandmates' notes are one per person: root gets only their own, so they don't crowd the limit.
@@ -1022,7 +1039,13 @@ const updatesFor = cache(async (userId: string, isLead: boolean, isRoot: boolean
     db.from("roster_assignments").select("session_id").eq("member_id", user.id),
   ]);
   const seenIds = new Set((onSessions ?? []).map((u) => u.id));
-  const all = [...(onSessions ?? []), ...(changeRows ?? []).filter((u) => !seenIds.has(u.id)), ...(memberRows ?? [])].sort((a, b) =>
+  const changeIds = new Set((changeRows ?? []).map((u) => u.id));
+  const all = [
+    ...(onSessions ?? []),
+    ...(changeRows ?? []).filter((u) => !seenIds.has(u.id)),
+    ...(memberRows ?? []),
+    ...(linkRows ?? []).filter((u) => !seenIds.has(u.id) && !changeIds.has(u.id)),
+  ].sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
   );
   // Sessions roster changes mention that aren't live any more (cancelled), for naming them.
@@ -1085,7 +1108,16 @@ const updatesFor = cache(async (userId: string, isLead: boolean, isRoot: boolean
     : [{ data: [] as { id: string; roster_session_id: string }[] }, { data: [] as { session_id: string }[] }];
   const planFor = new Map((plans ?? []).map((p) => [p.roster_session_id as string, p.id as string]));
   const confirmed = new Set((confirmedRows ?? []).map((r) => r.session_id as string));
-  const href = (u: { kind: string; session_id: string }) => {
+  const href = (u: { kind: string; session_id: string; team_id?: string | null; detail?: string | null }) => {
+    // A link notice: the lead's own service page (Services), while the session's on a published roster.
+    if (LINK_KINDS.includes(u.kind as UpdateKind)) {
+      if (!live.has(u.session_id) || !u.team_id) return null;
+      return `${teamKind.get(u.team_id as string) === "media" ? "/services" : "/sessions/services"}/${u.session_id}`;
+    }
+    // A media crew's copy: the worship team's plan (detail: its id), on their Projection page.
+    if (u.kind === "session_updated" && teamKind.get(sessions.get(u.session_id)?.teamId ?? "") === "media") {
+      return u.detail ? `/projection/${u.detail}` : null;
+    }
     if (u.kind !== "session_updated" || !planFor.has(u.session_id)) return null;
     return user.isLead || confirmed.has(u.session_id) ? `/sessions/${planFor.get(u.session_id)}` : "/roster#requests";
   };
@@ -1144,6 +1176,8 @@ const updatesFor = cache(async (userId: string, isLead: boolean, isRoot: boolean
       const involved = u.actor_id === user.id || u.member_id === user.id;
       // Only fetched for root.
       if (MEMBER_KINDS.includes(u.kind as UpdateKind)) return true;
+      // Only for the lead of the team whose session it's about (also fetched with its sessions' updates).
+      if (LINK_KINDS.includes(u.kind as UpdateKind)) return Boolean(leadOfTeam) && u.team_id === teamId;
       // Root hears nothing about swaps, on any roster.
       if (user.isRoot && SWAPS.includes(u.kind as UpdateKind)) return false;
       // One copy per bandmate, for that bandmate only: whoever made the edit sees the changes themselves.

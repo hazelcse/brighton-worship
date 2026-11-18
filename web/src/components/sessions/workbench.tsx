@@ -539,11 +539,14 @@ export function Workbench({
   canEdit,
   bank,
   canBrowse,
+  projection = false,
 }: {
   initial: WorkbenchData;
   canEdit: boolean;
   bank: BankSong[];
   canBrowse: boolean;
+  /** A media team's Projection view: read only, no band and no song bank, back to Projection. */
+  projection?: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -833,14 +836,15 @@ export function Workbench({
   const select = useCallback(
     (item: PlanItem | null) => {
       setSelectedId(item?.id ?? null);
-      if (!item || item.kind !== "song") return;
+      // Projection has no song bank to show the song in.
+      if (!item || item.kind !== "song" || projection) return;
       if (item.song_id) showDetail(item.song_id);
       else if (editing) {
         setDetailId(null);
         setQuery(item.title);
       }
     },
-    [editing, showDetail],
+    [editing, showDetail, projection],
   );
 
   const updateItem = useCallback(
@@ -852,12 +856,20 @@ export function Workbench({
   const toggleOpen = useCallback(
     (item: PlanItem) => {
       const opening = !openIds.has(item.id);
-      // One open at a time: opening one closes the rest.
-      setOpenIds(opening ? new Set([item.id]) : new Set());
+      if (projection) {
+        // Projection: each song opens and closes on its own, so they can all be open at once.
+        const next = new Set(openIds);
+        if (opening) next.add(item.id);
+        else next.delete(item.id);
+        setOpenIds(next);
+      } else {
+        // One open at a time: opening one closes the rest.
+        setOpenIds(opening ? new Set([item.id]) : new Set());
+      }
       if (opening) select(item);
       else if (selectedId === item.id) setSelectedId(null);
     },
-    [openIds, select, selectedId],
+    [openIds, select, selectedId, projection],
   );
 
   /** The session's worship leaders and vocalists. */
@@ -998,14 +1010,14 @@ export function Workbench({
       ref={gridRef}
       // --bank: the song bank column; defaults by window size, or the width dragged (BankResizer).
       style={bankWidth && !minimised ? ({ "--bank": bankColumn(bankWidth) } as React.CSSProperties) : undefined}
-      className={`grid gap-4 ${minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_var(--bank)] lg:[--bank:24rem] xl:[--bank:28rem]"}`}
+      className={`grid gap-4 ${projection ? "" : minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_var(--bank)] lg:[--bank:24rem] xl:[--bank:28rem]"}`}
     >
       {/* View mode only: pick up the worship leaders' changes. Never while editing, so a refresh can't fight the draft. */}
       {!editing && <AutoRefresh />}
       {/* The session being built */}
       <div className="min-w-0 space-y-4">
-        <Link href="/sessions" className="block w-fit text-sm text-muted hover:text-foreground">
-          ← Sessions
+        <Link href={projection ? "/projection" : "/sessions"} className="block w-fit text-sm text-muted hover:text-foreground">
+          {projection ? "← Projection" : "← Sessions"}
         </Link>
 
         {/* Phones: title and badges, then the date and rehearsal on one line under it, then the buttons. */}
@@ -1139,7 +1151,7 @@ export function Workbench({
           </div>
         )}
 
-        {initial.band.length > 0 && (
+        {!projection && initial.band.length > 0 && (
           <details className="rounded-xl border border-border bg-surface px-4 py-2.5 text-sm">
             <summary className="cursor-pointer font-medium">Band ({initial.band.length})</summary>
             <ul className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
@@ -1204,7 +1216,9 @@ export function Workbench({
         )}
       </div>
 
-      {/* Song bank: a column on wide screens, a sheet on phones */}
+      {/* Song bank: a column on wide screens, a sheet on phones (not on Projection) */}
+      {!projection && (
+      <>
       <aside className="hidden lg:block">
         <div className="sticky top-[4.5rem] h-[calc(100dvh-6rem)]">
           {minimised ? (
@@ -1240,6 +1254,8 @@ export function Workbench({
           </button>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

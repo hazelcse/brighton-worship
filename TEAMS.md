@@ -76,7 +76,40 @@ group serving that day:
 | EM PnP | yes | yes | Main Media |
 | CM PnP | yes | yes | no |
 
-Which kinds have a crew is `CREW_KINDS` in `web/src/lib/sessions.ts`.
+Which kinds have a crew is `CREW_KINDS` in `web/src/lib/sessions.ts`. A standard service's crew is
+the media team's session of the **same kind** that day (so Youth Media needs a `saturday` session
+kind for its crew to join the YF Saturday service).
+
+**Ad hoc services** (`custom` sessions) are linked by hand (`roster_sessions.link_id`,
+`web/src/lib/service-links.ts`). Any team can add one first. When a lead adds one on a day where
+other teams of the **same group** already have ad hoc services, a popup lists them: pick the one it's
+the same service as, or **Do not link**. Linking, changing and unlinking later is in the session's
+edit dialog ("Linked service"). Only leads link; one session per team per link. Linked sessions share
+the name of whichever was added first; renaming one renames the others, moving one to another day
+unlinks it, and deleting one leaves the rest (with the name). A media session that crews no worship
+session is shown as a service of its own.
+
+**Same day:** an ad hoc event on a Sunday/Saturday service day is taken to be later in the day, so
+people on that day's standard service can still be picked for it (ad hoc picker, roster grid and
+generator). Two standard services, or two ad hoc events, on one day still clash. Services lists (root's, the observer's and the
+teams' Services pages) show a day's ad hoc services after its standard ones.
+
+**Team Services pages:** a worship lead's Sessions › Services and the media teams' Services show the
+team's own services the same way: its standard ones and its own ad hoc ones, plus other teams' ad hoc
+services once linked. A lead's cards open the service (`/services/[id]`, `/sessions/services/[id]`):
+every team serving at it with its band or crew, the session (songs and sequence), and for an ad hoc
+service a broken-chain button (top right) whose popup links, changes or unlinks it. That only changes the lead's own team's
+session; a standard service is linked by its kind and date and has no button.
+
+**Link notices:** when a lead links their ad hoc service to another team's, changes or removes the
+link, or moves their linked session to another day or deletes it, the other team's lead gets an
+inbox update (kinds `service_linked` / `service_unlinked` in `roster_updates`, with `team_id` the
+team told). Changing a link tells the old team it was unlinked and the new one it was linked.
+Clicking it opens that lead's service page. Nobody else on the team sees these.
+
+**Media Tracking:** a media lead's Services › Tracking is a table of who served at each session
+that has happened, by role, from the team's published rosters, with filters, columns and deleting
+(which takes a session out of tracking only; the roster keeps it).
 
 ## People on more than one team
 

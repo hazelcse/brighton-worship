@@ -81,12 +81,29 @@ type NavUser = {
 };
 
 /**
- * The lead also gets Tracking (past sessions) under Sessions. Root (on no team) gets no Songs, and
+ * The lead also gets Services (the team's services) and Tracking (past sessions) under Sessions. Root (on no team) gets no Songs, and
  * Team lists every team instead of one team's members.
  */
 function navItemsFor(isLead: boolean, isRoot: boolean, isObserver = false, seesAbsences = false, media?: NavUser["media"]): readonly NavItem[] {
-  // A media team: Schedule (Roster, Absences) and Team, if their team uses them; no Sessions or Songs.
-  if (media) return media.teamPages ? NAV_ITEMS.filter((item) => item.href === "/roster" || item.href === "/team") : [];
+  // A media team: Schedule (Roster, Absences) and Team, if their team uses them, Services (the
+  // services they serve at, with the band and session) and Projection (the worship team's published
+  // plans); no Sessions or Songs. The lead's Services is a dropdown holding Projection.
+  if (media) {
+    const teamPages = media.teamPages ? NAV_ITEMS.filter((item) => item.href === "/roster" || item.href === "/team") : [];
+    if (!isLead) return [...teamPages, { href: "/services", label: "Services" }, { href: "/projection", label: "Projection" }];
+    return [
+      ...teamPages,
+      {
+        href: "/services",
+        label: "Services",
+        children: [
+          { href: "/services", label: "Services" },
+          { href: "/projection", label: "Projection" },
+          { href: "/services/tracking", label: "Tracking" },
+        ],
+      },
+    ];
+  }
   // An observer: no Songs, and Services (its group's sessions, bands and media crews) for Sessions.
   // One that can't see absences gets "Calendar" for Absences (its page shows only the services).
   if (isObserver)
@@ -109,8 +126,10 @@ function navItemsFor(isLead: boolean, isRoot: boolean, isObserver = false, seesA
       ? {
           ...item,
           label: sessionsLabel,
+          // A team's lead also gets Services: the team's services with the other teams serving at them.
           children: [
             { href: "/sessions", label: sessionsLabel },
+            ...(isRoot ? [] : [{ href: "/sessions/services", label: "Services" }]),
             { href: "/sessions/tracking", label: "Tracking" },
           ],
         }
@@ -135,6 +154,18 @@ function Badge({ n }: { n?: number }) {
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** A dropdown is current when it or one of its links (e.g. Projection under Services) is. */
+function itemActive(pathname: string, item: NavItem) {
+  return isActive(pathname, item.href) || Boolean(item.children?.some((c) => isActive(pathname, c.href)));
+}
+
+/** A dropdown's count: its own plus its other links' (e.g. Projection's under Services). */
+function itemBadge(badges: Record<string, number> | undefined, item: NavItem): number | undefined {
+  const hrefs = new Set([item.href, ...(item.children ?? []).map((c) => c.href)]);
+  const n = [...hrefs].reduce((sum, h) => sum + (badges?.[h] ?? 0), 0);
+  return n || undefined;
 }
 
 /** The child link matching the page: the most specific href wins (Schedule over Roster). */
@@ -298,11 +329,11 @@ export function AppNav({ user: given }: { user: NavUser }) {
                   <Link
                     href={item.href}
                     aria-haspopup="true"
-                    aria-current={isActive(pathname, item.href) ? "page" : undefined}
+                    aria-current={itemActive(pathname, item) ? "page" : undefined}
                     className="flex items-center gap-1 rounded-md px-3 py-2 text-sm text-ink-foreground/70 transition group-hover:bg-white/10 group-hover:text-ink-foreground aria-[current=page]:bg-white/10 aria-[current=page]:text-ink-foreground"
                   >
                     {item.label}
-                    <Badge n={user.badges?.[item.href]} />
+                    <Badge n={itemBadge(user.badges, item)} />
                     <ChevronIcon className="opacity-60 transition group-hover:rotate-180" />
                   </Link>
                   <div className="invisible absolute left-0 top-full z-40 pt-2 opacity-0 transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
@@ -315,7 +346,7 @@ export function AppNav({ user: given }: { user: NavUser }) {
                             className="block px-4 py-2.5 text-sm hover:bg-background aria-[current=page]:font-medium aria-[current=page]:text-accent"
                           >
                             {c.label}
-                            {c.href === item.href && <Badge n={user.badges?.[item.href]} />}
+                            <Badge n={user.badges?.[c.href]} />
                           </Link>
                         </li>
                       ))}
@@ -494,12 +525,12 @@ export function AppNav({ user: given }: { user: NavUser }) {
                   aria-controls={`mobile-group-${item.label}`}
                   onClick={() => setOpenGroup((g) => (g === item.href ? null : item.href))}
                   className={`flex w-full items-center justify-between rounded-md px-3 py-3 text-left text-base hover:bg-white/10 ${
-                    isActive(pathname, item.href) ? "text-ink-foreground" : "text-ink-foreground/75"
+                    itemActive(pathname, item) ? "text-ink-foreground" : "text-ink-foreground/75"
                   }`}
                 >
                   <span>
                     {item.label}
-                    <Badge n={user.badges?.[item.href]} />
+                    <Badge n={itemBadge(user.badges, item)} />
                   </span>
                   <ChevronIcon className={`transition ${openGroup === item.href ? "rotate-180" : ""}`} />
                 </button>
@@ -513,7 +544,7 @@ export function AppNav({ user: given }: { user: NavUser }) {
                           className="block rounded-md px-3 py-2.5 text-base text-ink-foreground/75 hover:bg-white/10 aria-[current=page]:bg-white/10 aria-[current=page]:text-ink-foreground"
                         >
                           {c.label}
-                          {c.href === item.href && <Badge n={user.badges?.[item.href]} />}
+                          <Badge n={user.badges?.[c.href]} />
                         </Link>
                       </li>
                     ))}

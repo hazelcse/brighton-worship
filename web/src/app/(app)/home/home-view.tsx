@@ -7,9 +7,10 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { daysBetween, formatDate, formatTime, todayYmd } from "@/lib/roster";
 import { countdown, rehearsalTime } from "@/lib/reminder";
+import { loadNewlyPublishedForCrew } from "@/lib/projection";
 import { loadGroupWeek, loadNewlyPublished, loadNextSession, loadPublishDue, loadServiceOverview, type ServiceDay, type ServiceOverview } from "@/lib/sessions";
 import { GROUP_LABEL, type TeamGroup } from "@/lib/team-config";
-import { Crew, ServiceCard } from "@/components/sessions/service-card";
+import { ServiceCard } from "@/components/sessions/service-card";
 import { SessionCard } from "@/components/sessions/session-card";
 import { CountdownNumber } from "@/components/countdown-number";
 import { BroadcastList } from "@/components/broadcasts";
@@ -41,8 +42,8 @@ async function homeBandSeenAt(userId: string): Promise<string | null> {
 
 /**
  * Root's home page: one section per group's coming service day (Main: Sunday, Youth: Saturday), with
- * that day's services: each its session (plan and band) and, where it has one, its media crew. If
- * no service that day has a crew to show it in, any crew gets a card of its own.
+ * that day's services: each its session (plan and band) and, where it has one, its media crew. A
+ * media crew serving at no worship session (e.g. an ad hoc event needing only a crew) is a card of its own.
  */
 function ServiceSection({ o }: { o: ServiceOverview }) {
   return (
@@ -58,11 +59,6 @@ function ServiceSection({ o }: { o: ServiceOverview }) {
           {o.team ? `${o.team} has no service on a published roster that day.` : "There's no worship team in this group yet."}
         </p>
       )}
-      {o.looseCrew.length > 0 && (
-        <div className="@container rounded-xl border border-border bg-surface p-4">
-          <Crew crew={o.looseCrew} />
-        </div>
-      )}
     </section>
   );
 }
@@ -77,11 +73,6 @@ function ServiceDaySection({ day }: { day: ServiceDay }) {
         {day.services.map((s) => (
           <ServiceCard key={s.session.rosterSessionId} service={s} />
         ))}
-        {day.looseCrew.length > 0 && (
-          <div className="@container rounded-xl border border-border bg-surface p-4">
-            <Crew crew={day.looseCrew} />
-          </div>
-        )}
       </div>
     </section>
   );
@@ -119,7 +110,7 @@ export async function HomeView({ kind = "worship" }: { kind?: "worship" | "media
   const user = await requireUser(kind);
   const media = kind === "media";
   if (user.observerGroup && !media) return <ObserverHome userId={user.id} name={(user.fullName || "").trim()} group={user.observerGroup} />;
-  const [next, fresh, due, broadcasts, updates, bandSeenAt, overview] = await Promise.all([
+  const [next, fresh, due, broadcasts, updates, bandSeenAt, overview, projection] = await Promise.all([
     // Brighton Serving (root, outside every team) has no sessions of its own: its overview below covers every team.
     // A media team's next session: their crew, and the songs once the worship team publishes them.
     user.team ? loadNextSession(user.id, user.team.id) : Promise.resolve(null),
@@ -131,6 +122,10 @@ export async function HomeView({ kind = "worship" }: { kind?: "worship" | "media
     homeBandSeenAt(user.id),
     // Root serves on no team: it sees every group's coming service instead of its own next session.
     user.isRoot && !media ? loadServiceOverview(user.id) : Promise.resolve(null),
+    // A media team: the worship team's plans published or changed for services they're linked to.
+    user.team && media && !user.isRoot && !user.isObserver
+      ? loadNewlyPublishedForCrew({ id: user.id, isLead: user.isLead }, user.team)
+      : Promise.resolve([]),
   ]);
   const name = (user.fullName || "").trim();
 
@@ -159,6 +154,22 @@ export async function HomeView({ kind = "worship" }: { kind?: "worship" | "media
       ),
     };
   });
+  notices.push(
+    ...projection.map((p) => ({
+      key: `projection-${p.id}`,
+      text: (
+        <>
+          {p.team}&apos;s plan for <span className="font-semibold">{p.name}</span> on {day(p.date)} has been {p.updated ? "updated" : "published"}
+          {p.publishedBy ? ` by ${p.publishedBy}` : ""}.
+        </>
+      ),
+      action: (
+        <Link href={`/projection/${p.id}`} className={link}>
+          {p.updated ? "See what changed" : "View plan"}
+        </Link>
+      ),
+    })),
+  );
   // Sessions they lead that are two weeks away or less and still not published: first, as they're on them.
   const inDays = (d: string) => {
     const n = daysBetween(todayYmd(), d);
@@ -284,7 +295,8 @@ export async function HomeView({ kind = "worship" }: { kind?: "worship" | "media
 
           {messages}
 
-          <SessionCard s={next} />
+          {/* A media team's card opens the worship team's plan on Projection, once it's published. */}
+          <SessionCard s={next} href={media && next.plan ? `/projection/${next.plan.id}` : undefined} />
         </>
       )}
     </div>

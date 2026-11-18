@@ -20,6 +20,7 @@ import {
   type SessionKind,
 } from "@/lib/roster";
 import { ROLE_LABEL as CATALOGUE_LABEL, presetKinds, rolesNoun, sessionTypeFor, splitsMinistry, type TeamConfig } from "@/lib/team-config";
+import { LinkAfterAdding, LinkedServiceField } from "@/components/roster/service-link";
 
 /**
  * What a session's people are on this team: the band's parts (worship teams), or a media team's roles
@@ -50,6 +51,8 @@ export type PlannerSession = {
   /** "HH:MM"; null = the default for its kind, if it has one. */
   start_time: string | null;
   rehearsal_time: string | null;
+  /** An ad hoc service linked to other teams' (lib/service-links.ts): those teams' names. */
+  linkedTeams?: string[];
 };
 
 const MINISTRY_STYLE: Record<Ministry, string> = {
@@ -423,7 +426,9 @@ function SessionDefaults({ rosterId, sessions }: { rosterId: string; sessions: P
 
 /**
  * The session form. `submit` replaces adding to `rosterId` (e.g. an ad-hoc session from the Roster
- * page), and `extra` adds a section under the band (e.g. picking who's in it).
+ * page), and `extra` adds a section under the band (e.g. picking who's in it). Once a new session is
+ * added, the lead is asked whether it's the same service as another team's ad hoc service that day
+ * (if there are any); with `stay`, what happened is shown with a Done button either way.
  */
 function SessionDialogBody({
   rosterId,
@@ -435,14 +440,16 @@ function SessionDialogBody({
   band,
   reasons = [],
   teamConfig,
+  stay = false,
 }: {
   rosterId: string;
   draft: Draft;
   /** The dates it can be on (end "" = no limit). */
   quarter: { start: string; end: string };
   onClose: () => void;
-  submit?: (payload: SessionPayload) => Promise<{ ok: boolean; message: string | null }>;
+  submit?: (payload: SessionPayload) => Promise<{ ok: boolean; message: string | null; id?: string }>;
   extra?: (s: Draft) => React.ReactNode;
+  stay?: boolean;
   /** Who's rostered on it (an existing session on a roster with people in it): making a part
    *  smaller asks who comes off, and saving takes them off. */
   band?: BandMember[];
@@ -469,6 +476,8 @@ function SessionDialogBody({
   const removals = shrunk.flatMap((g) => g.holders.filter((m) => off.has(`${g.role}|${m.member_id}`)).map((m) => ({ member: m.member_id, role: g.role })));
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Just added: asking whether it's the same service as another team's.
+  const [added, setAdded] = useState<{ id: string; date: string; message: string | null } | null>(null);
   const isNew = draft.id === null;
   const set = (patch: Partial<Draft>) => setS((x) => ({ ...x, ...patch }));
   // Functional update so quick clicks on different roles never overwrite each other.
@@ -500,10 +509,11 @@ function SessionDialogBody({
         start_time: s.start_time,
         rehearsal_time: s.rehearsal_date ? s.rehearsal_time : null,
       };
-      const r = isNew
+      const r: { ok: boolean; message: string | null; id?: string } = isNew
         ? await (submit ?? ((x: SessionPayload) => addSession(rosterId, x)))(payload)
         : await updateSession(s.id!, { ...payload, cancelled: s.cancelled }, removals);
-      if (r.ok) onClose();
+      if (r.ok && isNew && r.id) setAdded({ id: r.id, date: s.date, message: stay ? r.message : null });
+      else if (r.ok) onClose();
       else setError(r.message);
     });
   }
@@ -518,6 +528,10 @@ function SessionDialogBody({
       if (r.ok) onClose();
       else setError(r.message);
     });
+  }
+
+  if (added) {
+    return <LinkAfterAdding sessionId={added.id} date={added.date} message={added.message} stay={stay} crew={parts.crew} onDone={onClose} />;
   }
 
   return (
@@ -669,6 +683,8 @@ function SessionDialogBody({
       </fieldset>
 
       {extra?.(s)}
+
+      {!isNew && draft.kind === "custom" && <LinkedServiceField sessionId={draft.id!} date={draft.date} />}
 
       <label className="block space-y-1 text-sm font-medium">
         Note <span className="font-normal text-muted">(optional)</span>
@@ -856,6 +872,9 @@ function SessionPlannerBody({
                             Rehearsal {formatDate(s.rehearsal_date, { weekday: "short", day: "numeric", month: "short" })}
                           </span>
                         )}
+                        {s.linkedTeams?.length ? (
+                          <span className="rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted">Linked with {s.linkedTeams.join(", ")}</span>
+                        ) : null}
                         {s.note && <span className="text-xs italic text-muted">{s.note}</span>}
                       </button>
                       {editable && (

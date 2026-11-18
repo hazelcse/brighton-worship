@@ -1,5 +1,6 @@
 "use server";
 
+import { crewSessionsFor } from "@/lib/projection";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
@@ -421,6 +422,12 @@ export async function publishSession(id: string): Promise<SaveResult> {
         // "Session for … has been updated", in the band's updates.
         if (row.roster_session_id) {
           await db.from("roster_updates").insert({ kind: "session_updated", session_id: row.roster_session_id, actor_id: user.id });
+          // The media crews serving at it (standard services, or linked ad hoc ones) hear too: their
+          // own session's update, opening the plan on their Projection page (detail: the plan's id).
+          const crews = await crewSessionsFor(row.roster_session_id);
+          if (crews.length) {
+            await db.from("roster_updates").insert(crews.map((c) => ({ kind: "session_updated", session_id: c, actor_id: user.id, detail: id })));
+          }
           revalidatePath("/roster", "layout");
         }
       }

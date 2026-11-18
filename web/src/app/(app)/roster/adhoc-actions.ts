@@ -5,7 +5,7 @@ import { getCurrentUser, inTeam } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { teamProfiles } from "@/lib/teams";
 import { ATTACHED_ROLES, ROLE_LABEL, SINGING_ROLES, defaultSessions, quarterOf, todayYmd } from "@/lib/roster";
-import { teamPerson } from "@/lib/team-config";
+import { ROLE_LABEL as CATALOGUE_LABEL, teamPerson } from "@/lib/team-config";
 import { cleanComposition, validateSession, type SessionInput } from "@/lib/session-input";
 
 /**
@@ -30,8 +30,13 @@ export type AdhocPerson = {
   serves: "both" | "sunday" | "pnp";
   /** Session weights they serve that month (on the roster the session would join). */
   load: number;
-  /** Why they can't serve that day (absent, or already serving), or null. */
+  /** Why they can't serve that day (absent, or already on another ad hoc service), or null. */
   unavailable: string | null;
+  /**
+   * A standard service they're on that day (e.g. "EM Sunday Service"). Ad hoc events on a service
+   * day are taken to be later in the day, so this doesn't stop them being picked.
+   */
+  alsoOn: string | null;
 };
 
 export type AdhocPick = { member: string; role: string; bandLeader: boolean };
@@ -79,7 +84,7 @@ export async function adhocBandOptions(date: string, rehearsal: string | null): 
     // Already serving that day, on any live or draft roster.
     db
       .from("roster_assignments")
-      .select("member_id, roster_sessions!inner(name, date, cancelled, rosters!inner(status))")
+      .select("member_id, roster_sessions!inner(name, kind, date, cancelled, rosters!inner(status))")
       .eq("roster_sessions.date", date)
       .eq("roster_sessions.cancelled", false)
       .in("roster_sessions.rosters.status", ["published", "draft"]),
@@ -93,9 +98,13 @@ export async function adhocBandOptions(date: string, rehearsal: string | null): 
     : { data: [] as { member_id: string; session_id: string }[] };
   const load = new Map<string, number>();
   for (const r of monthRows ?? []) load.set(r.member_id, (load.get(r.member_id) ?? 0) + (weight.get(r.session_id) ?? 0));
-  const serving = new Map(
-    (sameDay ?? []).map((a) => [a.member_id as string, (a.roster_sessions as unknown as { name: string }).name]),
-  );
+  // Another ad hoc service that day rules them out; a standard one (the morning's service) doesn't.
+  const serving = new Map<string, string>();
+  const standard = new Map<string, string>();
+  for (const a of sameDay ?? []) {
+    const rs = a.roster_sessions as unknown as { name: string; kind: string | null };
+    ((rs.kind ?? "custom") === "custom" ? serving : standard).set(a.member_id as string, rs.name);
+  }
 
   return (people ?? []).map((p) => {
     const absence = (away ?? []).find((a) => a.member_id === p.id && days.some((d) => a.starts_on <= d && a.ends_on >= d));
@@ -114,6 +123,7 @@ export async function adhocBandOptions(date: string, rehearsal: string | null): 
         : serving.has(p.id as string)
           ? `already on ${serving.get(p.id as string)}`
           : null,
+      alsoOn: standard.get(p.id as string) ?? null,
     }, user.team.config);
   });
 }
@@ -128,8 +138,8 @@ function eligible(p: AdhocPerson, ministry: string): string | null {
   return null;
 }
 
-/** Root: add an ad-hoc session with its band. */
-export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): Promise<{ ok: boolean; message: string | null }> {
+/** The lead: add an ad-hoc session with its band (a media team: its crew). `id` is the new session's. */
+export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): Promise<{ ok: boolean; message: string | null; id?: string }> {
   try {
     const user = await signedInRoot();
     const db = createAdminClient();
@@ -149,10 +159,10 @@ export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): 
     for (const b of band) {
       const p = options.get(b.member);
       if (!p) return { ok: false, message: "Someone picked isn't on the team." };
-      const part = (ROLE_LABEL[b.role] ?? b.role).toLowerCase();
+      const part = (ROLE_LABEL[b.role] ?? CATALOGUE_LABEL[b.role] ?? b.role).toLowerCase();
       if (seen.has(b.member)) return { ok: false, message: `${p.name} is picked twice.` };
       seen.add(b.member);
-      if (ATTACHED_ROLES.includes(b.role) || !(s.composition[b.role as keyof typeof s.composition] ?? 0)) return { ok: false, message: `This band has no ${part}.` };
+      if (ATTACHED_ROLES.includes(b.role) || !(s.composition[b.role as keyof typeof s.composition] ?? 0)) return { ok: false, message: `There's no ${part} in this ${user.team.kind === "media" ? "crew" : "band"}.` };
       perRole.set(b.role, (perRole.get(b.role) ?? 0) + 1);
       if (perRole.get(b.role)! > (s.composition[b.role as keyof typeof s.composition] ?? 0)) return { ok: false, message: `Too many people on ${part}.` };
       if (!p.instruments.includes(b.role)) return { ok: false, message: `${p.name} doesn't play ${part}.` };
@@ -254,12 +264,14 @@ export async function addAdhocSession(input: SessionInput, picks: AdhocPick[]): 
       details: { date: s.date, name: s.name, band: band.map((b) => [b.member, b.role, b.bandLeader]), roster: roster.status },
     });
     revalidatePath("/roster", "layout");
+    const noun = user.team.kind === "media" ? "crew" : "band";
     return {
       ok: true,
+      id: session.id as string,
       message:
         roster.status === "published"
-          ? `${s.name} added to the roster.${rows.length ? " The band has been asked to serve." : ""}`
-          : `${s.name} added to the ${q.label} draft.${rows.length ? " Generating will keep this band and build the rest around it." : ""}`,
+          ? `${s.name} added to the roster.${rows.length ? ` The ${noun} has been asked to serve.` : ""}`
+          : `${s.name} added to the ${q.label} draft.${rows.length ? ` Generating will keep this ${noun} and build the rest around it.` : ""}`,
     };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Something went wrong." };

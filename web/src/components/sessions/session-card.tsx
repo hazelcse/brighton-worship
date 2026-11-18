@@ -98,10 +98,19 @@ export function SessionCard({
   href,
   extra,
   headerTint,
+  songs = true,
+  kicker,
+  dated = true,
 }: {
   s: SessionDetail;
-  /** Where the card links instead of the plan itself (e.g. via a team switch). */
+  /** Where the card links instead of the plan itself (e.g. via a team switch, or a lead's service page). */
   href?: string;
+  /** false: no songs block (e.g. a team's card on a service page, beside the session itself). */
+  songs?: boolean;
+  /** A line above the date, e.g. the team's name. */
+  kicker?: string;
+  /** false: no date or session name in the header (a team's card under a service's own heading). */
+  dated?: boolean;
   /** One more block at the bottom of the card, e.g. root's media crew for the service. */
   extra?: React.ReactNode;
   /** The header's background class instead of the default, e.g. root's per-service tint. */
@@ -112,16 +121,22 @@ export function SessionCard({
   const body = (
     <>
       <header className={`${headerTint ?? "bg-background/60"} px-4 py-3`}>
-        <p className="text-xs font-medium uppercase tracking-wider text-muted">
-          {formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}
-        </p>
-        <p className="font-semibold">{s.name}</p>
+        {kicker && <p className="text-sm font-semibold">{kicker}</p>}
+        {dated && (
+          <>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">
+              {formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}
+            </p>
+            <p className="font-semibold">{s.name}</p>
+          </>
+        )}
         {s.role && (
           <p className="text-xs text-muted">
             You: <Part main={s.role} also={s.also} />
           </p>
         )}
       </header>
+      {songs && (
       <section aria-label="Songs" className="space-y-3 p-4">
         {s.plan && <PartCues role={s.role} cues={s.plan.cues} />}
         {s.plan ? (
@@ -132,6 +147,7 @@ export function SessionCard({
           </p>
         )}
       </section>
+      )}
       <section aria-label={people === "crew" ? "Crew" : "Band"} className="p-4">
         <p className={heading}>{people === "crew" ? "Crew" : "Band"}</p>
         {/* Two columns (filled top to bottom) once the card is wide enough, so it isn't one long list. */}
@@ -161,8 +177,9 @@ export function SessionCard({
   );
   // Header, songs and band as three blocks with lines between; @container lets the band go two-column.
   const box = "@container flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface";
-  return s.plan?.canOpen ? (
-    <Link href={href ?? `/sessions/${s.plan.id}`} prefetch={href ? false : undefined} className={`${box} transition hover:border-accent/50`}>
+  const to = href ?? (s.plan?.canOpen ? `/sessions/${s.plan.id}` : null);
+  return to ? (
+    <Link href={to} prefetch={href ? false : undefined} className={`${box} transition hover:border-accent/50`}>
       {body}
     </Link>
   ) : (

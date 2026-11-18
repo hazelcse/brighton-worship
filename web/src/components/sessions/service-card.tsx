@@ -47,7 +47,7 @@ export function Crew({ crew }: { crew: CrewMember[] }) {
  * background. EM is warm (sage, clay), CM cool (slate blue, lavender), ad hoc a dusty rose,
  * YF Saturday a soft straw yellow.
  */
-const SERVICE_TINT: Record<string, string> = {
+export const SERVICE_TINT: Record<string, string> = {
   em_sunday: "bg-[#e9ede3]",
   cm_sunday: "bg-[#e4e9ef]",
   em_pnp: "bg-[#f1e7dc]",
@@ -61,8 +61,30 @@ const SERVICE_TINT: Record<string, string> = {
  * EM PnP, YF Saturday), its media crew at the bottom. Opening it switches root to the worship team
  * first (root works in one team at a time), then opens the plan.
  */
-export function ServiceCard({ service }: { service: Service }) {
+export function ServiceCard({
+  service,
+  ownTeam,
+}: {
+  service: Service;
+  /** A team's own Services page; `detailBase` (its lead's): each card opens the service at `${detailBase}/<its session>`. */
+  ownTeam?: { id: string; slug: string; opensPlans: boolean; detailBase?: string };
+}) {
   const plan = service.session.plan;
+  // A team's own Services page: only its own plans open (straight, no team switch); another team's
+  // session shows its songs and people without a link.
+  if (ownTeam) {
+    const opens = Boolean(plan) && ownTeam.opensPlans && service.teamSlug === ownTeam.slug;
+    const own = service.sessionIdByTeam[ownTeam.id];
+    return (
+      <SessionCard
+        // The lead's cards: no "You: (role)" line.
+        s={{ ...service.session, role: ownTeam.detailBase ? null : service.session.role, plan: plan && { ...plan, canOpen: opens } }}
+        href={ownTeam.detailBase && own ? `${ownTeam.detailBase}/${own}` : undefined}
+        headerTint={SERVICE_TINT[service.session.kind]}
+        extra={service.crew ? <Crew crew={service.crew} /> : undefined}
+      />
+    );
+  }
   return (
     <SessionCard
       s={service.session}

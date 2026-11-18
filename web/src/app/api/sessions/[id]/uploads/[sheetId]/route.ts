@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sessionAccess } from "@/lib/sessions";
+import { withProjectionAccess } from "@/lib/projection";
 import { cleanSheet, majorKey } from "@/lib/session-plan";
 import { loadSessionSheet } from "@/lib/session-uploads";
 
@@ -24,7 +25,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const db = createAdminClient();
   const { data: plan } = await db.from("worship_sessions").select("roster_session_id, status").eq("id", id).maybeSingle();
   if (!plan) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const access = await sessionAccess(user, plan);
+  // Media teams read the plans on their Projection page too.
+  const access = await withProjectionAccess(user, id, plan, await sessionAccess(user, plan));
   const { data: item } = await db
     .from("worship_session_items")
     .select("title, key, sheet, worship_session_sections!inner(session_id)")

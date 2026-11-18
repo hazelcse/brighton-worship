@@ -100,12 +100,16 @@ can log in from either and gets its own view. The page opens on the kind chosen 
 **`/media`**: the media teams' home, laid out like `/home` (same 672px column, countdown, notices
 and broadcasts, then the next session's card) with the crew in place of the band: the card's last
 block is **Crew** (role → names in the team's role order, your own name in bold), and its songs are
-the worship service it crews once that plan is published (not a link: media members don't open
-plans). No plan-published or publish-due notices. Loader: cameras, stage lights and a clapperboard.
+the worship service it crews once that plan is published; the card then opens that plan on
+`/projection/[id]`. Notices: "<worship team>'s plan for <service> on <day> has been published / updated" for plans of
+services their team is linked to, opening it on `/projection` ("View plan" / "See what changed"); no
+publish-due notices. Loader: cameras, stage lights and a clapperboard.
 It sits in the same frame as every signed-in page: the shared nav bar ("Brighton Media", leading back to `/media`; profile menu with the team
 dropdown, View as and Log out as above) and the 992px column. Main Media's bar holds **Schedule**
 (Roster, Absences) and **Team**, which open the worship app's roster, absences and team directory
-pages for their own team; Youth Media's holds none yet. No Sessions or Songs for media teams. Other
+pages for their own team; Youth Media's holds none yet. Then **Services** and **Projection** (the
+lead: a Services dropdown of Services, Projection, Tracking; Projection's count of new or changed plans
+shows on it). No Sessions or Songs for media teams. Other
 worship-app pages send media team members back to `/media`, and media pages send worship members
 to `/home` (`requireUser(kind)`; `"team"` pages also let in `usesTeamPages` media teams).
 
@@ -129,7 +133,10 @@ dashed "not on any upcoming sessions" box, then broadcasts and notices.
   plus, for services with a media crew (EM Sunday, EM PnP, YF Saturday), a last **Media crew** block:
   one line per role (96px role column, two columns once the card is wide enough, like the band), grouped under "team · session" only when
   there's more than one, or "No media crew on a published roster yet". If no service that day has a
-  crew, any crew rostered that day gets a card of its own under them.
+  crew, any crew rostered that day gets a card of its own under them. The card's header is tinted
+  by service, soft and low-saturation: EM Sunday sage `#e9ede3`, CM Sunday slate blue `#e4e9ef`,
+  EM PnP clay `#f1e7dc`, CM PnP lavender `#ebe6ef`, ad hoc dusty rose `#f0e3e3`, YF Saturday
+  straw yellow `#f2ecd6`.
 - Notices, in order: "you haven't confirmed", plans due to be published, plans published or
   updated, then **band changes** (someone else changed the band of an upcoming session they're on:
   roster edits, take-overs, swaps), worded as in the inbox, each with "See
@@ -231,6 +238,41 @@ result, rules, weights) sits to its right, otherwise it drops below the table.
 days, by date: a muted date heading (14px), then that day's service cards (as on root's home: session,
 band, media crew where the service has one) in a grid, 1 → 2 per row from 1024px, top-aligned, 16px
 apart; sections 24px apart. Nothing in that time: a dashed note. Opening a card switches root to its team.
+A media session that crews no worship session (an unlinked ad hoc event, say) is a card of its own, its
+crew where the band would be.
+
+**A team's Services** (`/sessions/services` for a worship team's lead, nav **Sessions** › Services;
+`/services` for everyone on a media team, nav **Services**, a dropdown with Services for the lead):
+the same layout and coloured card headers as root's Services above, limited to services the team serves
+at: its standard services (with the other teams serving at them) and its own ad hoc services, linked or
+not. Another team's ad hoc service appears only once it's linked to one of the team's own. Only the
+worship lead's own team's plans open from a card; nothing switches team. On a **media team's** page the sections are
+weeks (Monday to Sunday, headed "Week 3 of November", counted by the Monday: the month's 3rd Monday) instead of dates: a week's services
+sit two to a row from 1024px (e.g. PnP then Sunday service; a third, such as an ad hoc service, wraps
+to the next row), and the next week starts a new section. Below 1024px, one per row.
+
+**A lead's service** (`/services/[id]` for a media lead, `/sessions/services/[id]` for a worship
+lead; `[id]` is their own team's session in it): opened by clicking a card on their Services page
+(members' cards don't open; leads' cards have no "You:" line). "← Services", the date (muted), the service name (`text-3xl`), and the
+teams serving at it; for an ad hoc service, a 40px broken-chain button top right of the heading
+opens a popup (`max-w-md`) to unlink or change the link. With a session (a worship team serves at it): the **wide** page
+(`<WidePage />`), two columns from 1024px (2 : 3, 24px apart): on the left a one card per team (its name, "(your team)" in a plain header (no service
+colour, and no date or service name: the page heading has them), then its band or crew; no songs); on the right a **Session** card (plain header,
+"Open plan" for the worship lead's own team) with each section's songs: number, title, key, "Led by",
+and the sequence under it. Below 1024px the columns stack. With no session (e.g. an ad hoc service
+needing only a crew): the 672px column (`mx-auto max-w-2xl`), the team cards only.
+
+**Projection** (`/projection`, everyone on a media team: nav **Projection** for members, **Services** ›
+Projection for the lead): full width, laid out like `/sessions` below (title "Projection" + subtitle,
+no buttons; link cards 1 → 2 (sm) → 3 (lg) per row: date line, "Just published" / "Updated" pill,
+name, then the songs with key chips). Members see the worship team's
+published plans for services they're rostered on (standard services by kind and date, ad hoc ones
+by link); the lead sees every upcoming published plan of the group's worship teams. Nothing: a dashed note.
+
+**`/projection/[id]`** (a worship plan opened from Projection): the session page below, read only,
+**without** the band and the song bank, so it's one column at the nav's width (no `<WidePage />`).
+"← Projection" for the back link; each song opens and closes on its own, so several (or all) can be
+open at once; the "what changed" box shows republished changes as it does for the band.
 
 **`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right; on
 **phones (below 640px)** that button is hidden and a 40px dark "+" (like the roster's New button,
@@ -345,6 +387,20 @@ the team's name) and **Session** (songs, livestream links, comments). Three acro
 there's a media team, otherwise two across from 768px; stacked below that. The pencil swaps the
 boxes for the usual record form. On phones the second toolbar row has only Export CSV and the +, at
 the right.
+
+**`/services/tracking`** (a media team's lead, nav **Services** › Tracking): **wider than the nav**,
+like the worship team's Tracking. Title "Tracking" + subtitle; while rows are ticked, the
+red-outlined 40px **bin** at the right of the title row (same "Are you sure…?" popup; deleting takes
+sessions out of tracking for good, the roster keeps them: `tracking_removed`). No +, no Export CSV,
+no List view. Toolbar (wraps): **Filters** (Crew member, Service, Date range; icon only on phones),
+search (fills the row, min 192px; plain search only, no query mode), **Columns** (Session: Service;
+Crew: each role; remembered on the device). Then the same table box (max 65% of the window tall,
+scrolls both ways, sticky header, row count under it): sticky 40px checkbox column (header box
+ticks all shown rows), sticky Date column, Service, then one column per role of the team (names,
+"-" when nobody); ticked rows tint orange. Every session on the team's published or archived
+rosters up to today, newest first, straight from the roster (nothing to confirm); a session marked
+as no session has no checkbox and shows its reason across the role columns
+(`loadCrewRecords` in `web/src/lib/tracking-data.ts`, `crew-tracking-view.tsx`).
 
 **`/sessions/tracking/pending`** (root): full width. Back link, title "Pending sessions", intro, and
 a dark 40px **+** on the right of the title (`new-session.tsx`): a dialog (max 768px, scrolls

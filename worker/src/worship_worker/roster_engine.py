@@ -8,7 +8,8 @@ Decision variables
 Built-in hard rules (never relaxed)
   * at most one main role per person per session -> WL and vocalist are always different people
   * band leader / talkback only for someone playing an instrument in that session
-  * at most one session per person per date
+  * at most one standard session and at most one ad hoc (custom) session per person per date: an ad
+    hoc event on a service day is taken to be later in the day, so it doesn't clash with the service
   * nobody is rostered on a date they've marked absent, or for a service whose rehearsal falls on
     one: they get no variable for that session at all
   * nobody is rostered on a date they already serve in another team (its published roster): same
@@ -78,6 +79,12 @@ class Session:
     composition: dict[str, int]
     kind: str = "custom"  # em_sunday | cm_sunday | em_pnp | cm_pnp | custom
     rehearsal: str | None = None  # "YYYY-MM-DD": the band's rehearsal; everyone rostered must be there
+
+    @property
+    def day_slot(self) -> str:
+        """Sessions in the same slot on one date clash: standard services, or ad hoc events (which on
+        a service day are taken to be later on, so they don't clash with the service)."""
+        return "adhoc" if self.kind == "custom" else "service"
 
     @property
     def category(self) -> str:
@@ -191,7 +198,7 @@ def check_assignments(sessions: list[Session], people: list[Person],
     by_id = {p.id: p for p in people}
     issues: list[dict] = []
     clean: dict[str, list[dict]] = {}
-    busy: dict[tuple[str, str], str] = {}  # (member, date) -> session id
+    busy: dict[tuple[str, str, str], str] = {}  # (member, date, day slot) -> session id
     for s in sorted(sessions, key=lambda s: (s.date, s.name)):
         rows, seen = [], set()
         for a in fixed.get(s.id, []):
@@ -204,11 +211,11 @@ def check_assignments(sessions: list[Session], people: list[Person],
             if pid in seen:
                 issues.append({**base, "kind": "two_roles"})
                 continue
-            if (pid, s.date) in busy:
-                issues.append({**base, "kind": "double_date", "other": busy[pid, s.date]})
+            if (pid, s.date, s.day_slot) in busy:
+                issues.append({**base, "kind": "double_date", "other": busy[pid, s.date, s.day_slot]})
                 continue
             seen.add(pid)
-            busy[pid, s.date] = s.id
+            busy[pid, s.date, s.day_slot] = s.id
             if s.date in person.absent:
                 issues.append({**base, "kind": "absent"})
             elif s.rehearsal and s.rehearsal in person.absent:
@@ -293,16 +300,25 @@ def solve(sessions: list[Session], people: list[Person], rules: list[Rule], quar
         sessions_on[s.date].append(s)
     dates = sorted(sessions_on)
 
-    # z[p, date]: serves on that date (at most one session per date)
+    # z[p, date]: serves on that date (0/1). At most one standard session and one ad hoc session a
+    # date; someone on both still counts once for the date-based rules (spacing, breaks, pairs).
     z: dict[tuple[str, str], cp_model.LinearExpr] = {}
     for p in people:
         for dt in dates:
-            terms = [y[p.id, s.id] for s in sessions_on[dt] if (p.id, s.id) in y]
-            if terms:
-                expr = sum(terms)
-                if len(terms) > 1:
-                    m.Add(expr <= 1)
-                z[p.id, dt] = expr
+            terms = []
+            for slot in ("service", "adhoc"):
+                part = [y[p.id, s.id] for s in sessions_on[dt] if s.day_slot == slot and (p.id, s.id) in y]
+                if len(part) > 1:
+                    m.Add(sum(part) <= 1)
+                terms += part
+            if not terms:
+                continue
+            if len(terms) == 1 or all(s.day_slot == sessions_on[dt][0].day_slot for s in sessions_on[dt]):
+                z[p.id, dt] = sum(terms)
+            else:
+                both = m.NewBoolVar(f"z_{p.id[:6]}_{dt}")
+                m.AddMaxEquality(both, terms)
+                z[p.id, dt] = both
 
     def on_date(pid: str, dt: str):
         return z.get((pid, dt), 0)

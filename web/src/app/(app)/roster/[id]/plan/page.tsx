@@ -10,6 +10,7 @@ import { GenerateControls } from "@/components/roster/generate-controls";
 import { SessionPlanner } from "@/components/roster/session-planner";
 import { RulesEditor } from "@/components/roster/rules-editor";
 import { DeleteDraftButton } from "@/components/roster/delete-draft-button";
+import { linkedTeamsFor } from "@/lib/service-links";
 
 export const metadata: Metadata = { title: "Plan roster · Brighton Worship" };
 
@@ -20,7 +21,7 @@ async function PlanView({ params }: { params: Promise<{ id: string }> }) {
   const [data, rules, people] = await Promise.all([loadRoster(id, user.team.id), loadRules(id, user.team.id), loadPeople(user.team)]);
   if (!data) notFound();
   const { roster, sessions } = data;
-  const { result } = await loadResult(roster.id);
+  const [{ result }, linked] = await Promise.all([loadResult(roster.id), linkedTeamsFor(sessions.map((s) => s.id))]);
   // Root's edit of a published roster: its sessions can be changed, but it isn't generated again.
   const revision = roster.status === "revision";
   if (revision && !user.isLead) notFound();
@@ -77,6 +78,7 @@ async function PlanView({ params }: { params: Promise<{ id: string }> }) {
           cancel_reason: s.cancel_reason ?? "",
           note: s.note,
           rehearsal_date: s.rehearsal_date,
+          linkedTeams: linked.get(s.id),
           start_time: hhmm(s.start_time),
           rehearsal_time: hhmm(s.rehearsal_time),
         }))}

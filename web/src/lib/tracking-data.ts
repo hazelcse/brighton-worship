@@ -248,3 +248,57 @@ export async function loadPending(teamId: string): Promise<PendingSession[]> {
     };
   });
 }
+
+/** One session a media team served at: who was on each role (role -> names). */
+export type CrewRecord = {
+  id: string;
+  date: string;
+  service: string;
+  crew: Record<string, string[]>;
+  /** Set when it was marked as no session: why. */
+  cancelReason?: string;
+};
+
+/**
+ * A media team's Tracking: every session on its published (or archived) rosters that has happened
+ * (today or earlier), newest first, with who served on each role. Straight from the roster: there's
+ * nothing to confirm.
+ */
+export async function loadCrewRecords(teamId: string): Promise<CrewRecord[]> {
+  const db = createAdminClient();
+  const { data: rosters } = await db.from("rosters").select("id").eq("team_id", teamId).in("status", ["published", "archived"]);
+  const ids = (rosters ?? []).map((r) => r.id as string);
+  if (!ids.length) return [];
+  const { data: sessions, error } = await db
+    .from("roster_sessions")
+    .select("id, date, name, cancelled, cancel_reason")
+    .in("roster_id", ids)
+    .eq("tracking_removed", false)
+    .lte("date", todayYmd())
+    .order("date", { ascending: false })
+    .order("name");
+  if (error) throw error;
+  const live = (sessions ?? []).filter((s) => !s.cancelled).map((s) => s.id as string);
+  const { data: rows } = live.length
+    ? await db.from("roster_assignments").select("session_id, member_id, role").in("session_id", live)
+    : { data: [] as { session_id: string; member_id: string; role: string }[] };
+  const people = [...new Set((rows ?? []).map((r) => r.member_id as string))];
+  const { data: profiles } = people.length
+    ? await db.from("profiles").select("id, full_name, email").in("id", people)
+    : { data: [] as { id: string; full_name: string; email: string }[] };
+  const name = new Map((profiles ?? []).map((p) => [p.id as string, (p.full_name as string) || (p.email as string)]));
+  const bySession = new Map<string, Record<string, string[]>>();
+  for (const r of rows ?? []) {
+    const crew = bySession.get(r.session_id as string) ?? {};
+    const who = name.get(r.member_id as string) ?? "Someone";
+    crew[r.role as string] = [...(crew[r.role as string] ?? []), who].sort((a, b) => a.localeCompare(b));
+    bySession.set(r.session_id as string, crew);
+  }
+  return (sessions ?? []).map((s) => ({
+    id: s.id as string,
+    date: s.date as string,
+    service: s.name as string,
+    crew: bySession.get(s.id as string) ?? {},
+    ...(s.cancelled ? { cancelReason: (s.cancel_reason as string) || "No session" } : {}),
+  }));
+}

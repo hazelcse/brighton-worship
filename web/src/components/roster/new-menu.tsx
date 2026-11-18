@@ -6,12 +6,19 @@ import { adhocBandOptions, addAdhocSession, type AdhocPerson, type AdhocPick } f
 import { ATTACHED_ROLES, ROLES, ROLE_LABEL, SINGING_ROLES, formatDate, todayYmd } from "@/lib/roster";
 import { SessionDialog, newSessionDraft, type Draft } from "@/components/roster/session-planner";
 import { NewBroadcastDialog } from "@/components/broadcasts";
-import type { TeamConfig } from "@/lib/team-config";
+import { ROLE_LABEL as CATALOGUE_LABEL, rolesNoun, type TeamConfig } from "@/lib/team-config";
 
 /** Slots per part: role -> who's in each place (null = not picked; the generator fills it on a draft). */
 type Picks = { slots: Record<string, (string | null)[]>; leaders: (string | null)[] };
 
 const MAIN_ROLES = ROLES.filter((r) => !ATTACHED_ROLES.includes(r.value));
+
+/** The parts people are picked for: the band's (worship teams) or the team's crew roles (media). */
+function partsOf(config: TeamConfig | undefined): { crew: boolean; list: { value: string; label: string }[] } {
+  if (!config || rolesNoun(config) === "Instruments") return { crew: false, list: MAIN_ROLES.map((r) => ({ value: r.value, label: r.label })) };
+  return { crew: true, list: config.roles.filter((r) => !ATTACHED_ROLES.includes(r)).map((r) => ({ value: r, label: CATALOGUE_LABEL[r] ?? r })) };
+}
+const partLabel = (role: string) => (ROLE_LABEL[role] ?? CATALOGUE_LABEL[role] ?? role).toLowerCase();
 
 /** Why someone can't serve this session at all (same check as the generator), or null. */
 function notEligible(p: AdhocPerson, ministry: string): string | null {
@@ -27,7 +34,7 @@ const select =
   "h-10 w-full min-w-0 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
 /** Under the band: who's in it. One dropdown per place, least loaded first; anyone who can't make it greyed out. */
-function BandPicker({ s, picks, setPicks }: { s: Draft; picks: Picks; setPicks: (f: (p: Picks) => Picks) => void }) {
+function BandPicker({ s, picks, setPicks, teamConfig }: { s: Draft; picks: Picks; setPicks: (f: (p: Picks) => Picks) => void; teamConfig?: TeamConfig }) {
   const [people, setPeople] = useState<AdhocPerson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -40,7 +47,8 @@ function BandPicker({ s, picks, setPicks }: { s: Draft; picks: Picks; setPicks: 
     };
   }, [s.date, s.rehearsal_date]);
 
-  const roles = MAIN_ROLES.filter((r) => (s.composition[r.value] ?? 0) > 0);
+  const parts = partsOf(teamConfig);
+  const roles = parts.list.filter((r) => (s.composition[r.value] ?? 0) > 0);
   const leaderPlaces = s.composition["band leader"] ?? 0;
   if (!roles.length) return null;
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
@@ -60,16 +68,17 @@ function BandPicker({ s, picks, setPicks }: { s: Draft; picks: Picks; setPicks: 
   const why = (p: AdhocPerson, role: string, current: string | null): string | null => {
     if (p.id === current) return null;
     const elsewhere = placed.get(p.id);
-    if (elsewhere) return `picked for ${ROLE_LABEL[elsewhere].toLowerCase()}`;
+    if (elsewhere) return `picked for ${partLabel(elsewhere)}`;
     return notEligible(p, s.ministry) ?? p.unavailable;
   };
   const month = formatDate(s.date, { month: "long" });
 
   return (
     <fieldset className="space-y-3">
-      <legend className="text-sm font-medium">Who&apos;s in the band</legend>
+      <legend className="text-sm font-medium">Who&apos;s in the {parts.crew ? "crew" : "band"}</legend>
       <p className="text-xs text-muted">
         The number is how much each person is serving in {month} (session weights added up), lowest first. Greyed out: can&apos;t serve that day.
+        Someone on that day&apos;s Sunday or Saturday service can still be picked: an ad hoc event that day is taken to be later on.
         Places left empty stay empty on a published roster; on a draft, generating fills them.
       </p>
       {error && <p className="text-sm text-danger">{error}</p>}
@@ -97,7 +106,7 @@ function BandPicker({ s, picks, setPicks }: { s: Draft; picks: Picks; setPicks: 
                       return (
                         <option key={p.id} value={p.id} disabled={Boolean(reason)}>
                           {p.name} · {p.load.toFixed(1)}
-                          {reason ? ` · ${reason}` : ""}
+                          {reason ? ` · ${reason}` : p.alsoOn ? ` · also on ${p.alsoOn}` : ""}
                         </option>
                       );
                     })}
@@ -136,19 +145,23 @@ function BandPicker({ s, picks, setPicks }: { s: Draft; picks: Picks; setPicks: 
   );
 }
 
-/** Root: an ad-hoc session with its band, on whichever roster covers its date. */
+/**
+ * The lead: an ad-hoc session with its band (a media team: its crew), on whichever roster covers its
+ * date. Once added, if other teams of the group have ad hoc services that day, it asks whether it's
+ * the same service as one of them.
+ */
 function AdhocDialog({ onClose, teamConfig }: { onClose: () => void; teamConfig?: TeamConfig }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [picks, setPicks] = useState<Picks>({ slots: {}, leaders: [] });
-  const [done, setDone] = useState<string | null>(null);
   const today = todayYmd();
+  const parts = partsOf(teamConfig);
   useEffect(() => {
     if (!ref.current?.open) ref.current?.showModal();
   }, []);
 
   const toSend = (s: { composition: Draft["composition"] }): AdhocPick[] => {
     const out: AdhocPick[] = [];
-    for (const r of MAIN_ROLES) {
+    for (const r of parts.list) {
       const n = s.composition[r.value] ?? 0;
       for (const id of (picks.slots[r.value] ?? []).slice(0, n)) {
         if (id) out.push({ member: id, role: r.value, bandLeader: picks.leaders.slice(0, s.composition["band leader"] ?? 0).includes(id) });
@@ -168,38 +181,21 @@ function AdhocDialog({ onClose, teamConfig }: { onClose: () => void; teamConfig?
         <h2 id="adhoc-title" className="font-display text-2xl font-semibold">
           New ad-hoc session
         </h2>
-        {done ? (
-          <>
-            <p className="text-sm">{done}</p>
-            <button type="button" onClick={() => ref.current?.close()} className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-ink-foreground">
-              Done
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-muted">
-              Joins the roster for its date. If that roster is published, the band is asked to serve straight away. If not, it goes into that
-              quarter&apos;s draft and the roster is generated around this band.
-            </p>
-            <SessionDialog
-              rosterId=""
-              teamConfig={teamConfig}
-              draft={newSessionDraft(today)}
-              quarter={{ start: today, end: "" }}
-              onClose={() => ref.current?.close()}
-              submit={async (payload) => {
-                const r = await addAdhocSession(payload, toSend(payload));
-                if (r.ok) {
-                  setDone(r.message);
-                  // Keep the dialog open to show where it went; SessionDialog closes on ok, so report not-ok.
-                  return { ok: false, message: null };
-                }
-                return r;
-              }}
-              extra={(s) => <BandPicker s={s} picks={picks} setPicks={setPicks} />}
-            />
-          </>
-        )}
+        <p className="text-sm text-muted">
+          Joins the roster for its date. If that roster is published, the {parts.crew ? "crew" : "band"} is asked to serve straight away. If not, it
+          goes into that quarter&apos;s draft and the roster is generated around this {parts.crew ? "crew" : "band"}.
+        </p>
+        <SessionDialog
+          rosterId=""
+          teamConfig={teamConfig}
+          draft={newSessionDraft(today)}
+          quarter={{ start: today, end: "" }}
+          onClose={() => ref.current?.close()}
+          // Stays open after adding, to show where it went (and ask about linking).
+          stay
+          submit={(payload) => addAdhocSession(payload, toSend(payload))}
+          extra={(s) => <BandPicker s={s} picks={picks} setPicks={setPicks} teamConfig={teamConfig} />}
+        />
       </div>
     </dialog>
   );

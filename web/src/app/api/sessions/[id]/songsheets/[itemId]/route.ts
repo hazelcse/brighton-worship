@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sessionAccess } from "@/lib/sessions";
+import { withProjectionAccess } from "@/lib/projection";
 import { sheetKeysFor, songsheetInKey } from "@/lib/session-songsheets";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,7 +29,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .maybeSingle(),
   ]);
   if (!plan || !item || item.kind !== "song" || !item.song_id) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const access = await sessionAccess(user, plan);
+  // Media teams read the plans on their Projection page too.
+  const access = await withProjectionAccess(user, id, plan, await sessionAccess(user, plan));
   // The band sees songsheets once the plan's published; its worship leaders, any time.
   if (!access.canEdit && !(access.canView && plan.status === "published")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

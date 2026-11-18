@@ -24,6 +24,8 @@ const DOT: Record<UpdateItem["kind"], string> = {
   roster_band_changed: "bg-violet-300",
   member_added: "bg-teal-500",
   member_removed: "bg-teal-300",
+  service_linked: "bg-indigo-500",
+  service_unlinked: "bg-indigo-300",
 };
 
 const day = (date: string) => formatDate(date, { weekday: "short", day: "numeric", month: "short" });
@@ -169,6 +171,33 @@ export function updateText(u: UpdateItem): React.ReactNode {
           {b(u.actor)} removed {b(u.detail ?? u.member ?? "someone")} from {u.team ?? "their team"}
         </>
       );
+    case "service_linked":
+      return (
+        <>
+          {b(u.actor)} linked {b(u.detail ?? "their service")} to your {b(`${u.session?.name ?? "service"} – ${u.session ? day(u.session.date) : ""}`)}
+        </>
+      );
+    case "service_unlinked": {
+      const yours = b(`${u.session?.name ?? "service"} – ${u.session ? day(u.session.date) : ""}`);
+      const theirs = b(u.detail ?? "their service");
+      if (u.reason === "deleted")
+        return (
+          <>
+            {b(u.actor)} deleted {theirs}, which was linked to your {yours}
+          </>
+        );
+      if (u.reason === "moved")
+        return (
+          <>
+            {b(u.actor)} moved {theirs} to another day, so it&apos;s no longer linked to your {yours}
+          </>
+        );
+      return (
+        <>
+          {b(u.actor)} unlinked {theirs} from your {yours}
+        </>
+      );
+    }
     default:
       return <>{b(u.actor)} withdrew a request for {place}</>;
   }

@@ -81,11 +81,14 @@ export function CellEditor({
   const byId = new Map(people.map((p) => [p.id, p]));
   const sessionById = new Map(sessions.map((s) => [s.id, s]));
 
-  // Where everyone else is on this date (outside this cell), to flag clashes in the picker.
+  // Where everyone else is on this date (outside this cell), to flag clashes in the picker. An ad
+  // hoc event and a standard service the same day don't clash (the event is taken to be later on).
   const elsewhere = new Map<string, string>();
+  const adhoc = (k: string) => k === "custom";
   for (const a of assignments) {
     const s = sessionById.get(a.session_id);
     if (!s || s.date !== session.date || (a.session_id === session.id && a.role === role)) continue;
+    if (adhoc(s.kind) !== adhoc(session.kind)) continue;
     elsewhere.set(a.member_id, `${s.id === session.id ? "" : `${s.name}, `}${ROLE_LABEL[a.role] ?? a.role}`);
   }
   // The rest of this session's line-up (other parts).

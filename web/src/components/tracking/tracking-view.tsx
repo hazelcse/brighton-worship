@@ -89,7 +89,7 @@ function matches(r: SessionRecord, f: Filters, q: string): boolean {
   return true;
 }
 
-function Chevron({ open, dir = "down" }: { open?: boolean; dir?: "down" | "right" }) {
+export function Chevron({ open, dir = "down" }: { open?: boolean; dir?: "down" | "right" }) {
   return (
     <svg
       width="14"
@@ -109,7 +109,7 @@ function Chevron({ open, dir = "down" }: { open?: boolean; dir?: "down" | "right
 }
 
 /** One section of the filter menu: a list of checkboxes (with a search box when it's long). */
-function CheckList({ options, value, onChange, label }: { options: string[]; value: string[]; onChange: (v: string[]) => void; label: string }) {
+export function CheckList({ options, value, onChange, label }: { options: string[]; value: string[]; onChange: (v: string[]) => void; label: string }) {
   const [find, setFind] = useState("");
   const shown = find ? options.filter((o) => o.toLowerCase().includes(find.toLowerCase())) : options;
   if (!options.length) return <p className="px-6 py-2 text-sm text-muted">Nothing to choose yet.</p>;
@@ -737,7 +737,7 @@ function PencilIcon() {
   );
 }
 
-function BinIcon({ size = 16 }: { size?: number }) {
+export function BinIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
@@ -745,8 +745,23 @@ function BinIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-/** "Are you sure you want to delete 3 sessions?" with Cancel / Delete. */
-function ConfirmDelete({ ids, onClose, onDeleted }: { ids: string[]; onClose: () => void; onDeleted: (ids: string[]) => void }) {
+/**
+ * "Are you sure you want to delete 3 sessions?" with Cancel / Delete. `remove` and `note`: another
+ * page's delete (the media lead's Tracking) and what it means there.
+ */
+export function ConfirmDelete({
+  ids,
+  onClose,
+  onDeleted,
+  remove = deleteRecords,
+  note = "They\u2019re removed from tracking for good, and sessions from a roster don\u2019t go back to Pending.",
+}: {
+  ids: string[];
+  onClose: () => void;
+  onDeleted: (ids: string[]) => void;
+  remove?: (ids: string[]) => Promise<{ ok: boolean; message: string | null }>;
+  note?: string;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -766,7 +781,7 @@ function ConfirmDelete({ ids, onClose, onDeleted }: { ids: string[]; onClose: ()
         <h2 id="delete-sessions-title" className="text-base font-semibold">
           Are you sure you want to delete {n} session{n === 1 ? "" : "s"}?
         </h2>
-        <p className="text-sm text-muted">They&apos;re removed from tracking for good, and sessions from a roster don&apos;t go back to Pending.</p>
+        <p className="text-sm text-muted">{note}</p>
         {error && <p className="text-sm text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <button
@@ -782,7 +797,7 @@ function ConfirmDelete({ ids, onClose, onDeleted }: { ids: string[]; onClose: ()
             disabled={pending}
             onClick={() =>
               start(async () => {
-                const res = await deleteRecords(ids);
+                const res = await remove(ids);
                 if (!res.ok) return setError(res.message);
                 onDeleted(ids);
                 ref.current?.close();
