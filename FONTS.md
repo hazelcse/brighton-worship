@@ -7,10 +7,11 @@ say clearly in your summary which font changed, where and why.
 | Where | Font | Weight / style | Set in |
 |---|---|---|---|
 | Body text, buttons, forms (everything by default) | Geist | Regular | `web/src/app/layout.tsx` (`--font-geist-sans`) |
-| Headings, the "Brighton Worship" logo, display text (`font-display`) | Cormorant Garamond | 500 and 600 loaded | `web/src/app/layout.tsx` (`--font-display`) |
+| Headings, the "Brighton Worship" logo, display text (`font-display`) | Cormorant Garamond | 500 and 600 loaded, normal and italic | `web/src/app/layout.tsx` (`--font-display`) |
 | Navbar "Brighton Worship" logo (top bar and mobile sidebar) | Cormorant Garamond | Medium (500), `font-medium` | `web/src/components/app-nav.tsx` |
 | Home page greeting "Hi (name)," | Cormorant Garamond | Medium (500), `font-medium` | `web/src/app/(app)/home/page.tsx` |
 | Plan the roster › "1. Sessions to plan": service names ("EM Sunday Service") | Geist (default) | Medium, **13px** (`text-[13px] font-medium`) | `web/src/components/roster/session-planner.tsx` |
+| Login page title's cycling word ("Worship" / "Media", under "Brighton") | Cormorant Garamond | Semibold (600), **italic**; "Brighton" stays upright | `web/src/components/team-login.tsx` |
 | Home page countdown number ("12", "Today") | **Libre Baskerville** | Semibold (600), upright (not italic) | `web/src/components/countdown-number.tsx` |
 
 ## Past decisions
@@ -21,3 +22,4 @@ say clearly in your summary which font changed, where and why.
 - The greeting was semibold, then regular, and the owner settled on medium.
 - The navbar logo was is medium.
 - 11 Nov 2026: service names in "1. Sessions to plan" were 16px; the owner asked for 13px. The rows' spacing was tightened at the same time.
+- 18 Nov 2026: the login title's cycling word ("Worship" / "Media") made italic at the owner's request; Cormorant Garamond's italic is now loaded for it.

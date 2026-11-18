@@ -6,7 +6,7 @@ import { morningServiceTonight } from "@/lib/night-owl";
 import { TEAM_HOME, getSessionUser } from "@/lib/auth";
 import { LoginButton } from "@/components/login-dialog";
 import { TeamLogin } from "@/components/team-login";
-import { chosenLoginKind, KIND_TITLE, loadTeams, type TeamKind } from "@/lib/teams";
+import { KIND_TITLE, loadTeams, type TeamKind } from "@/lib/teams";
 
 /** Sends already-signed-in users straight to the app. Streams in after the static shell. */
 async function RedirectIfSignedIn() {
@@ -53,14 +53,16 @@ export default function LandingPage() {
 }
 
 /**
- * One title per kind of team that exists ("Brighton Worship", "Brighton Media"), opening on the one
- * chosen last time. Hold it to switch.
+ * "Brighton" over a word that cycles through the kinds of team that exist ("Worship", "Media").
+ * Which word is showing doesn't matter for logging in.
  */
 async function TeamTitleAndLogin({ children }: { children: React.ReactNode }) {
-  const [teams, initial] = await Promise.all([loadTeams(), chosenLoginKind()]);
+  const teams = await loadTeams();
   const kinds = (Object.keys(KIND_TITLE) as TeamKind[]).filter((k) => teams.some((t) => t.kind === k));
+  // "Brighton Worship" → "Worship"
+  const words = kinds.map((k) => KIND_TITLE[k].replace(/^Brighton\s+/, ""));
   return (
-    <TeamLogin teams={kinds.map((k) => ({ slug: k, name: KIND_TITLE[k] }))} initial={initial}>
+    <TeamLogin words={words.length ? words : ["Worship"]}>
       {children}
     </TeamLogin>
   );
@@ -73,10 +75,10 @@ function TitleFallback() {
       <h1 className="relative text-center font-display text-6xl font-semibold leading-none tracking-tight sm:text-8xl lg:text-9xl">
         Brighton
         <br />
-        &nbsp;
+        <span className="italic">Worship</span>
       </h1>
       <div className="relative mt-12">
-        <LoginButton team="worship" teamName="Brighton Worship" />
+        <LoginButton />
       </div>
     </>
   );

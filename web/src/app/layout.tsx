@@ -8,6 +8,7 @@ const display = Cormorant_Garamond({
   variable: "--font-display",
   subsets: ["latin"],
   weight: ["500", "600"],
+  style: ["normal", "italic"], // italic: the login title's cycling "Worship" / "Media"
 });
 
 export const metadata: Metadata = {

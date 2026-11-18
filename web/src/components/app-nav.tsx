@@ -47,7 +47,7 @@ type NavUser = {
   /** Youth teams: a small orange "YF" superscript after the name. */
   brandTag?: string;
   /** The teams this person is on (e.g. Main Worship, Youth Media), shown in the profile menu; with more than one, a dropdown switches between them. */
-  memberOf?: { slug: string; name: string }[];
+  memberOf?: { slug: string; name: string; kind: string }[];
   /** The team they're signed into now. */
   currentTeam?: string;
   /**
@@ -458,6 +458,12 @@ export function AppNav({ user: given }: { user: NavUser }) {
                   {user.profileId && (
                     <Link href={`/team/${user.profileId}`} className="block px-4 py-2.5 text-sm hover:bg-background">
                       My profile
+                    </Link>
+                  )}
+                  {/* On a worship team and a media team: Settings chooses which one opens at login. */}
+                  {user.memberOf?.some((t) => t.kind === "worship") && user.memberOf.some((t) => t.kind === "media") && (
+                    <Link href="/settings" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm hover:bg-background">
+                      Settings
                     </Link>
                   )}
                   {user.canAdmin && (

@@ -12,7 +12,7 @@
  * starts from PRESETS for its group and kind. Everything that differs between teams reads its
  * config through the helpers below; nothing checks a team's slug.
  */
-import { SESSION_TYPES, scheduleText, type Composition, type RegularKind, type SessionType } from "@/lib/roster";
+import { CREW_ROLES, SESSION_TYPES, scheduleText, type Composition, type RegularKind, type SessionType } from "@/lib/roster";
 
 export type TeamGroup = "main" | "youth";
 export type TeamKind = "worship" | "media";
@@ -37,15 +37,8 @@ export const ROLE_CATALOGUE = [
   { value: "vocalist", label: "Vocalist" },
   // Band leader and talkback are one job, done by the same person.
   { value: "band leader", label: "BL/TB" },
-  { value: "media ic", label: "Media IC"},
-  { value: "wide angle cam", label: "Wide Angle Cam" },
-  { value: "close up cam", label: "Close Up Cam" },
-  { value: "roving cam", label: "Roving Cam" },
-  { value: "director", label: "Director" },
-  { value: "video mixer", label: "Video Mixer" },
-  { value: "projectionist", label: "Projectionist" },
-  { value: "lights", label: "Lights" },
-  { value: "soundboard", label: "Soundboard" },
+  // The media teams' roles (labels and order from roster.ts, where the roster editor reads them).
+  ...CREW_ROLES.map(({ value, label }) => ({ value, label })),
 ] as const;
 
 export type RoleValue = (typeof ROLE_CATALOGUE)[number]["value"];

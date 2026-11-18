@@ -28,16 +28,16 @@ async function SignedInNav() {
     user.team ? loadPublishDue(user.id, user.team.id) : Promise.resolve([]),
     // The teams they're on, for the profile menu (root, observers and developers aren't on any).
     user.isRoot || user.isObserver || user.isDeveloper || user.viewingAsPerson
-      ? Promise.resolve([] as { slug: string; name: string }[])
+      ? Promise.resolve([] as { slug: string; name: string; kind: string }[])
       : db
           .from("team_members")
-          .select("teams!inner(slug, name, position)")
+          .select("teams!inner(slug, name, kind, position)")
           .eq("user_id", user.id)
           .then(({ data }) =>
             (data ?? [])
-              .map((r) => r.teams as unknown as { slug: string; name: string; position: number })
+              .map((r) => r.teams as unknown as { slug: string; name: string; kind: string; position: number })
               .sort((a, b) => a.position - b.position)
-              .map((t) => ({ slug: t.slug, name: t.name })),
+              .map((t) => ({ slug: t.slug, name: t.name, kind: t.kind })),
           ),
     // A media team: plans the worship team published (or changed) for services they're linked to.
     mediaTeam ? loadNewlyPublishedForCrew({ id: user.id, isLead: user.isLead }, mediaTeam) : Promise.resolve([]),

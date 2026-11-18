@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { TEAM_HOME, VIEW_AS_COOKIE, getSessionUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { KIND_TITLE, LOGIN_KIND_COOKIE, TEAM_COOKIE, loginTeam, membership, teamBySlug, type TeamKind } from "@/lib/teams";
+import { TEAM_COOKIE, loginTeam, membership, teamBySlug } from "@/lib/teams";
 
 export type LoginState = { error: string | null; email: string };
 
@@ -17,8 +17,6 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
     return { error: "Enter your email and password.", email };
   }
 
-  const kind: TeamKind = formData.get("kind") === "media" ? "media" : "worship";
-
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
@@ -27,7 +25,7 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_active, is_root, is_developer, must_change_password, observer_group")
+    .select("is_active, is_root, is_developer, must_change_password, observer_group, landing_kind")
     .eq("id", data.user.id)
     .single();
   if (!profile?.is_active) {
@@ -35,22 +33,22 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
     return { error: "This account has been deactivated. Contact a team admin.", email };
   }
   const jar = await cookies();
-  jar.set(LOGIN_KIND_COOKIE, kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   jar.delete(VIEW_AS_COOKIE); // "view as" names a group or person in the last team
 
-  // Root and observers oversee more than one team: from either title they open Brighton Serving,
+  // Root and observers oversee more than one team: they open Brighton Serving,
   // their own view outside every team (no team cookie).
   if (profile.is_root || (profile.observer_group && !profile.is_developer)) {
     jar.delete(TEAM_COOKIE);
     redirect(profile.must_change_password ? "/change-password" : "/home");
   }
 
-  // Everyone else: the team of this kind they're on (Main Worship, Youth Worship, ...). Developers
-  // aren't on any team and can log in from either title.
-  const team = await loginTeam(kind, data.user.id, { isDeveloper: Boolean(profile.is_developer) });
+  // Everyone else: their own team (whatever the title was showing). Someone on both a worship and
+  // a media team gets the one they chose in Settings. Developers aren't on any team.
+  const landingKind = profile.landing_kind === "media" || profile.landing_kind === "worship" ? profile.landing_kind : null;
+  const team = await loginTeam(data.user.id, { isDeveloper: Boolean(profile.is_developer), landingKind });
   if (!team) {
     await supabase.auth.signOut({ scope: "local" });
-    return { error: `You're not on a ${kind} team. Hold the title to switch to ${KIND_TITLE[kind === "worship" ? "media" : "worship"]}.`, email };
+    return { error: "You're not on a team yet. Ask a team lead to add you.", email };
   }
   jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   // Straight to their team's own home: going via /home would show the worship loader before it
@@ -106,7 +104,6 @@ export async function switchTeam(formData: FormData): Promise<void> {
   if (!team || !(await membership(team.id, realId))) redirect(user.team ? TEAM_HOME[user.team.kind] : "/home");
   const jar = await cookies();
   jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
-  jar.set(LOGIN_KIND_COOKIE, team.kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   jar.delete(VIEW_AS_COOKIE); // "view as" names a group or person in the last team
   redirect(TEAM_HOME[team.kind]);
 }

@@ -27,7 +27,8 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 - **Profile menu** (account icon): name and email, then the person's team. Someone on more than one
   team gets a full-width **Team** dropdown there instead (their teams in team order, the current one
   picked); choosing a team switches to it at once and opens its home (`switchTeam`,
-  `web/src/components/team-switcher.tsx`). Developers instead get **View or act as**: Developer,
+  `web/src/components/team-switcher.tsx`). Someone on both a worship and a media team also gets a
+  **Settings** link (to `/settings`). Developers instead get **View or act as**: Developer,
   Lead, the current team's groups, then "A person" — a dropdown of everyone on every team, under one
   heading per team (someone on two teams is listed under both); picking someone on another team
   switches to that team first.
@@ -89,13 +90,13 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
 ### Outside the app frame
 
 **`/` Login** (`web/src/app/page.tsx`, `components/team-login.tsx`): full-screen dark (`bg-ink`),
-everything centred. Title "Brighton / Worship" `font-display`, 60px → 96px (sm) → 128px (lg). Log in
-button below. **Press and hold the title** (450ms, like the roster quarter card; keyboard: hold
-Space/Enter) to switch between the kinds of team: "Brighton / Worship" ↔ "Brighton / Media", with
-the same flip-in animation. Logging in opens the person's team of the kind showing (Main Worship,
-Youth Worship, Main Media, Youth Media, ...); the dialog says "to Brighton Media". Root (on no team)
-can log in from either and gets its own view. The page opens on the kind chosen last time
-(`bw-login` cookie). Until the list arrives the title shows "Brighton" alone.
+everything centred. Title "Brighton" over a second word in *italic*, `font-display`, 60px → 96px
+(sm) → 128px (lg). The second word **cycles every 3 seconds** between the kinds of team that exist
+("Worship" ↔ "Media"), with the flip-in animation (skipped under reduced motion). Log in button
+below; the dialog is just "Log in". The word showing has no effect: logging in opens the person's
+own team (Main before Youth). Someone on both a worship and a media team lands on the kind chosen in
+**Settings** (`profiles.landing_kind`; worship by default). Root and observers get their own view.
+Until the team list arrives the title shows "Brighton / *Worship*".
 
 **`/media`**: the media teams' home, laid out like `/home` (same 672px column, countdown, notices
 and broadcasts, then the next session's card) with the crew in place of the band: the card's last
@@ -565,6 +566,13 @@ gets "Root" and developers "Dev"). Everything is limited to its group's teams:
 
 Root sees the observer in the group's directories (a sky "observer" badge, not counted in "N of M
 members"); its `/team/[id]` has only a Password card.
+
+### Settings
+
+**`/settings`** (linked from the profile menu for people on both a worship and a media team):
+`mx-auto max-w-2xl` column, title "Settings" `font-display text-4xl`, then one section card "When I
+log in": two radio rows (Brighton Worship, Brighton Media; the chosen one with an accent border)
+and Save. Anyone else who opens it sees a line saying they always land on their own team.
 
 ### Team
 

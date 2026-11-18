@@ -6,6 +6,7 @@ import { getCurrentUser, inTeam, requirePermission } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ATTACHED_ROLES,
+  CREW_ROLES,
   OPS,
   ROLES,
   ROLE_LABEL,
@@ -409,13 +410,16 @@ export async function deleteSession(sessionId: string): Promise<ActionState> {
 // Rules
 // ---------------------------------------------------------------------------
 
+/** A part on any team's roster: the band's instruments or a media team's roles. */
+const isPart = (v: unknown) => [...ROLES, ...CREW_ROLES].some((r) => r.value === v);
+
 function cleanParams(p: RuleParams): RuleParams | null {
   const subjectOk = (s: unknown) => {
     const x = s as { kind?: string; value?: string };
     return (
       x?.kind === "everyone" ||
       (x?.kind === "ministry" && (x.value === "em" || x.value === "cm")) ||
-      (x?.kind === "role" && ROLES.some((r) => r.value === x.value)) ||
+      (x?.kind === "role" && isPart(x.value)) ||
       (x?.kind === "member" && typeof x.value === "string")
     );
   };
@@ -440,7 +444,7 @@ function cleanParams(p: RuleParams): RuleParams | null {
         ...(p.sessionKind ? { sessionKind: p.sessionKind } : {}),
         ...(p.sessionKind === "custom" ? { sessionName: String(p.sessionName ?? "") } : {}),
         // A band picked by hand: the part (and BL/TB) stays with the rule when it's edited.
-        ...(p.polarity === "must" && p.role && ROLES.some((r) => r.value === p.role) ? { role: p.role } : {}),
+        ...(p.polarity === "must" && p.role && isPart(p.role) ? { role: p.role } : {}),
         ...(p.polarity === "must" && p.role && p.bandLeader === true ? { bandLeader: true } : {}),
       };
     default:
@@ -681,7 +685,8 @@ export async function editCell(
     const user = await getCurrentUser();
     if (!user?.isLead) return { ok: false, message: "Only the lead can change the roster by hand." };
     const { status } = await draftFor(rosterId, user);
-    if (!ROLES.some((r) => r.value === role) || ATTACHED_ROLES.includes(role as Role)) return { ok: false, message: "Unknown part." };
+    // The team's own parts: the band's instruments, or a media team's roles.
+    if (!(inTeam(user).team.config.roles as string[]).includes(role) || ATTACHED_ROLES.includes(role as Role)) return { ok: false, message: "Unknown part." };
     const db = createAdminClient();
     const { data: session } = await db
       .from("roster_sessions")

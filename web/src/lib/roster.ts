@@ -21,10 +21,22 @@ export const ROLES = [
   { value: "band leader", label: "Band Leader / Talkback", short: "BL/TB" },
 ] as const;
 export type Role = (typeof ROLES)[number]["value"];
+/** The media teams' roles (a media roster's parts). team-config's ROLE_CATALOGUE lists these too. */
+export const CREW_ROLES = [
+  { value: "media ic", label: "Media IC", short: "IC" },
+  { value: "wide angle cam", label: "Wide Angle Cam", short: "Wide" },
+  { value: "close up cam", label: "Close Up Cam", short: "Close" },
+  { value: "roving cam", label: "Roving Cam", short: "Roving" },
+  { value: "director", label: "Director", short: "Dir" },
+  { value: "video mixer", label: "Video Mixer", short: "Mixer" },
+  { value: "projectionist", label: "Projectionist", short: "Proj" },
+  { value: "lights", label: "Lights", short: "Lights" },
+  { value: "soundboard", label: "Soundboard", short: "Sound" },
+] as const;
 /** "talkback" was its own role once: old rosters and updates may still name it. */
 const LEGACY_ROLES = [{ value: "talkback", label: "Band Leader / Talkback", short: "BL/TB" }];
-export const ROLE_LABEL = Object.fromEntries([...ROLES, ...LEGACY_ROLES].map((r) => [r.value, r.label])) as Record<string, string>;
-export const ROLE_SHORT = Object.fromEntries([...ROLES, ...LEGACY_ROLES].map((r) => [r.value, r.short])) as Record<string, string>;
+export const ROLE_LABEL = Object.fromEntries([...ROLES, ...CREW_ROLES, ...LEGACY_ROLES].map((r) => [r.value, r.label])) as Record<string, string>;
+export const ROLE_SHORT = Object.fromEntries([...ROLES, ...CREW_ROLES, ...LEGACY_ROLES].map((r) => [r.value, r.short])) as Record<string, string>;
 /** How a group of people with a role is named in rules, e.g. "Drummers should…". */
 export const ROLE_GROUP: Record<string, string> = {
   "worship leader": "Worship Leaders",

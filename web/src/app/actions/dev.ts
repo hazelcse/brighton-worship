@@ -12,7 +12,7 @@ import { BAND_COLUMNS, MAX_MAIN_SET, ROLE_TO_BAND, cleanRecordInput, isSunday, t
 import { readSessionsCsv, readSessionsWorkbook } from "@/lib/session-import";
 import { readXlsx } from "@/lib/xlsx";
 import { isInstrument } from "@/lib/team";
-import { LOGIN_KIND_COOKIE, TEAM_COOKIE, loadTeams, membership, teamBySlug, teamMemberIds, teamProfiles, type Team } from "@/lib/teams";
+import { TEAM_COOKIE, loadTeams, membership, teamBySlug, teamMemberIds, teamProfiles, type Team } from "@/lib/teams";
 
 /** Developers' Populate dialog: every team (to pick which one to fill) and the one they're in now. */
 export async function populateTeams(): Promise<{ teams: { slug: string; name: string }[]; current: string } | null> {
@@ -44,7 +44,6 @@ export async function setDevView(
   if (!team) return { ok: false, message: "That team doesn't exist." };
   const jar = await cookies();
   jar.set(TEAM_COOKIE, team.slug, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
-  jar.set(LOGIN_KIND_COOKIE, team.kind, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   if (view.observer) jar.set(VIEW_AS_COOKIE, observerViewCookie(view.observerPerms ?? {}), { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" });
   else jar.delete(VIEW_AS_COOKIE);
   await createAdminClient()

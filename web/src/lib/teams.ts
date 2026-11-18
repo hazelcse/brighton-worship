@@ -6,13 +6,11 @@ import { readTeamConfig, type TeamConfig, type TeamGroup, type TeamKind } from "
 export type { TeamConfig, TeamGroup, TeamKind };
 
 /**
- * Teams share one login. The login page shows one title per kind of team ("Brighton Worship",
- * "Brighton Media"; press and hold to switch, remembered in LOGIN_KIND_COOKIE). Logging in opens
- * the team of that kind the person is on (Main Worship, Youth Worship, ...), kept in TEAM_COOKIE;
- * every page then shows only that team.
+ * Teams share one login. The login page's title just cycles "Brighton Worship" / "Brighton Media";
+ * logging in opens the person's own team (see loginTeam), kept in TEAM_COOKIE; every page then
+ * shows only that team.
  */
 export const TEAM_COOKIE = "bw-team";
-export const LOGIN_KIND_COOKIE = "bw-login"; // also written by components/team-login.tsx
 export const DEFAULT_TEAM = "main-worship";
 
 /** The login page's title for each kind of team. */
@@ -20,32 +18,37 @@ export const KIND_TITLE: Record<TeamKind, string> = { worship: "Brighton Worship
 /** What root sees in its own view (root isn't on any team). */
 export const ROOT_TITLE = "Brighton Serving";
 
-/** The login page's last choice (worship when there's none). */
-export async function chosenLoginKind(): Promise<TeamKind> {
-  return (await cookies()).get(LOGIN_KIND_COOKIE)?.value === "media" ? "media" : "worship";
+/** Main teams before Youth ones, then in the Teams page's order. */
+function mainFirst(list: Team[]): Team[] {
+  return [...list].sort((a, b) => Number(a.group !== "main") - Number(b.group !== "main"));
 }
 
 /**
- * The team someone logs into from a kind's login page: of the teams of that kind they're on, a Main
- * team first (e.g. Main Worship before Youth Worship), then in team order. They can switch to their
- * other teams from the profile menu (switchTeam).
- * Developers aren't on any team: they open the kind's first team. Root and observers don't log into
- * a team at all (they get Brighton Serving, outside every team), so this isn't asked for them.
+ * The team someone opens when they log in. Someone on one kind of team (worship or media) gets
+ * theirs; someone on both gets the kind they chose in Settings (profiles.landing_kind; worship when
+ * they haven't). Within a kind, a Main team comes first (Main Worship before Youth Worship), then
+ * team order. They switch to their other teams from the profile menu (switchTeam).
+ * Developers aren't on any team: they open the first worship team. Root and observers don't log
+ * into a team at all (they get Brighton Serving, outside every team), so this isn't asked for them.
  */
 export async function loginTeam(
-  kind: TeamKind,
   userId: string,
-  opts: { isDeveloper: boolean },
+  opts: { isDeveloper: boolean; landingKind: TeamKind | null },
 ): Promise<Team | null> {
-  const db = createAdminClient();
-  const { data: teams } = await db.from("teams").select(COLUMNS).eq("kind", kind).order("position");
-  // Main teams before Youth ones, then in the Teams page's order.
-  const list = (teams ?? []).map(toTeam).sort((a, b) => Number(a.group !== "main") - Number(b.group !== "main"));
-  if (opts.isDeveloper) return list[0] ?? null;
-  if (!list.length) return null;
-  const { data: mine } = await db.from("team_members").select("team_id").eq("user_id", userId).in("team_id", list.map((t) => t.id));
+  const all = await loadTeams();
+  const byKind = (kind: TeamKind, list: Team[]) => mainFirst(list.filter((t) => t.kind === kind));
+  if (opts.isDeveloper) return byKind("worship", all)[0] ?? byKind("media", all)[0] ?? null;
+  const { data: mine } = await createAdminClient().from("team_members").select("team_id").eq("user_id", userId);
   const on = new Set((mine ?? []).map((m) => m.team_id as string));
-  return list.find((t) => on.has(t.id)) ?? null;
+  const theirs = all.filter((t) => on.has(t.id));
+  const first: TeamKind = opts.landingKind ?? "worship";
+  return byKind(first, theirs)[0] ?? byKind(first === "worship" ? "media" : "worship", theirs)[0] ?? null;
+}
+
+/** The kinds of team (worship, media) someone is on. */
+export async function memberKinds(userId: string): Promise<Set<TeamKind>> {
+  const { data } = await createAdminClient().from("team_members").select("teams!inner(kind)").eq("user_id", userId);
+  return new Set((data ?? []).map((r) => ((r.teams as unknown as { kind: string }).kind === "media" ? "media" : "worship") as TeamKind));
 }
 
 export type Team = {

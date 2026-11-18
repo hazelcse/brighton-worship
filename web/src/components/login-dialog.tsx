@@ -5,8 +5,8 @@ import { signIn, type LoginState } from "@/app/actions/auth";
 
 const initialState: LoginState = { error: null, email: "" };
 
-/** `team` is the kind of team showing on the landing page ("worship" or "media"): logging in opens their team of that kind. */
-export function LoginButton({ team, teamName }: { team: string; teamName: string }) {
+/** Logging in opens the person's own team (or the one they chose in Settings): see signIn. */
+export function LoginButton() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [state, formAction, pending] = useActionState(signIn, initialState);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -35,14 +35,10 @@ export function LoginButton({ team, teamName }: { team: string; teamName: string
         }}
       >
         <form action={formAction} className="flex flex-col gap-4 p-6">
-          <input type="hidden" name="kind" value={team} />
           <div className="flex items-start justify-between">
-            <div>
-              <h2 id="login-title" className="font-display text-3xl font-semibold">
-                Log in
-              </h2>
-              <p className="mt-0.5 text-sm text-muted">to {teamName}</p>
-            </div>
+            <h2 id="login-title" className="font-display text-3xl font-semibold">
+              Log in
+            </h2>
             <button
               type="button"
               aria-label="Close"
