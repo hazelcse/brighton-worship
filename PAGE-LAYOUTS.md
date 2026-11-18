@@ -82,7 +82,8 @@ Sizes: Tailwind units are 4px (`p-4` = 16px). `max-w-md` 448px, `xl` 576, `2xl` 
   sessions. **Phones (below 640px)**: the Ministry and Service chips are one `h-10` "Filter"
   dropdown (tick boxes under Ministry and Service, at least one on in each; plain border, never
   orange) at the left of the filter row; the roster editor has it in its header instead. The filter
-  row stays on one line on phones (8px gaps), and the "N sessions" count is left out when it doesn't fit. Scrolls sideways (one column per role); below 640px the Date column stays frozen at the
+  row stays on one line on phones (8px gaps), and the "N sessions" count is left out when it doesn't fit. After a cell edit the count reads "N sessions · checking…"
+  while the roster is re-checked in the background; if that fails, one red line of text sits between the filter row and the table. Scrolls sideways (one column per role); below 640px the Date column stays frozen at the
   left (opaque, thin line on its right) while the rest scrolls under it.
 
 ## Pages
@@ -318,7 +319,7 @@ it, e.g. the phone slept), coming back autosaves the edits, unless the other wor
 editing or saved in the meantime: then they're dropped, and the alert says why. Then
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
-then the plan editor (or, in the simplified view, the run sheet with each song's links under its sequence,
+then the plan editor (or, in the simplified view, the run sheet with each song's links, in blue, under its title and above its sequence,
 one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns).
 In a sequence you read (both views), a step comment of up to 24 characters sits beside its step;
 a step with a longer one starts a line of its own ("| Chorus (Bass) (Drums)", no bar after it) and

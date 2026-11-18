@@ -41,6 +41,40 @@ function canServe(p: EditPerson, s: SessionRow): boolean {
 
 type Slot = CellSlot & { was: { member: string; also: string[] } | null };
 
+/** A saved cell edit, for showing it in the table while the roster is re-checked. */
+export type CellEdit = { sessionId: string; role: string; slots: CellSlot[]; handOver: Record<string, string> };
+
+/**
+ * The roster's assignments with a saved edit in place, as editCell wrote them: the cell's new
+ * line-up, plus band leader / talkback handed over to bandmates. Names come from `people`.
+ */
+export function applyCellEdit(assignments: AssignmentRow[], edit: CellEdit, people: { id: string; name: string }[]): AssignmentRow[] {
+  const singing = SINGING.includes(edit.role);
+  const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? assignments.find((a) => a.member_id === id)?.name ?? "?";
+  const handedTo = Object.entries(edit.handOver);
+  const kept = assignments
+    .filter((a) => !(a.session_id === edit.sessionId && a.role === edit.role))
+    .map((a) => {
+      if (a.session_id !== edit.sessionId) return a;
+      const extra = handedTo.filter(([, id]) => id === a.member_id).map(([t]) => t);
+      return extra.length ? { ...a, also_roles: [...new Set([...a.also_roles, ...extra])] } : a;
+    });
+  const added = edit.slots.flatMap((s) =>
+    s.member
+      ? [
+          {
+            session_id: edit.sessionId,
+            member_id: s.member,
+            name: nameOf(s.member),
+            role: edit.role,
+            also_roles: singing ? [] : [...new Set(s.also.filter((t) => ATTACHED_ROLES.includes(t)))],
+          },
+        ]
+      : [],
+  );
+  return [...kept, ...added];
+}
+
 /** Root: choose everyone who fills one part of one session, and who also does band leader / talkback. */
 export function CellEditor({
   rosterId,
@@ -51,6 +85,7 @@ export function CellEditor({
   people,
   shares,
   onClose,
+  onSaved,
 }: {
   rosterId: string;
   session: SessionRow;
@@ -61,6 +96,8 @@ export function CellEditor({
   /** Serve-less shares (below 1); everyone else counts as 1. */
   shares: Record<string, number>;
   onClose: () => void;
+  /** After the edit is written: the table shows it and re-checks the roster (the dialog closes first). */
+  onSaved?: (edit: CellEdit) => void;
 }) {
   const composition = session.composition as Record<string, number>;
   const need = composition[role] ?? 0;
@@ -236,10 +273,12 @@ export function CellEditor({
     // Only hand over what this change leaves uncovered.
     const send: Record<string, string> = {};
     for (const u of uncovered) if (handOver[u.role]) send[u.role] = handOver[u.role]!;
+    const picked = slots.map(({ member, also }) => ({ member, also }));
     start(async () => {
-      const r = await editCell(rosterId, session.id, role, slots.map(({ member, also }) => ({ member, also })), send);
-      if (r.ok) onClose();
-      else setError(r.message);
+      const r = await editCell(rosterId, session.id, role, picked, send);
+      if (!r.ok) return setError(r.message);
+      onClose();
+      onSaved?.({ sessionId: session.id, role, slots: picked, handOver: send });
     });
   }
 

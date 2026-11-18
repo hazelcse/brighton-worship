@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { getCurrentUser, inTeam, requirePermission } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -673,6 +674,9 @@ export type CellSlot = { member: string | null; also: string[] };
  * Root only: replace who fills one part (e.g. Bass) of one session in a generated draft.
  * `handOver` (band leader / talkback -> member id): a bandmate outside this part who takes over a
  * band role nobody in the part keeps. A band role held by someone in the part has to stay covered.
+ *
+ * Only checks and writes the edit, so the dialog can close straight away. The roster's re-check
+ * and the page refresh come after, from `refreshAfterEdit` (the roster table calls it next).
  */
 export async function editCell(
   rosterId: string,
@@ -684,27 +688,23 @@ export async function editCell(
   try {
     const user = await getCurrentUser();
     if (!user?.isLead) return { ok: false, message: "Only the lead can change the roster by hand." };
-    const { status } = await draftFor(rosterId, user);
     // The team's own parts: the band's instruments, or a media team's roles.
     if (!(inTeam(user).team.config.roles as string[]).includes(role) || ATTACHED_ROLES.includes(role as Role)) return { ok: false, message: "Unknown part." };
     const db = createAdminClient();
-    const { data: session } = await db
-      .from("roster_sessions")
-      .select("id, name, kind, date, rehearsal_date, composition")
-      .eq("id", sessionId)
-      .eq("roster_id", rosterId)
-      .maybeSingle();
-    if (!session) return { ok: false, message: "Session not found." };
-    const singing = SINGING_ROLES.includes(role);
     const members = slots.flatMap((s) => (s.member ? [s.member] : []));
-    const { data: band } = await db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", sessionId);
-    const before = band ?? [];
     const ids = [...new Set([...members, ...Object.values(handOver)])];
+    // These need only what the dialog sent, so they're fetched at once rather than one after another.
     // Names from their login; what they play from their profile on this team (not another team's).
-    const [{ data: profiles }, onTeam] = await Promise.all([
+    const [, { data: session }, { data: band }, { data: profiles }, onTeam] = await Promise.all([
+      draftFor(rosterId, user),
+      db.from("roster_sessions").select("id, name, kind, date, rehearsal_date, composition").eq("id", sessionId).eq("roster_id", rosterId).maybeSingle(),
+      db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", sessionId),
       ids.length ? db.from("profiles").select("id, full_name, email").in("id", ids) : Promise.resolve({ data: [] as { id: string; full_name: string; email: string }[] }),
       teamProfiles(inTeam(user).team.id, ids),
     ]);
+    if (!session) return { ok: false, message: "Session not found." };
+    const singing = SINGING_ROLES.includes(role);
+    const before = band ?? [];
     const person = new Map(
       (profiles ?? []).filter((p) => onTeam.has(p.id as string)).map((p) => [p.id as string, { ...p, instruments: onTeam.get(p.id as string)!.instruments }]),
     );
@@ -719,13 +719,20 @@ export async function editCell(
     const inCellNow = before.filter((b) => b.role === role).map((b) => b.member_id as string);
     const added = [...new Set(members.filter((m) => !inCellNow.includes(m)))];
     if (added.length) {
-      const { data: sameDay } = await db
-        .from("roster_assignments")
-        .select("member_id, role, roster_sessions!inner(id, name, kind, date, roster_id, cancelled)")
-        .in("member_id", added)
-        .eq("roster_sessions.roster_id", rosterId)
-        .eq("roster_sessions.date", session.date as string)
-        .eq("roster_sessions.cancelled", false);
+      const days = [session.date as string, ...(session.rehearsal_date ? [session.rehearsal_date as string] : [])];
+      const first = days.reduce((a, b) => (a < b ? a : b));
+      const last = days.reduce((a, b) => (a > b ? a : b));
+      // Both checks at once. The absences are any touching the service or rehearsal day, sorted out below.
+      const [{ data: sameDay }, { data: away }] = await Promise.all([
+        db
+          .from("roster_assignments")
+          .select("member_id, role, roster_sessions!inner(id, name, kind, date, roster_id, cancelled)")
+          .in("member_id", added)
+          .eq("roster_sessions.roster_id", rosterId)
+          .eq("roster_sessions.date", session.date as string)
+          .eq("roster_sessions.cancelled", false),
+        db.from("absences").select("member_id, starts_on, ends_on").in("member_id", added).lte("starts_on", last).gte("ends_on", first),
+      ]);
       const adhoc = (k: unknown) => (k ?? "custom") === "custom";
       const clash = (sameDay ?? []).find((a) => {
         const other = a.roster_sessions as unknown as { id: string; kind: string | null };
@@ -735,33 +742,30 @@ export async function editCell(
         const s = clash.roster_sessions as unknown as { name: string };
         return { ok: false, message: `${nameOf(clash.member_id as string)} is already on ${s.name} (${(ROLE_LABEL[clash.role as string] ?? clash.role).toLowerCase()}) that day.` };
       }
-      const days = [session.date as string, ...(session.rehearsal_date ? [session.rehearsal_date as string] : [])];
+      // The service day first, then the rehearsal.
       for (const d of days) {
-        const { data: away } = await db.from("absences").select("member_id").in("member_id", added).lte("starts_on", d).gte("ends_on", d).limit(1);
-        if (away?.length) {
-          return { ok: false, message: `${nameOf(away[0].member_id as string)} is marked absent ${d === session.date ? "that day" : "at the rehearsal"}.` };
-        }
+        const hit = (away ?? []).find((a) => (a.starts_on as string) <= d && (a.ends_on as string) >= d);
+        if (hit) return { ok: false, message: `${nameOf(hit.member_id as string)} is marked absent ${d === session.date ? "that day" : "at the rehearsal"}.` };
       }
     }
 
     const heldBefore = (id: string, t: string) => before.some((b) => b.member_id === id && ((b.also_roles as string[] | null) ?? []).includes(t));
     const skilled = (id: string, t: string) => (person.get(id)?.instruments ?? []).includes(t);
-    const rows: { session_id: string; member_id: string; role: string; also_roles: string[] }[] = [];
+    const rows: { member_id: string; also_roles: string[] }[] = [];
     for (const s of slots) {
       if (!s.member) continue;
       // Band leader / talkback goes with an instrument, never with singing.
       const also = singing ? [] : [...new Set(s.also.filter((t) => ATTACHED_ROLES.includes(t as Role)))];
       const unable = also.find((t) => !skilled(s.member!, t) && !heldBefore(s.member!, t));
       if (unable) return { ok: false, message: `${nameOf(s.member)} isn't set up as ${(ROLE_LABEL[unable] ?? unable).toLowerCase()}.` };
-      rows.push({ session_id: sessionId, member_id: s.member, role, also_roles: also });
+      rows.push({ member_id: s.member, also_roles: also });
     }
 
     // Band leader / talkback that someone in this part was doing has to stay covered: by someone in
     // the part, or handed to a bandmate who can do it (the same people bandRoleCandidates offers).
     const composition = (session.composition as Record<string, number> | null) ?? {};
-    const inCellBefore = before.filter((b) => b.role === role).map((b) => b.member_id as string);
     const outside = before.filter((b) => b.role !== role);
-    const handTo: { memberId: string; role: string; also: string[] }[] = [];
+    const handTo: { member_id: string; role: string; also_roles: string[] }[] = [];
     for (const t of ATTACHED_ROLES) {
       const holds = (b: { also_roles: unknown }) => ((b.also_roles as string[] | null) ?? []).includes(t);
       const was = before.filter(holds).length;
@@ -775,36 +779,50 @@ export async function editCell(
           message: `${ROLE_LABEL[t]} at ${session.name} would be left uncovered. Pick someone in the band to take it over, or someone in this part who can do it.`,
         };
       }
-      const candidates = await bandRoleCandidates(sessionId, t, [...inCellBefore, ...members], db);
+      const candidates = await bandRoleCandidates(sessionId, t, [...inCellNow, ...members], db);
       const row = outside.find((b) => b.member_id === target && !SINGING_ROLES.includes(b.role as string));
       if (!row || !candidates.some((c) => c.id === target)) {
         return { ok: false, message: `${nameOf(target)} can't take over ${(ROLE_LABEL[t] ?? t).toLowerCase()} at ${session.name}.` };
       }
-      handTo.push({ memberId: target, role: row.role as string, also: [...new Set([...((row.also_roles as string[] | null) ?? []), t])] });
+      handTo.push({ member_id: target, role: row.role as string, also_roles: [...new Set([...((row.also_roles as string[] | null) ?? []), t])] });
     }
 
-    const { error: delErr } = await db.from("roster_assignments").delete().eq("session_id", sessionId).eq("role", role);
-    if (delErr) throw delErr;
-    if (rows.length) {
-      const { error } = await db.from("roster_assignments").insert(rows);
-      if (error) throw error;
-    }
-    for (const h of handTo) {
-      const { error } = await db.from("roster_assignments").update({ also_roles: h.also }).eq("session_id", sessionId).eq("member_id", h.memberId).eq("role", h.role);
-      if (error) throw error;
-    }
-    await audit(user.id, "roster.edit_cell", rosterId, {
-      sessionId,
-      role,
-      members: rows.map((r) => [r.member_id, r.also_roles]),
-      ...(handTo.length ? { handedOver: handTo.map((h) => h.memberId) } : {}),
-    });
-    const problem = await recheck(rosterId, status === "revision");
-    revalidatePath(`/roster/${rosterId}`, "layout");
-    return { ok: true, message: problem ? `Saved, but the roster couldn't be re-checked: ${problem}` : "Saved." };
+    // One transaction: the cell's old line-up out, the new one in, and any hand-overs (see the
+    // replace_roster_cell migration), so a failure part-way can't leave the cell empty.
+    const { error } = await db.rpc("replace_roster_cell", { p_session_id: sessionId, p_role: role, p_rows: rows, p_handover: handTo });
+    if (error) throw error;
+    // The audit entry is written after the reply, so the dialog doesn't wait for it.
+    after(() =>
+      audit(user.id, "roster.edit_cell", rosterId, {
+        sessionId,
+        role,
+        members: rows.map((r) => [r.member_id, r.also_roles]),
+        ...(handTo.length ? { handedOver: handTo.map((h) => h.member_id) } : {}),
+      }),
+    );
+    return { ok: true, message: "Saved." };
   } catch (e) {
     return fail(e);
   }
+}
+
+/**
+ * After a hand edit (editCell): re-check the roster for hard problems (the worker saves
+ * rosters.check), then re-render the page so the table, warnings and loads show the edit.
+ * The cell editor has already closed by now, so the roster stays usable while this runs.
+ */
+export async function refreshAfterEdit(rosterId: string): Promise<ActionState> {
+  let problem: string | null;
+  try {
+    const user = await getCurrentUser();
+    if (!user?.isLead) return { ok: false, message: "Only the lead can change the roster by hand." };
+    const { status } = await draftFor(rosterId, user);
+    problem = await recheck(rosterId, status === "revision");
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/roster/${rosterId}`, "layout");
+  return problem ? { ok: false, message: `Saved, but the roster couldn't be re-checked: ${problem}` } : { ok: true, message: null };
 }
 
 /** Root only: throw away hand edits and go back to the roster as generated. */

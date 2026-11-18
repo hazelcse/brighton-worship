@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CellEditor, type EditPerson } from "./cell-editor";
+import { createContext, useContext, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { refreshAfterEdit } from "@/app/(app)/roster/actions";
+import { CellEditor, applyCellEdit, type CellEdit, type EditPerson } from "./cell-editor";
 import { isHighlighted, useHighlight } from "./highlight";
 import { hhmm, usesMinistry } from "@/lib/roster";
 import type { TeamConfig } from "@/lib/team-config";
@@ -318,7 +319,7 @@ function FilterDropdown({ className, showMinistry = true, ...f }: Filters & { cl
 /** The roster table with EM/CM and Sunday/P&P/ad-hoc filters (any combination; at least one of each). */
 export function FilteredRosterTable({
   sessions,
-  assignments,
+  assignments: saved,
   peopleFilter,
   meId,
   edit,
@@ -374,6 +375,20 @@ export function FilteredRosterTable({
     setTypes: setOwnTypes,
   };
   const hl = useHighlight();
+  // A cell edit shows in the table as soon as it's saved; the roster is then re-checked and the page
+  // re-rendered in the background (refreshAfterEdit), which brings the server's version back.
+  const [assignments, showEdit] = useOptimistic(saved, (rows: AssignmentRow[], e: CellEdit) => applyCellEdit(rows, e, edit?.people ?? []));
+  const [checking, startCheck] = useTransition();
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const onSaved = (e: CellEdit) => {
+    if (!edit) return;
+    setCheckError(null);
+    startCheck(async () => {
+      showEdit(e);
+      const r = await refreshAfterEdit(edit.rosterId);
+      if (!r.ok) setCheckError(r.message);
+    });
+  };
   const [cell, setCell] = useState<{ sessionId: string; role: string } | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -438,7 +453,9 @@ export function FilteredRosterTable({
             second line that's clipped away. From 640px the row wraps as usual and the count always shows. */}
         <div className="flex h-10 min-w-0 flex-1 flex-wrap items-center overflow-hidden sm:h-auto sm:flex-none sm:overflow-visible">
           <span aria-hidden className="h-10 w-0 sm:hidden" />
-          <span className="whitespace-nowrap text-xs text-muted">{active} sessions</span>
+          <span className="whitespace-nowrap text-xs text-muted">
+            {active} sessions{checking && <span role="status"> · checking…</span>}
+          </span>
         </div>
         {/* Right end of the row: the eye (only when the viewer is on this roster; every width), then e.g. the edited / published toggle. */}
         {(hasMine || toolbarEnd) && (
@@ -448,6 +465,11 @@ export function FilteredRosterTable({
           </div>
         )}
       </div>
+      {checkError && (
+        <p role="status" className="text-sm text-danger">
+          {checkError}
+        </p>
+      )}
       {active === 0 ? (
         <p className="rounded-xl border border-border bg-surface p-4 text-sm text-muted">No sessions match these filters.</p>
       ) : (
@@ -488,6 +510,7 @@ export function FilteredRosterTable({
                 people={edit.people}
                 shares={edit.shares}
                 onClose={close}
+                onSaved={onSaved}
               />
             )}
           </div>

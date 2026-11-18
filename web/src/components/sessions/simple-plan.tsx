@@ -137,7 +137,7 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
   const key = keyLabel(item.key, item.transpose_to);
   const steps = item.sequence ?? [];
   const ls = lines(steps);
-  // The links set for this song in the session (as in the full view), under its sequence.
+  // The links set for this song in the session (as in the full view), under its title and above its sequence.
   const links = (item.links ?? []).filter((l) => l.url);
   return (
     <li className="space-y-1">
@@ -147,25 +147,25 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
         {item.bpm && ` - ${item.bpm}bpm`}
         {lead && ` [${lead}]`}
       </p>
-      {steps.length > 0 && (
-        <div className="pl-4">
-          {ls.map((l, i) => (
-            <SeqLine key={l[0]?.id ?? i} steps={l} first={i === 0} last={i === ls.length - 1} highlight={highlight} />
-          ))}
-        </div>
-      )}
       {links.length > 0 && (
         // "Live version: https://…", one per line. A link with no name is just its address.
         <ul className="space-y-0.5 pl-4 leading-6">
           {links.map((l, i) => (
             <li key={i}>
               {l.label && `${l.label}: `}
-              <a href={l.url} target="_blank" rel="noopener noreferrer" className="break-all underline underline-offset-2 hover:text-accent">
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className="break-all text-blue-600 underline underline-offset-2 hover:text-blue-800">
                 {l.url}
               </a>
             </li>
           ))}
         </ul>
+      )}
+      {steps.length > 0 && (
+        <div className="pl-4">
+          {ls.map((l, i) => (
+            <SeqLine key={l[0]?.id ?? i} steps={l} first={i === 0} last={i === ls.length - 1} highlight={highlight} />
+          ))}
+        </div>
       )}
     </li>
   );
