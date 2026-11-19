@@ -63,7 +63,8 @@ async function RootServices({ userId, group }: { userId: string; group?: TeamGro
             <h2 className="text-sm font-medium text-muted">{formatDate(date, { weekday: "long", day: "numeric", month: "long" })}</h2>
             <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
               {onDay.map((s) => (
-                <ServiceCard key={s.session.rosterSessionId} service={s} />
+                // An observer's cards open the service page (its teams and the session), like a lead's.
+                <ServiceCard key={s.session.rosterSessionId} service={s} detailBase={group ? "/sessions/services" : undefined} />
               ))}
             </div>
           </section>

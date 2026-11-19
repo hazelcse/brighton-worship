@@ -418,7 +418,15 @@ export async function publishSession(id: string): Promise<SaveResult> {
           .update({ links: linksAfter, draft_plan: null, draft_links: null, draft_updated_at: null, draft_updated_by: null, published_at: now, published_by: user.id })
           .eq("id", id);
         if (upErr) throw upErr;
-        await db.from("worship_session_revisions").insert({ session_id: id, published_at: now, published_by: user.id, changes });
+        await db.from("worship_session_revisions").insert({
+          session_id: id,
+          published_at: now,
+          published_by: user.id,
+          changes,
+          // What it replaced, for the session page's "Show changes".
+          plan_before: before,
+          links_before: linksBefore,
+        });
         // "Session for … has been updated", in the band's updates.
         if (row.roster_session_id) {
           await db.from("roster_updates").insert({ kind: "session_updated", session_id: row.roster_session_id, actor_id: user.id });

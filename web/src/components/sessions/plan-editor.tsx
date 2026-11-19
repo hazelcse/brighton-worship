@@ -843,8 +843,21 @@ function SheetIcon() {
   );
 }
 
-/** A button per library song in the set, opening its songsheet in the session's key. */
-function SectionSongsheets({ sessionId, items, sheetKeys }: { sessionId: string; items: PlanItem[]; sheetKeys: Record<string, string[]> }) {
+/**
+ * A button per song with a songsheet, opening it in the session's key: under each set in the full
+ * view, and every song's at the bottom of the simplified view (with its own `className`).
+ */
+export function SectionSongsheets({
+  sessionId,
+  items,
+  sheetKeys,
+  className = "mt-3 border-t border-border pt-3",
+}: {
+  sessionId: string;
+  items: PlanItem[];
+  sheetKeys: Record<string, string[]>;
+  className?: string;
+}) {
   // A song that changes key gets a second sheet (`to`) unless its songsheet already covers the change.
   type Sheet = { item: PlanItem; key: string | null; label: string | null; to: boolean };
   const [open, setOpen] = useState<Sheet | null>(null);
@@ -868,7 +881,7 @@ function SectionSongsheets({ sessionId, items, sheetKeys }: { sessionId: string;
     ];
   });
   return (
-    <div className="mt-3 border-t border-border pt-3">
+    <div className={className}>
       <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-muted">Songsheets</p>
       <div className="flex flex-wrap gap-2">
         {sheets.map((sh) => (

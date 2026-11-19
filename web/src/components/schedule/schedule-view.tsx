@@ -7,6 +7,7 @@ import { ROLE_LABEL as CATALOGUE_LABEL } from "@/lib/team-config";
 import { rehearsalTime, sessionTime } from "@/lib/reminder";
 import type { SessionDetail } from "@/lib/sessions";
 import { SessionCard } from "@/components/sessions/session-card";
+import { SERVICE_BAR } from "@/components/sessions/service-card";
 import type { CoverDetail, MySession } from "@/lib/serving";
 import type { AbsenceInput } from "@/lib/absence";
 import type { AbsenceClash } from "@/lib/serving";
@@ -107,24 +108,28 @@ const MORE = 14;
  * services), "EM/CM PnP", "EM/CM Rehearsal", "YF Svc" (Youth's Saturday service), "Other".
  */
 function serviceChips(services: ServiceEvent[]) {
-  const chips: { label: string; dot: string }[] = [];
+  // One dot per kind of service in the chip (e.g. "EM/CM Svc" gets EM's and CM's colours).
+  const chips: { label: string; dots: string[] }[] = [];
+  const dotsOf = (list: ServiceEvent[]) => [...new Set(list.map(serviceDot))];
   const sunday = services.filter((s) => s.kind.endsWith("_sunday"));
-  if (sunday.length) chips.push({ label: ministriesLabel(sunday, "Svc"), dot: SERVICE_DOT.sunday });
+  if (sunday.length) chips.push({ label: ministriesLabel(sunday, "Svc"), dots: dotsOf(sunday) });
   const pnp = services.filter((s) => s.kind.endsWith("_pnp"));
-  if (pnp.length) chips.push({ label: ministriesLabel(pnp, "PnP"), dot: SERVICE_DOT.pnp });
-  if (services.some((s) => s.kind === "saturday")) chips.push({ label: "YF Svc", dot: SERVICE_DOT.saturday });
+  if (pnp.length) chips.push({ label: ministriesLabel(pnp, "PnP"), dots: dotsOf(pnp) });
+  const saturday = services.filter((s) => s.kind === "saturday");
+  if (saturday.length) chips.push({ label: "YF Svc", dots: dotsOf(saturday) });
   const rehearsals = services.filter((s) => s.kind === "rehearsal");
-  if (rehearsals.length) chips.push({ label: rehearsalLabel(rehearsals), dot: SERVICE_DOT.rehearsal });
-  if (services.some((s) => s.kind === "custom")) chips.push({ label: "Other", dot: SERVICE_DOT.custom });
+  if (rehearsals.length) chips.push({ label: rehearsalLabel(rehearsals), dots: dotsOf(rehearsals) });
+  const custom = services.filter((s) => s.kind === "custom");
+  if (custom.length) chips.push({ label: "Other", dots: dotsOf(custom) });
   return chips;
 }
 
-/** Dot colours for services, Google Calendar style. */
-const SERVICE_DOT = { sunday: "bg-accent", pnp: "bg-[#5f7f9e]", saturday: "bg-[#7f9a7a]", rehearsal: "bg-[#c2a26a]", custom: "bg-muted" };
-function serviceDot(kind: string) {
-  if (kind === "rehearsal") return SERVICE_DOT.rehearsal;
-  if (kind === "saturday") return SERVICE_DOT.saturday;
-  return kind.endsWith("_sunday") ? SERVICE_DOT.sunday : kind.endsWith("_pnp") ? SERVICE_DOT.pnp : SERVICE_DOT.custom;
+/**
+ * A service's dot: its colour on the Services page (SERVICE_BAR, a deeper shade of its card's
+ * tint). A rehearsal takes its service's colour.
+ */
+function serviceDot(s: { kind: string; forSession?: { kind: string } | null }) {
+  return SERVICE_BAR[s.forSession?.kind ?? s.kind] ?? SERVICE_BAR.custom;
 }
 
 /** One colour per person, so their bars are easy to follow across the month. */
@@ -578,7 +583,7 @@ export function ScheduleView({ absences: all, services, today, userId, isLead, r
                       ? serviceChips(servicesByDate.get(day) ?? [])
                       : (mineByDate.get(day) ?? []).map((m) => ({
                           label: `${m.kind === "rehearsal" ? rehearsalLabel([m]) : [ministryOf(m.kind), m.kind.endsWith("_pnp") ? "PnP" : "Svc"].filter(Boolean).join(" ")} · ${ROLE_SHORT[m.role] ?? CATALOGUE_LABEL[m.role] ?? m.role}`,
-                          dot: serviceDot(m.kind),
+                          dots: [serviceDot(m)],
                         }));
                     if (!chips.length) return null;
                     // Clicks pass through to the day box, which lists every service that day.
@@ -590,7 +595,11 @@ export function ScheduleView({ absences: all, services, today, userId, isLead, r
                       >
                         {chips.map((c) => (
                           <span key={c.label} className="flex min-w-0 items-center gap-1 text-[9px] font-medium leading-[14px] text-foreground sm:text-[10px]">
-                            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} />
+                            <span aria-hidden className="flex shrink-0 gap-0.5">
+                              {c.dots.map((d) => (
+                                <span key={d} className={`h-1.5 w-1.5 rounded-full ${d}`} />
+                              ))}
+                            </span>
                             <span className="truncate">{c.label}</span>
                           </span>
                         ))}
@@ -647,7 +656,9 @@ export function ScheduleView({ absences: all, services, today, userId, isLead, r
                     onClick={() => openSession(s.id, s.kind === "rehearsal")}
                     className="flex w-full items-baseline gap-3 px-4 py-2.5 text-left text-sm hover:bg-background"
                   >
-                    <span className="w-24 shrink-0 text-muted">{formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}</span>
+                    {/* A quote-block style bar in the service's colour from the Services page (a rehearsal: its service's). */}
+                    <span aria-hidden className={`w-[3px] shrink-0 self-stretch rounded-full ${serviceDot(s)}`} />
+                    <span className="-ml-0.5 w-24 shrink-0 text-muted">{formatDate(s.date, { weekday: "short", day: "numeric", month: "short" })}</span>
                     <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
                   </button>
                 </li>
@@ -861,7 +872,7 @@ function DayList({
                   onClick={() => onOpenSession(s.id, s.kind === "rehearsal")}
                   className="flex w-full items-baseline gap-2.5 px-5 py-1.5 text-left text-xs hover:bg-background"
                 >
-                  <span aria-hidden className={`h-2 w-2 shrink-0 translate-y-px rounded-full ${serviceDot(s.kind)}`} />
+                  <span aria-hidden className={`h-2 w-2 shrink-0 translate-y-px rounded-full ${serviceDot(s)}`} />
                   <span className="min-w-0 flex-1">
                     {s.kind === "rehearsal" ? rehearsalLabel([s]) : s.name} · {ROLE_SHORT[s.role] ?? CATALOGUE_LABEL[s.role] ?? s.role}
                     <RehearsalFor s={s.forSession} />
@@ -886,7 +897,7 @@ function DayList({
                     onClick={() => onOpenSession(s.id, s.kind === "rehearsal")}
                     className="flex w-full items-baseline gap-2.5 px-5 py-1.5 text-left text-xs hover:bg-background"
                   >
-                    <span aria-hidden className={`h-2 w-2 shrink-0 translate-y-px rounded-full ${serviceDot(s.kind)}`} />
+                    <span aria-hidden className={`h-2 w-2 shrink-0 translate-y-px rounded-full ${serviceDot(s)}`} />
                     <span className="min-w-0 flex-1">
                       {s.kind === "rehearsal" ? rehearsalLabel([s]) : s.name}
                       <RehearsalFor s={s.forSession} />

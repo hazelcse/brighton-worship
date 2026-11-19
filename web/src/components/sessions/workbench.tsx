@@ -16,6 +16,7 @@ import {
 } from "@/app/(app)/sessions/actions";
 import { PlanEditor, type EditorApi, type Singer } from "@/components/sessions/plan-editor";
 import { SimplePlan } from "@/components/sessions/simple-plan";
+import { PlanDiff } from "@/components/sessions/plan-diff";
 import { PartCues } from "@/components/sessions/part-cues";
 import { SongBankPanel, type BankSong } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
@@ -564,6 +565,8 @@ export function Workbench({
   /** Worship leaders of a published session with a revision: which version they're looking at. */
   const [showPublished, setShowPublished] = useState(false);
   const [changesClosed, setChangesClosed] = useState(false);
+  /** "Show changes": the plan with what the last publishing took out and put in marked, like a diff. */
+  const [showDiff, setShowDiff] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
   /** The simplified view: the whole set as one block of text. Remembered on this device. */
@@ -591,6 +594,21 @@ export function Workbench({
   const links = editing ? draftLinks : viewingRevision ? revision!.links : initial.links;
   const shownStatus = initial.status;
   const published = shownStatus === "published";
+
+  // What "Show changes" compares: a worship leader's revised draft with the published version, or
+  // the published version with the one the last publishing replaced.
+  const diff = editing
+    ? null
+    : viewingRevision
+      ? { before: initial.plan, linksBefore: initial.links, caption: "Your revised draft compared with the published version (what the band sees now)." }
+      : initial.previous
+        ? {
+            before: initial.previous.plan,
+            linksBefore: initial.previous.links,
+            caption: `Changes ${initial.previous.publishedBy ? `published by ${initial.previous.publishedBy}` : "published"} on ${new Date(initial.previous.publishedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.`,
+          }
+        : null;
+  const diffing = showDiff && diff !== null;
 
   // ---- editing --------------------------------------------------------------
   // Nothing saves until the floppy disk, except when the lock lapses (then the edits are autosaved).
@@ -653,6 +671,8 @@ export function Workbench({
     base.current = res.version;
     setDirty(false);
     setShowPublished(false);
+    // Editing has one song open at a time: several left open from viewing close.
+    setOpenIds((o) => (o.size > 1 ? new Set() : o));
     editingRef.current = true;
     setEditing(true);
   }, [initial.id, router]);
@@ -856,20 +876,20 @@ export function Workbench({
   const toggleOpen = useCallback(
     (item: PlanItem) => {
       const opening = !openIds.has(item.id);
-      if (projection) {
-        // Projection: each song opens and closes on its own, so they can all be open at once.
+      if (!editing) {
+        // Viewing (and Projection): each song opens and closes on its own, so they can all be open at once.
         const next = new Set(openIds);
         if (opening) next.add(item.id);
         else next.delete(item.id);
         setOpenIds(next);
       } else {
-        // One open at a time: opening one closes the rest.
+        // Editing: one open at a time, so opening one closes the rest.
         setOpenIds(opening ? new Set([item.id]) : new Set());
       }
       if (opening) select(item);
       else if (selectedId === item.id) setSelectedId(null);
     },
-    [openIds, select, selectedId, projection],
+    [openIds, select, selectedId, editing],
   );
 
   /** The session's worship leaders and vocalists. */
@@ -1065,11 +1085,18 @@ export function Workbench({
               </>
             ) : (
               <>
-                <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className="max-sm:mr-auto">
+                <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className={diff ? "" : "max-sm:mr-auto"}>
                   {/* Eye */}
                   <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
                   <circle cx="12" cy="12" r="3" />
                 </IconButton>
+                {diff && (
+                  <IconButton label={diffing ? "Hide changes" : "Show changes (added and taken out)"} onClick={() => setShowDiff((v) => !v)} pressed={diffing} className="max-sm:mr-auto">
+                    {/* Plus over minus, like a diff */}
+                    <path d="M12 4v8M8 8h8" />
+                    <path d="M8 18h8" />
+                  </IconButton>
+                )}
                 {canEdit && (
                 <>
                   {published && revision && (
@@ -1168,10 +1195,25 @@ export function Workbench({
           </details>
         )}
 
-        <SessionLinks links={links} editing={editing} dialog={linkDialog} onDialog={setLinkDialog} onChange={changeLinks} />
+        {!diffing && <SessionLinks links={links} editing={editing} dialog={linkDialog} onDialog={setLinkDialog} onChange={changeLinks} />}
 
-        {!editing && simple ? (
-          <SimplePlan plan={plan} leadName={(id) => (id ? (singers.find((x) => x.id === id)?.name ?? null) : null)} highlight={initial.myRole} />
+        {diffing ? (
+          <PlanDiff
+            before={diff.before}
+            after={plan}
+            linksBefore={diff.linksBefore}
+            linksAfter={links}
+            leadName={(id) => (id ? (initial.band.find((m) => m.id === id)?.name ?? null) : null)}
+            caption={diff.caption}
+          />
+        ) : !editing && simple ? (
+          <SimplePlan
+            plan={plan}
+            leadName={(id) => (id ? (singers.find((x) => x.id === id)?.name ?? null) : null)}
+            highlight={initial.myRole}
+            sheetsFor={api.sheetsFor}
+            sheetKeys={initial.sheetKeys}
+          />
         ) : (
           <>
             {!editing && <PartCues role={initial.myRole} cues={partCues(plan.flatMap((sec) => sec.items), initial.myRole)} />}

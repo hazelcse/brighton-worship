@@ -71,7 +71,7 @@ function ServiceDaySection({ day }: { day: ServiceDay }) {
       <h2 className="text-sm font-medium text-muted">{label}</h2>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         {day.services.map((s) => (
-          <ServiceCard key={s.session.rosterSessionId} service={s} />
+          <ServiceCard key={s.session.rosterSessionId} service={s} detailBase="/sessions/services" />
         ))}
       </div>
     </section>

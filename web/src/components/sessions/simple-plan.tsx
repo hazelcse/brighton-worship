@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
+import { SectionSongsheets } from "@/components/sessions/plan-editor";
 import { isLongComment, keyLabel, partInfo, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 const isChorus = (s: SeqStep | undefined) => Boolean(s && /^chorus\b/i.test(s.name.trim()));
@@ -167,6 +168,8 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
           ))}
         </div>
       )}
+      {/* The song's notes, under its sequence. */}
+      {item.notes.trim() && <p className="whitespace-pre-line pl-4 text-xs">Notes: {item.notes.trim()}</p>}
     </li>
   );
 }
@@ -176,10 +179,28 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
  * with key, tempo and lead, and the sequence written out with short names (V1, C).
  * Transitions sit in their place between the songs, unnumbered, as in the full view.
  */
-export function SimplePlan({ plan, leadName, highlight }: { plan: PlanSection[]; leadName: (id: string | null) => string | null; highlight: string | null }) {
+export function SimplePlan({
+  plan,
+  leadName,
+  highlight,
+  sheetsFor = null,
+  sheetKeys = {},
+}: {
+  plan: PlanSection[];
+  leadName: (id: string | null) => string | null;
+  highlight: string | null;
+  /** Once the plan's published: the session's id, for every song's songsheet at the bottom (as in the full view). */
+  sheetsFor?: string | null;
+  sheetKeys?: Record<string, string[]>;
+}) {
   const sections = plan.filter((s) => s.items.length > 0);
   if (!sections.length) return <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">Nothing planned yet.</p>;
+  const sheets = sheetsFor && (
+    // Every song's songsheet in one place under the run sheet, in the app's own font (not the run sheet's Arial).
+    <SectionSongsheets sessionId={sheetsFor} items={sections.flatMap((s) => s.items)} sheetKeys={sheetKeys} className="rounded-xl border border-border bg-surface p-3 sm:p-4" />
+  );
   return (
+    <>
     <article
       aria-label="Simplified set"
       className="space-y-6 rounded-xl border border-border bg-surface p-4 text-sm sm:p-5"
@@ -209,5 +230,7 @@ export function SimplePlan({ plan, leadName, highlight }: { plan: PlanSection[];
         </section>
       ))}
     </article>
+    {sheets}
+    </>
   );
 }

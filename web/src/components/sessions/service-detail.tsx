@@ -89,16 +89,30 @@ export async function ServiceDetail({
   team,
   sessionId,
   back,
+  observer = false,
 }: {
   userId: string;
   team: Team;
   sessionId: string;
   back: string;
+  /**
+   * An observer's view: `team` is just the team the service was opened from (it's on none), so no
+   * "(your team)" and no linking; the plan opens in its worship team.
+   */
+  observer?: boolean;
 }) {
   if (!/^[0-9a-f-]{36}$/i.test(sessionId)) notFound();
   const service = await loadServiceDetail(userId, team, sessionId);
   if (!service) notFound();
   const custom = service.kind === "custom";
+  const worshipTeam = service.teams.find((t) => t.team.kind === "worship")?.team;
+  const planHref = !service.session?.planId
+    ? null
+    : observer
+      ? worshipTeam && `/teams/${worshipTeam.slug}/open?next=${encodeURIComponent(`/sessions/${service.session.planId}`)}`
+      : service.session.canOpen
+        ? `/sessions/${service.session.planId}`
+        : null;
 
   const header = (
     <div className="space-y-3">
@@ -125,7 +139,7 @@ export async function ServiceDetail({
               : " · linked automatically (a standard service)"}
           </p>
         </div>
-        {custom && (
+        {custom && !observer && (
           <ServiceLinkButton
             sessionId={service.ownSessionId}
             date={service.date}
@@ -143,7 +157,7 @@ export async function ServiceDetail({
           s={{ ...t.session, plan: null, role: null }}
           songs={false}
           dated={false}
-          kicker={`${t.team.name}${t.team.id === team.id ? " (your team)" : ""}${t.rosterStatus === "draft" ? " · draft roster" : ""}`}
+          kicker={`${t.team.name}${!observer && t.team.id === team.id ? " (your team)" : ""}${t.rosterStatus === "draft" ? " · draft roster" : ""}`}
         />
       ))}
     </div>
@@ -183,9 +197,10 @@ export async function ServiceDetail({
                   Songs and sequence, by {service.session.team}
                 </p>
               </div>
-              {service.session.canOpen && service.session.planId && (
+              {planHref && (
                 <Link
-                  href={`/sessions/${service.session.planId}`}
+                  href={planHref}
+                  prefetch={observer ? false : undefined}
                   className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium hover:border-accent/50"
                 >
                   Open plan

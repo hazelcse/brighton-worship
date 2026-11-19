@@ -201,7 +201,9 @@ it narrows the calendar's services and rehearsals, the absences and the people l
 sessions and people with an EM share; EM Media = Main Media's sessions and members (it only crews
 the EM service); CM = CM sessions and people with a CM share; Youth = Youth teams' sessions and
 members. Event chips name the ministries: "EM/CM Svc", "EM/CM PnP",
-"EM/CM Rehearsal", "YF Svc" (green dot), "YF Rehearsal", "Other". Below 768px the create button floats bottom-right as a round 56px button, and swiping
+"EM/CM Rehearsal", "YF Svc", "YF Rehearsal", "Other". Each chip's dot (and the day popup's) is
+the service's Services-page colour (`SERVICE_BAR`, a deeper shade of its card tint; a rehearsal
+takes its service's), one dot per service in the chip, e.g. "EM/CM Svc" shows EM's and CM's. Below 768px the create button floats bottom-right as a round 56px button, and swiping
 the calendar sideways changes month (left = next, right = previous; mostly-horizontal swipes of
 50px+ only, with a short slide-in).
 
@@ -308,7 +310,8 @@ Cancel / Save), title + badges (the badges in one row, to the right of the title
 otherwise as a row under it), a row of 36px icon buttons and "Publish". **Phones (below 640px)**:
 the date line moves under the title and badges, shortened to one line ("Sun, 15 Nov 2026 ·
 Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row the eye
-(simplified view) stays at the left and Undo / Edit / Publish sit at the right; while editing,
+(simplified view) and, when there's something to compare, the ± "Show changes" button stay at the
+left and Undo / Edit / Publish sit at the right; while editing,
 × and save sit at the left and + at the right. **Leaving while editing**: any in-app link
 ("← Sessions", the nav) opens a 384px dialog like the save prompt: "Save before you go?" (or "You're
 still editing" with nothing changed), an × in the top right corner to stay, and Leave anyway / Save
@@ -320,7 +323,17 @@ editing or saved in the meantime: then they're dropped, and the alert says why. 
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
 then the plan editor (or, in the simplified view, the run sheet with each song's links, in blue, under its title and above its sequence,
-one "Name: address" per line, no bullets, and transitions in italics between the songs, unnumbered) (item cards, 2 → 4 field columns).
+one "Name: address" per line, no bullets, the song's notes in small text under its sequence, and transitions in italics between the songs, unnumbered; once published, a separate card under it
+holds every song's **Songsheets** buttons, the same buttons as under each set in the full view, in the app's own font) (item cards, 2 → 4 field columns).
+Outside editing, songs open and close on their own (several can be open at once); while editing,
+opening one closes the rest. **Show changes** (± button, pressed = on): the plan becomes a run sheet
+like the simplified view comparing it with the version the last publishing replaced (for worship
+leaders looking at their revised draft: the draft against the published version), with a caption
+and "Added" / "Taken out" key on top. Anything taken out is light red (red-100) and struck through
+with a thin red line; anything put in is light green (green-100). A whole song or transition in or
+out is a tinted block with a 4px green or red bar down its left; a kept one marks each change in
+place (title, key, tempo, lead, links, sequence steps, instruments, step comments, then notes under the sequence), and a
+song that moved has a small amber "Moved" pill. Session links appear at the top only when they changed.
 In a sequence you read (both views), a step comment of up to 24 characters sits beside its step;
 a step with a longer one starts a line of its own ("| Chorus (Bass) (Drums)", no bar after it) and
 the next step starts a new line after its comment. The full view puts that comment on the line
@@ -546,20 +559,29 @@ columns, each linking to that member's page; every link switches root to this te
 An observer (one read-only account per group, on no team, created on `/teams`) sees the same frame as root:
 "Brighton Serving" with its group's tag (YF for Youth), links Schedule (Roster, Absences), Team and
 **Services** (no Songs, no Tracking), and an "Observer" pill next to the profile button (as root
-gets "Root" and developers "Dev"). Everything is limited to its group's teams:
+gets "Root" and developers "Dev"; unlike root's, it never adds " · <team>" when a team is open, and
+the profile menu has no "In <team>" line, since an observer sees every team in its group).
+Everything is limited to its group's teams:
 
 - **Home**: the **wide** page. Greeting and a muted line, then one section per day in the coming
   week (today + 6) with a service: a muted date heading, then that day's service cards (session,
   band, media crew; 1 → 2 per row from 1024px), e.g. the Saturday service and any ad hoc events. A
   day with only a media crew shows it in its own card. No countdown, notices or broadcasts.
-- **Roster** and **Services**: root's pages, filtered to the group's teams.
+- **Roster** and **Services**: root's pages, filtered to the group's teams. A service card (on
+  Services and Home) opens the service page at `/sessions/services/<session>`, as a lead's does:
+  every team's card on the left and the session on the right (wide page), with no "(your team)"
+  and no linking button; "Open plan" opens the plan in the worship team.
 - **Absences**: no Create absence button and no "Create absence" in the day popup. An observer that
   sees absences gets a lead's calendar (everyone on the group's teams, every service), but its filter
   icon opens team tick boxes only (e.g. Youth Worship, Youth Media; none ticked = every team), no
   people. One that doesn't gets no absences at all: the calendar shows only the services and
-  rehearsals, and the side box is **Upcoming services** (date in a 96px muted column, then the name;
+  rehearsals, and the side box is **Upcoming services** (a 3px rounded bar, like a quote block, in a
+  deeper shade of the service's Services-page card tint, `SERVICE_BAR`; a rehearsal takes its
+  service's), then the date in a 96px muted column, then the name;
   each opens the session panel) instead of Absences, and its Schedule menu calls the page
-  **Calendar** instead of Absences.
+  **Calendar** instead of Absences. Either way a service the group's worship and media teams both
+  serve at (standard: same kind that day; ad hoc: linked) is one event, not one per team; it opens
+  the worship team's session and counts for both teams in the team filter.
 - **Team**: above the gallery, a row of pill links, one per group team (the current one dark), and
   "Manage permissions" on the right (only an observer that manages permissions); following a pill switches team. The gallery has no "+ User".
 - **Manage permissions** (only an observer that manages permissions): as a lead's (team name under the title, Transfer lead at the bottom). A

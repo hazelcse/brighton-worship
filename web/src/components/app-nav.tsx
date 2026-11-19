@@ -428,7 +428,8 @@ export function AppNav({ user: given }: { user: NavUser }) {
                   className="rounded-full border border-accent/70 bg-accent/10 px-2 py-0.5 text-xs font-semibold text-orange-200"
                 >
                   {user.isRoot ? "Root" : "Observer"}
-                  {user.openTeam && ` · ${user.openTeam}`}
+                  {/* An observer sees all its group's teams, so it isn't shown as being in one. */}
+                  {user.isRoot && user.openTeam && ` · ${user.openTeam}`}
                 </span>
               )}
               {menuOpen && (
@@ -440,7 +441,7 @@ export function AppNav({ user: given }: { user: NavUser }) {
                       {user.email && (user.isDeveloper ? " · developer" : user.isRoot ? " · root" : user.isObserver ? " · observer" : user.isLead && " · lead")}
                     </p>
                     {user.memberOf?.length === 1 && <p className="mt-1 text-xs text-muted">{user.memberOf[0].name}</p>}
-                    {user.openTeam && (
+                    {user.openTeam && !user.isObserver && (
                       <p className="mt-1 text-xs text-muted">
                         In {user.openTeam} ·{" "}
                         <a href="/serving" className="font-medium text-accent hover:underline">

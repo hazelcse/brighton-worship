@@ -57,6 +57,19 @@ export const SERVICE_TINT: Record<string, string> = {
 };
 
 /**
+ * The same colours, deeper, for a thin marker (e.g. the bar on the observer's Upcoming services
+ * list), where the soft tints would barely show. Keep each in step with its SERVICE_TINT.
+ */
+export const SERVICE_BAR: Record<string, string> = {
+  em_sunday: "bg-[#9cae86]",
+  cm_sunday: "bg-[#8aa0b8]",
+  em_pnp: "bg-[#c9a27e]",
+  cm_pnp: "bg-[#a796b8]",
+  custom: "bg-[#c99a9a]",
+  saturday: "bg-[#cdb66a]",
+};
+
+/**
  * A service as root sees it: its session (plan and band) and, for services that have one (EM Sunday,
  * EM PnP, YF Saturday), its media crew at the bottom. Opening it switches root to the worship team
  * first (root works in one team at a time), then opens the plan.
@@ -64,12 +77,29 @@ export const SERVICE_TINT: Record<string, string> = {
 export function ServiceCard({
   service,
   ownTeam,
+  detailBase,
 }: {
   service: Service;
   /** A team's own Services page; `detailBase` (its lead's): each card opens the service at `${detailBase}/<its session>`. */
   ownTeam?: { id: string; slug: string; opensPlans: boolean; detailBase?: string };
+  /**
+   * An observer's cards: each opens the service page (every team's card and the session, as a lead
+   * sees it) at `${detailBase}/<the service's own session>`, without opening a team.
+   */
+  detailBase?: string;
 }) {
   const plan = service.session.plan;
+  if (detailBase) {
+    const sessionId = service.sessionIdByTeam[service.teamIds[0]!];
+    return (
+      <SessionCard
+        s={{ ...service.session, plan: plan && { ...plan, canOpen: false } }}
+        headerTint={SERVICE_TINT[service.session.kind]}
+        href={sessionId ? `${detailBase}/${sessionId}` : undefined}
+        extra={service.crew ? <Crew crew={service.crew} /> : undefined}
+      />
+    );
+  }
   // A team's own Services page: only its own plans open (straight, no team switch); another team's
   // session shows its songs and people without a link.
   if (ownTeam) {

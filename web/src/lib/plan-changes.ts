@@ -169,7 +169,20 @@ function songChanges(a: PlanItem, b: PlanItem, song: string, names: (id: string)
   return out;
 }
 
+/**
+ * The band's notice only says that a song's sequence changed, in one line: the steps, parts and
+ * comments themselves are shown in the session's "Show changes" view (see plan-diff).
+ */
 function sequenceChanges(before: SeqStep[] | null, after: SeqStep[] | null, song: string): string[] {
+  const a = before ?? [];
+  const b = after ?? [];
+  if (!a.length && b.length) return [`A sequence has been added to ${song}`];
+  if (a.length && !b.length) return [`The sequence for ${song} has been cleared`];
+  return sequenceDetails(a, b, song).length ? [`The song sequence for ${song} has changed`] : [];
+}
+
+/** Every change to a sequence in words (kept for telling whether anything changed). */
+function sequenceDetails(before: SeqStep[] | null, after: SeqStep[] | null, song: string): string[] {
   const a = before ?? [];
   const b = after ?? [];
   if (!a.length && b.length) {

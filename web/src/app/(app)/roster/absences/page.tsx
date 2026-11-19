@@ -57,7 +57,7 @@ async function Schedule({ searchParams }: { searchParams: Promise<{ cover?: stri
     user.isRoot
       ? loadTeams().then((ts) => loadServices(ts.map((t) => t.id), new Map(ts.map((t) => [t.id, t]))))
       : observed
-        ? loadServices(observed.map((t) => t.id), undefined, { byTeam: Boolean(teamsOf) })
+        ? loadServices(observed.map((t) => t.id), undefined, { byTeam: Boolean(teamsOf), merge: observed })
         : user.isLead && user.team
           ? loadServices([user.team.id])
           : Promise.resolve([]),
@@ -96,7 +96,11 @@ async function Schedule({ searchParams }: { searchParams: Promise<{ cover?: stri
  * one roster: the published one if there is one, else the previous published (archived) one, else
  * the draft being planned.
  */
-async function loadServices(teamIds: string[], teamOf?: Map<string, Team>, { byTeam = false } = {}): Promise<ServiceEvent[]> {
+async function loadServices(
+  teamIds: string[],
+  teamOf?: Map<string, Team>,
+  { byTeam = false, merge }: { byTeam?: boolean; merge?: Team[] } = {},
+): Promise<ServiceEvent[]> {
   const db = createAdminClient();
   const { data: rosters } = await db.from("rosters").select("id, team_id, starts_on, status").in("team_id", teamIds);
   const rank = (s: string) => (s === "published" ? 0 : s === "archived" ? 1 : s === "draft" ? 2 : 3);
@@ -111,7 +115,7 @@ async function loadServices(teamIds: string[], teamOf?: Map<string, Team>, { byT
   if (!ids.length) return [];
   const { data } = await db
     .from("roster_sessions")
-    .select("id, date, name, kind, ministry, rehearsal_date, roster_id")
+    .select("id, date, name, kind, ministry, rehearsal_date, roster_id, link_id")
     .in("roster_id", ids)
     .eq("cancelled", false)
     .order("date")
@@ -127,9 +131,15 @@ async function loadServices(teamIds: string[], teamOf?: Map<string, Team>, { byT
     if (team?.kind === "media") return { areas: ["em_media"] };
     return { areas: s.ministry === "em" ? ["em_worship"] : s.ministry === "cm" ? ["cm"] : ["em_worship", "cm"] };
   };
-  return (data ?? [])
+  // An observer: a service its worship and media teams both serve at is one event, not one per team
+  // (standard: the same kind that day; ad hoc: linked). The worship team's session leads (it opens
+  // with the band), and it's tagged with every team serving at it for the team filter.
+  const sessions = merge ? mergeLinked(data ?? [], teamOfRoster, merge) : (data ?? []).map((s) => ({ ...s, rosters: [s.roster_id as string] }));
+  const areasFor = (s: { roster_id: string; ministry: string | null; rosters: string[] }): { areas?: Area[] } =>
+    byTeam ? { areas: [...new Set(s.rosters.map((r) => teamOfRoster.get(r)!))] } : areasOf(s);
+  return sessions
     .flatMap((s): ServiceEvent[] => [
-      { id: s.id, date: s.date, name: s.name, kind: s.kind ?? "custom", ...areasOf(s) },
+      { id: s.id, date: s.date, name: s.name, kind: s.kind ?? "custom", ...areasFor(s) },
       ...(s.rehearsal_date
         ? [
             {
@@ -138,12 +148,38 @@ async function loadServices(teamIds: string[], teamOf?: Map<string, Team>, { byT
               name: `Rehearsal: ${s.name}`,
               kind: "rehearsal",
               forSession: { date: s.date, name: s.name, kind: s.kind ?? "custom" },
-              ...areasOf(s),
+              ...areasFor(s),
             },
           ]
         : []),
     ])
     .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+}
+
+type SessionRow = { id: string; date: string; name: string; kind: string | null; ministry: string | null; rehearsal_date: string | null; roster_id: string; link_id: string | null };
+
+/**
+ * Linked sessions of different teams as one (the worship team's first), with every roster serving
+ * at it: standard ones by kind and date, ad hoc ones by link. Unlinked ad hoc sessions stay apart.
+ */
+function mergeLinked(rows: SessionRow[], teamOfRoster: Map<string, string>, teams: Team[]): (SessionRow & { rosters: string[] })[] {
+  const kindOf = new Map(teams.map((t) => [t.id, t.kind]));
+  const worshipFirst = [...rows].sort(
+    (a, b) => Number(kindOf.get(teamOfRoster.get(a.roster_id)!) !== "worship") - Number(kindOf.get(teamOfRoster.get(b.roster_id)!) !== "worship"),
+  );
+  const byKey = new Map<string, SessionRow & { rosters: string[] }>();
+  for (const s of worshipFirst) {
+    const kind = s.kind ?? "custom";
+    const key = kind !== "custom" ? `${s.date}|${kind}` : s.link_id ? `link|${s.link_id}` : `id|${s.id}`;
+    const cur = byKey.get(key);
+    if (!cur) byKey.set(key, { ...s, rosters: [s.roster_id] });
+    else {
+      cur.rosters.push(s.roster_id);
+      // The worship session leads; a rehearsal only one team has still shows.
+      cur.rehearsal_date ??= s.rehearsal_date;
+    }
+  }
+  return [...byKey.values()];
 }
 
 /** An observer's team filter: the teams (of these) each person is on, by person. */

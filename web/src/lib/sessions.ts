@@ -316,6 +316,11 @@ export type Workbench = {
   /** Republished changes the viewer hasn't closed the box on yet, newest first. */
   changes: PlanRevisionNotice[];
   /**
+   * The published plan the latest republishing replaced, for "Show changes" (added and taken out,
+   * like a diff). null when it's never been republished, or was before the old plan was kept.
+   */
+  previous: { plan: PlanSection[]; links: PlanLink[]; publishedAt: string; publishedBy: string | null } | null;
+  /**
    * Songs in `plan` that change key: item id -> the keys of their songsheets ([E] when the sheet
    * already covers the change, else [E, G]). Songs not listed have one sheet in their key.
    */
@@ -380,7 +385,7 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
     .maybeSingle();
   if (!s) return null;
 
-  const [{ data: assignments }, { data: rs }, { data: revisions }] = await Promise.all([
+  const [{ data: assignments }, { data: rs }, { data: revisions }, { data: latest }] = await Promise.all([
     s.roster_session_id
       ? db.from("roster_assignments").select("member_id, role, also_roles").eq("session_id", s.roster_session_id)
       : Promise.resolve({ data: [] as { member_id: string; role: string; also_roles: string[] | null }[] }),
@@ -393,6 +398,13 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
       .eq("session_id", id)
       .order("published_at", { ascending: false })
       .limit(10),
+    db
+      .from("worship_session_revisions")
+      .select("published_at, published_by, plan_before, links_before")
+      .eq("session_id", id)
+      .order("published_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   // Not their own publishing, and not ones they've closed.
   const unseen = (revisions ?? []).filter(
@@ -406,6 +418,7 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
       ...(assignments ?? []).map((a) => a.member_id),
       ...[s.locked_by, s.updated_by, s.draft_updated_by].filter((x): x is string => Boolean(x)),
       ...unseen.flatMap((r) => (r.published_by ? [r.published_by as string] : [])),
+      ...(latest?.published_by ? [latest.published_by as string] : []),
     ]),
   ]);
   const order = (role: string) => {
@@ -453,6 +466,15 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
             changes: (r.changes as string[] | null) ?? [],
           }))
         : [],
+    previous:
+      s.status === "published" && latest && Array.isArray(latest.plan_before)
+        ? {
+            plan: normalisePlan(latest.plan_before),
+            links: sessionLinks(latest.links_before),
+            publishedAt: latest.published_at as string,
+            publishedBy: latest.published_by ? (people.get(latest.published_by as string) ?? null) : null,
+          }
+        : null,
     lockedBy:
       s.locked_by && s.locked_by !== userId && lockIsLive(s.locked_at) ? { id: s.locked_by, name: people.get(s.locked_by) ?? "Someone" } : null,
     updatedAt: s.updated_at,
@@ -1089,6 +1111,14 @@ export type ServiceDetailView = {
    */
   session: { team: string; plan: PlanSection[] | null; planId: string | null; canOpen: boolean } | null;
 };
+
+/** The team whose roster a session is on (e.g. for an observer opening one of its group's services). */
+export async function sessionTeam(sessionId: string): Promise<Team | null> {
+  const { data } = await createAdminClient().from("roster_sessions").select("rosters!inner(team_id)").eq("id", sessionId).maybeSingle();
+  const teamId = (data?.rosters as unknown as { team_id: string } | undefined)?.team_id;
+  if (!teamId) return null;
+  return (await loadTeams()).find((t) => t.id === teamId) ?? null;
+}
 
 /**
  * A service, from one of its teams' session (`sessionId`, on that team's published roster): every
