@@ -124,6 +124,8 @@ export async function updateSongDetails(songId: string, _prev: SaveState, formDa
         time_signature: String(formData.get("time_signature") ?? "").trim() || null,
         language: language === "zh" ? "zh" : "en",
         original_key: String(formData.get("original_key") ?? "").trim() || null,
+        // Typed in by the admin team / leads; the scanner never fills it.
+        suggested_key: String(formData.get("suggested_key") ?? "").trim().slice(0, 40) || null,
         sections: jsonList(formData, "sections"),
         // The plain names too, for the song bank and anything reading only them.
         standard_sequence: stepNames(steps),

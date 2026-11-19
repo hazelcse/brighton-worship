@@ -8,6 +8,7 @@ import { scanPendingSongsheets } from "@/app/(app)/songs/actions";
 import { PreviewDialog } from "@/components/songs/songsheet-preview";
 import { UploadDialog } from "@/components/songs/upload-dialog";
 import { AddMenu } from "@/components/songs/add-menu";
+import { searchSongs, songIndex } from "@/lib/song-search";
 
 type SongType = "praise" | "worship" | "praise_worship";
 type Card = {
@@ -33,29 +34,6 @@ const TYPE_STYLE: Record<SongType, string> = {
   worship: "bg-sky-100 text-sky-800",
   praise_worship: "bg-violet-100 text-violet-800",
 };
-
-/** Text for matching: lower case, punctuation dropped, spaces collapsed ("Couldn't," → "couldnt"). */
-const norm = (s: string) =>
-  s
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/['’`]/g, "")
-    .replace(/[\p{P}\p{S}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-/**
- * A search as plain pinyin: tone marks and tone numbers dropped, ü / v as u
- * ("Zhǔ nǐ" / "zhu3 ni3" → "zhu ni", "lv" → "lu").
- */
-const pinyinQuery = (q: string) =>
-  q
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .replace(/[0-9]/g, "")
-    .replace(/v/g, "u")
-    .replace(/\s+/g, " ")
-    .trim();
 
 const select =
   "h-10 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
@@ -103,57 +81,19 @@ export function SongGallery({
   }, [pendingScans, router]);
 
   // Each song's title, artist and lyrics ready for matching (worked out once).
-  const index = useMemo(
-    () =>
-      new Map(
-        songs.map((s) => {
-          const lines = s.lyrics.split("\n").filter((l) => l.trim());
-          const py = norm(s.titlePinyin);
-          return [
-            s.id,
-            {
-              title: norm(s.title),
-              artist: norm(s.artist ?? ""),
-              lyrics: norm(lines.join(" ")),
-              // Chinese titles' pinyin, spaced ("zhu ni") and run together ("zhuni") so either typing works.
-              pinyin: py,
-              pinyinTight: py.replace(/ /g, ""),
-            },
-          ];
-        }),
-      ),
-    [songs],
-  );
+  const index = useMemo(() => songIndex(songs), [songs]);
 
-  // Songs whose title, artist or lyrics match the search, and which matched on the lyrics only.
-  // With a search, title matches come first, then artist matches, then lyrics-only matches (each
-  // group keeps the usual order).
-  const { filtered, lyricHit } = useMemo(() => {
-    const q = norm(deferredQuery);
-    const py = pinyinQuery(q);
-    const pyTight = py.replace(/ /g, "");
-    // A Chinese title typed in pinyin counts as a title match.
-    const titleHit = (ix: { title: string; pinyin: string; pinyinTight: string }) =>
-      ix.title.includes(q) || (!!ix.pinyin && !!py && (ix.pinyin.includes(py) || ix.pinyinTight.includes(pyTight)));
-    const hits = new Set<string>();
-    const rank = new Map<string, number>();
-    const list = songs.filter((s) => {
+  // The filters first, then the search (see lib/song-search.ts for how it matches and ranks).
+  const { list: filtered, lyricHit, bpmHit } = useMemo(() => {
+    const kept = songs.filter((s) => {
       if (type.length && !(s.type && type.includes(s.type))) return false;
       if (language.length && !language.includes(s.language)) return false;
       if (artist.length && !artist.includes(s.artist?.trim() ?? "")) return false;
       if (reviewOnly && !s.needsReview) return false;
       if (missingOnly && !s.missingFromDrive) return false;
-      if (!q) return true;
-      const ix = index.get(s.id)!;
-      const r = titleHit(ix) ? 0 : ix.artist.includes(q) ? 1 : ix.lyrics.includes(q) ? 2 : -1;
-      if (r < 0) return false;
-      if (r === 2) hits.add(s.id);
-      rank.set(s.id, r);
       return true;
     });
-    // Array.prototype.sort is stable, so each group stays in the library's order.
-    if (q) list.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-    return { filtered: list, lyricHit: hits };
+    return searchSongs(kept, index, deferredQuery);
   }, [songs, index, deferredQuery, type, language, artist, reviewOnly, missingOnly]);
 
   const reviewCount = songs.filter((s) => s.needsReview).length;
@@ -198,7 +138,7 @@ export function SongGallery({
           the first row, and the rest wrap beneath. */}
       <div data-songbank-toolbar className="flex flex-wrap items-center gap-2 md:flex-nowrap">
           <label className="relative min-w-0 flex-1 md:min-w-40">
-            <span className="sr-only">Search songs by title, artist or lyrics</span>
+            <span className="sr-only">Search songs by title, artist, lyrics or BPM</span>
             <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
@@ -207,7 +147,7 @@ export function SongGallery({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search title, artist, lyrics"
+              placeholder="Search title, artist, lyrics, BPM"
               className={`${select} w-full pl-9`}
             />
           </label>
@@ -280,6 +220,7 @@ export function SongGallery({
                 <div className="space-y-1">
                   <h2 className="font-medium leading-snug group-hover:text-accent">{s.title}</h2>
                   {lyricHit.has(s.id) && <p className="text-xs text-muted">Lyrics match</p>}
+                  {bpmHit.has(s.id) && <p className="text-xs text-muted">{s.bpm} BPM</p>}
                 </div>
                 <span
                   className={`w-fit rounded-full px-2 py-0.5 text-xs font-medium ${

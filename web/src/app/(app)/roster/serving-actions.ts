@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sessionInstruments } from "@/lib/teams";
 import { CREW_ROLES } from "@/lib/roster";
 import { cleanAbsence, declineAbsence, type AbsenceInput } from "@/lib/absence";
+import { deleteAbsence } from "@/app/(app)/roster/absences/actions";
 import {
   BAND_ROLES,
   absenceClashes,
@@ -13,6 +14,7 @@ import {
   awayFor,
   bandRoleCandidates,
   bandRoleLabel,
+  cancelHandovers,
   coverCandidates,
   flagMissingBandRole,
   handOverBandRoles,
@@ -753,14 +755,25 @@ export async function editDirect(input: { coverId: string; targetId: string; off
   return done("Sent.");
 }
 
-/** Take a direct request or board post down. */
-export async function takeDownCover(coverId: string): Promise<ServeResult> {
+/**
+ * Their absence is why they asked: delete it (they've agreed to), which takes down everything it was
+ * asking for on those days (cover requests and band leader / talkback handovers).
+ */
+async function dropAbsence(absenceId: string): Promise<ServeResult | null> {
+  const r = await deleteAbsence(absenceId);
+  return r.ok ? null : { ok: false, message: r.message };
+}
+
+/**
+ * Withdraw a direct request or board post. When it's the last one for the session, their band
+ * leader / talkback handovers there come down with it. If they're away for that session, the absence
+ * is the reason for the request: `absenceId` says they've agreed it's deleted too.
+ */
+export async function takeDownCover(coverId: string, absenceId?: string | null): Promise<ServeResult> {
   try {
     const user = await signedIn();
     const db = createAdminClient();
     const c = await ownCover(db, coverId, user.id);
-    // The last request for a session they're still away for can't come down: it's what says they
-    // can't make it. They ask someone directly instead, or delete the absence.
     const { data: others } = await db
       .from("cover_requests")
       .select("id")
@@ -769,15 +782,57 @@ export async function takeDownCover(coverId: string): Promise<ServeResult> {
       .in("status", ["open", "refused"])
       .neq("id", c.id)
       .limit(1);
-    if (!others?.length && (await awayFor(db, user.id, c.session_id))) {
+    const last = !others?.length;
+    if (last && absenceId) {
+      const failed = await dropAbsence(absenceId);
+      if (failed) return failed;
+    } else if (last && (await awayFor(db, user.id, c.session_id))) {
+      // The last request for a session they're still away for is what says they can't make it.
       return { ok: false, message: AWAY_CLASH };
     }
-    await cancelCover(db, c.id);
-    await logUpdate(db, { kind: "cancelled", session_id: c.session_id, role: c.role, actor_id: user.id, member_id: c.target_id });
+    // Deleting the absence may already have taken it down (and the handovers with it).
+    const { data: still } = await db.from("cover_requests").select("id").eq("id", c.id).in("status", ["open", "refused"]).limit(1);
+    if (still?.length) {
+      await cancelCover(db, c.id);
+      await logUpdate(db, { kind: "cancelled", session_id: c.session_id, role: c.role, actor_id: user.id, member_id: c.target_id });
+    }
+    // Nobody is being asked to cover their part any more: they keep their band leader / talkback too.
+    if (last) await cancelHandovers(db, user.id, [c.session_id]);
   } catch (e) {
     return fail(e);
   }
-  return done(null);
+  if (absenceId) revalidatePath("/roster/absences");
+  return done(absenceId ? "Withdrawn, and your absence is deleted." : null);
+}
+
+/**
+ * Withdraw a band leader / talkback handover: they keep the role. If they're away for that session,
+ * `absenceId` says they've agreed the absence is deleted, which takes their other requests for those
+ * days down too.
+ */
+export async function takeDownHandover(handoverId: string, absenceId?: string | null): Promise<ServeResult> {
+  try {
+    const user = await signedIn();
+    const db = createAdminClient();
+    const { data: h } = await db
+      .from("handover_requests")
+      .select("id, session_id, status")
+      .eq("id", handoverId)
+      .eq("member_id", user.id)
+      .maybeSingle();
+    if (!h || (h.status !== "open" && h.status !== "refused")) throw new PlaceTaken("This has already been sorted, or it was withdrawn.");
+    if (absenceId) {
+      const failed = await dropAbsence(absenceId);
+      if (failed) return failed;
+    } else if (await awayFor(db, user.id, h.session_id)) {
+      return { ok: false, message: "You're away for this session, so you can't keep this role. Delete the absence to withdraw it." };
+    }
+    await cancelHandovers(db, user.id, [h.session_id], h.id);
+  } catch (e) {
+    return fail(e);
+  }
+  if (absenceId) revalidatePath("/roster/absences");
+  return done(absenceId ? "Withdrawn, and your absence is deleted." : null);
 }
 
 /** The updates box was viewed: anything newer than now gets the "new" tint next time. */

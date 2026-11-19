@@ -137,6 +137,7 @@ async function SongView({ params, searchParams }: Params) {
               <ReadOnly label="Tempo" value={song.bpm ? `${Number(song.bpm)} bpm` : null} />
               <ReadOnly label="Language" value={LANGUAGE_LABEL[song.language]} />
               <ReadOnly label="Original key" value={song.original_key} />
+              <ReadOnly label="Suggested key" value={song.suggested_key} />
               {song.time_signature && <ReadOnly label="Time signature" value={song.time_signature} />}
               <div className="col-span-2">
                 <dt className="text-muted">Standard sequence</dt>

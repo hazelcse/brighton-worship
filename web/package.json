@@ -22,7 +22,8 @@
     "pinyin-pro": "3.29.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "stemmer": "^2.0.1"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

@@ -7,11 +7,14 @@ import type { BankSongDetail } from "@/app/(app)/sessions/actions";
 import { SongsheetPreview } from "@/components/songs/songsheet-preview";
 import { SequenceView } from "@/components/sessions/sequence-builder";
 import { SONG_TYPE_LABEL, type SongType } from "@/lib/session-plan";
+import { searchSongs, songIndex } from "@/lib/song-search";
 
 export type BankSong = {
   id: string;
   title: string;
   artist: string | null;
+  lyrics: string;
+  titlePinyin: string;
   type: SongType | null;
   bpm: number | null;
   language: "en" | "zh";
@@ -90,12 +93,13 @@ export function SongBankPanel({
     if (focusSearch && !detailId) searchRef.current?.focus();
   }, [focusSearch, detailId]);
 
-  const list = useMemo(() => {
-    const q = deferred.trim().toLowerCase();
-    return bank.filter(
-      (s) => (!q || s.title.toLowerCase().includes(q) || (s.artist ?? "").toLowerCase().includes(q)) && (!type || s.type === type) && (!language || s.language === language),
-    );
-  }, [bank, deferred, type, language]);
+  // The same search as the Songs page (lib/song-search.ts): title, artist, lyrics, then BPM.
+  const index = useMemo(() => songIndex(bank), [bank]);
+  // (Every row already shows its BPM, so a BPM match needs no label.)
+  const { list, lyricHit } = useMemo(
+    () => searchSongs(bank.filter((s) => (!type || s.type === type) && (!language || s.language === language)), index, deferred),
+    [bank, index, deferred, type, language],
+  );
 
   const bankSong = detailId ? bank.find((s) => s.id === detailId) : undefined;
 
@@ -211,16 +215,23 @@ export function SongBankPanel({
         <>
           {/* One row on every screen: search, then an icon-only Filters dropdown on its right. */}
           <div className="flex items-center gap-2 border-b border-border p-3">
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(e) => onQuery(e.target.value)}
-              placeholder="Search songs or artists"
-              aria-label="Search the song bank"
-              // 40px tall, to match the Filters button beside it.
-              className={`${input.replace("h-9", "h-10")} min-w-0 flex-1`}
-            />
+            {/* Like the Songs page's search: magnifier inside, the same placeholder. */}
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search songs by title, artist, lyrics or BPM</span>
+              <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(e) => onQuery(e.target.value)}
+                placeholder="Search title, artist, lyrics, BPM"
+                // 40px tall, to match the Filters button beside it.
+                className={`${input.replace("h-9", "h-10")} pl-9`}
+              />
+            </label>
             <FilterMenu
               iconOnly
               className="shrink-0"
@@ -242,6 +253,7 @@ export function SongBankPanel({
                     {s.artist && <span className="truncate">{s.artist}</span>}
                     {s.key && <span className="shrink-0">· {s.keyDisplay || s.key}</span>}
                     {s.bpm && <span className="shrink-0">· {s.bpm} bpm</span>}
+                    {lyricHit.has(s.id) && <span className="shrink-0">· Lyrics match</span>}
                   </span>
                 </button>
                 <TypeBadge type={s.type} />

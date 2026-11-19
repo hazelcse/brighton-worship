@@ -505,7 +505,7 @@ Saved as rows in `roster_updates`. Who sees each kind (`updatesFor` in `serving.
 | Update | Logged when | Member (not lead) sees it if… | Team lead | Root |
 |---|---|---|---|---|
 | `declined`: "X cannot serve …" | Someone says they can't serve, adds an absence that clashes, or is away for a moved rehearsal | They made it, or they're in that session's band. The reason is shown only to the person and the lead. | Yes, with reason | Yes, with reason |
-| `asked`, `refused`, `cancelled`: asking someone to cover, turning it down, withdrawing | A cover request is sent, refused or withdrawn | They're the asker or the person asked | Yes | Yes |
+| `asked`, `refused`, `cancelled`: asking someone to cover, turning it down, withdrawing | A cover request is sent, refused or withdrawn (`cancelled` also when a band leader / talkback handover is withdrawn) | They're the asker or the person asked | Yes | Yes |
 | `taken`: "X took over … from Y" | A cover is accepted | Involved, or in that session's band | Yes | Yes |
 | `swap_proposed`, `swap_declined` | A swap is offered or turned down | They're one of the two people | Only if one of the two | No |
 | `swapped` | A swap is accepted | Involved, or in the band of either session | Yes | No |

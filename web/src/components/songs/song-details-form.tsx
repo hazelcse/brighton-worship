@@ -21,6 +21,7 @@ type Song = {
   standard_steps: unknown;
   themes: string[];
   original_key: string | null;
+  suggested_key: string | null;
   notes: string;
 };
 
@@ -137,6 +138,10 @@ export function SongDetailsForm({
             <label className="space-y-1 text-sm font-medium">
               Original key
               <input name="original_key" placeholder="e.g. B (Male)" defaultValue={song.original_key ?? ""} className={input} />
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              Suggested key
+              <input name="suggested_key" placeholder="e.g. G" defaultValue={song.suggested_key ?? ""} maxLength={40} className={input} />
             </label>
           </div>
 

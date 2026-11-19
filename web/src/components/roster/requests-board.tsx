@@ -30,6 +30,7 @@ import {
   editDirect,
   proposeSwap,
   takeDownCover,
+  takeDownHandover,
   swapOptionsForAbsence,
   swapOptionsForCover,
   swapOptionsForRequest,
@@ -687,14 +688,83 @@ function DirectEditor({
   );
 }
 
-/** One of the viewer's own requests (a direct ask or a board post): click it to edit or take it down. */
-function MineItem({ c, last }: { c: CoverItem; last: boolean }) {
+const awayDays = (a: AwayAbsence) => (a.startsOn === a.endsOn ? when(a.startsOn) : `${when(a.startsOn)} – ${when(a.endsOn)}`);
+
+/** The dustbin, for withdrawing one of the viewer's own requests. */
+function WithdrawButton({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={label}
+      title="Withdraw"
+      className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full ${open ? "bg-red-100 text-danger" : "text-muted hover:bg-red-50 hover:text-danger"}`}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M3 6h18" />
+        <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+        <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+        <path d="M10 11v6M14 11v6" />
+      </svg>
+    </button>
+  );
+}
+
+/**
+ * "Withdraw this?" under a request. With `away`, the absence is why they asked: withdrawing deletes
+ * it, which takes down everything else it was asking for on those days too.
+ */
+function WithdrawConfirm({
+  what,
+  also,
+  away,
+  pending,
+  onKeep,
+  onConfirm,
+}: {
+  what: string;
+  /** What else comes down with it, e.g. their band leader handover. */
+  also?: string;
+  away?: AwayAbsence | null;
+  pending: boolean;
+  onKeep: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm">
+      <p>
+        Withdraw this {what}?{also && ` ${also}`}
+      </p>
+      {away && (
+        <p className="text-xs text-red-900">
+          You&apos;re away on {awayDays(away)}
+          {away.reason && ` (${away.reason})`}, which is why you asked. Withdrawing deletes that absence, so you&apos;re back on for this session
+          {away.startsOn !== away.endsOn && " and any other requests you made for those days come down too"}.
+        </p>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
+        <button type="button" onClick={onKeep} className={`${btn} border border-border bg-surface`}>
+          Keep
+        </button>
+        <button type="button" disabled={pending} onClick={onConfirm} className={`${btn} bg-danger text-white`}>
+          {away ? "Withdraw and delete absence" : "Withdraw"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** One of the viewer's own requests (a direct ask or a board post): click it to edit or withdraw it. */
+function MineItem({ c, last, handovers }: { c: CoverItem; last: boolean; /** Their BL / TB handovers for this session. */ handovers: HandoverItem[] }) {
   const { pending, result, run } = useAction();
   const [editing, setEditing] = useState(false);
   const [confirmDown, setConfirmDown] = useState(false);
-  // The only request left for a session they're away for can't just come down.
-  const [awayClash, setAwayClash] = useState(false);
   const [load] = useState(() => (id: string) => swapOptionsForCover(c.id, id));
+  // The last request for the session: their band role handovers come down with it, and if they're
+  // away, so does the absence.
+  const away = last ? c.away : null;
+  const also = last && handovers.length ? `Your ${handovers.map((h) => part(h.role).toLowerCase()).join(" and ")} handover comes down with it.` : undefined;
   const direct = Boolean(c.target);
   const myOffer = c.proposals.find((p) => p.byMe);
   const status = direct
@@ -736,37 +806,25 @@ function MineItem({ c, last }: { c: CoverItem; last: boolean }) {
             </svg>
           </button>
         )}
-        <button
-          type="button"
+        <WithdrawButton
+          open={confirmDown}
+          label={`Withdraw ${what}`}
           onClick={() => {
             setEditing(false);
-            if (last && c.away) setAwayClash(true);
-            else setConfirmDown((v) => !v);
+            setConfirmDown((v) => !v);
           }}
-          aria-expanded={confirmDown}
-          aria-label={`Take down ${what}`}
-          title="Take down"
-          className={`${icon} ${confirmDown ? "bg-red-100 text-danger" : "text-muted hover:bg-red-50 hover:text-danger"}`}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M3 6h18" />
-            <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-            <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
-            <path d="M10 11v6M14 11v6" />
-          </svg>
-        </button>
+        />
       </div>
 
       {confirmDown && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm">
-          <span className="mr-auto">Take this {what} down?</span>
-          <button type="button" onClick={() => setConfirmDown(false)} className={`${btn} border border-border bg-surface`}>
-            Keep
-          </button>
-          <button type="button" disabled={pending} onClick={() => run(() => takeDownCover(c.id))} className={`${btn} bg-danger text-white`}>
-            Take down
-          </button>
-        </div>
+        <WithdrawConfirm
+          what={what}
+          also={also}
+          away={away}
+          pending={pending}
+          onKeep={() => setConfirmDown(false)}
+          onConfirm={() => run(() => takeDownCover(c.id, away?.id ?? null))}
+        />
       )}
 
       {/* Swap offers from the other side wait for an answer here. */}
@@ -789,13 +847,12 @@ function MineItem({ c, last }: { c: CoverItem; last: boolean }) {
         />
       )}
       {result && !result.ok && <p className="text-sm text-danger">{result.message}</p>}
-      {awayClash && <AwayClashDialog c={c} onClose={() => setAwayClash(false)} />}
     </div>
   );
 }
 
 /** One session the viewer can't serve: their direct request and/or board post for it. */
-function MinePlace({ items }: { items: CoverItem[] }) {
+function MinePlace({ items, handovers }: { items: CoverItem[]; handovers: HandoverItem[] }) {
   const first = items[0]!;
   const { pending, result, run } = useAction();
   const [adding, setAdding] = useState(false);
@@ -808,7 +865,7 @@ function MinePlace({ items }: { items: CoverItem[] }) {
         Your {part(first.role)}: {first.session.name}, {when(first.session.date)}
       </p>
       {items.map((c) => (
-        <MineItem key={`${c.id}-${c.status}-${c.proposals.map((p) => p.id).join()}`} c={c} last={items.length === 1} />
+        <MineItem key={`${c.id}-${c.status}-${c.proposals.map((p) => p.id).join()}`} c={c} last={items.length === 1} handovers={handovers} />
       ))}
       {adding && (
         <DirectEditor
@@ -842,8 +899,7 @@ function groupBySession(items: CoverItem[]) {
 
 /**
  * Away for a session they're still on: ask someone directly and hand over
- * band leader / talkback, or delete the absence if they can make it after all. With `replace`, it's
- * standing in for taking that request down (the dustbin): the new ask goes out, then it comes down.
+ * band leader / talkback, or delete the absence if they can make it after all.
  */
 function AwayFix({
   session,
@@ -851,7 +907,6 @@ function AwayFix({
   absence,
   candidates,
   bandRoles,
-  replace,
   onDone,
 }: {
   session: SessionInfoLike;
@@ -859,7 +914,6 @@ function AwayFix({
   absence: AwayAbsence;
   candidates: CoverCandidate[];
   bandRoles: BandRoleChoice[];
-  replace?: CoverItem;
   onDone?: () => void;
 }) {
   const { pending, result, run } = useAction();
@@ -880,7 +934,6 @@ function AwayFix({
           targetId,
           offerSessionId: offer || null,
           bandRoles: bandPicksFor(bandRoles, band),
-          replaceCoverId: replace?.id ?? null,
         }),
       (r) => r.ok && onDone?.(),
     );
@@ -903,11 +956,11 @@ function AwayFix({
         </span>{" "}
         as {part(role)}
         <BandTags roles={bandRoles} />.{" "}
-        {replace ? "Taking this request down would leave nobody being asked to cover it." : "Nobody is being asked to cover it."}
+        Nobody is being asked to cover it.
       </p>
 
       <div className="space-y-2 rounded-lg border border-border p-3">
-        <p className="text-sm font-medium">{replace ? "Ask someone directly instead" : "Ask someone to cover"}</p>
+        <p className="text-sm font-medium">Ask someone to cover</p>
         <BandRolePicker roles={bandRoles} picks={band} onChange={setBand} />
         {anyFree(candidates) ? (
           <label className="block text-sm">
@@ -932,7 +985,6 @@ function AwayFix({
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" disabled={pending || !target || !ready} onClick={() => send(target)} className={`${btn} bg-ink text-ink-foreground hover:bg-ink/90`}>
             {offer ? "Propose swap" : "Send request"}
-            {replace && !replace.target ? " and take down the board post" : ""}
           </button>
         </div>
       </div>
@@ -963,45 +1015,6 @@ function AwayFix({
 
 type SessionInfoLike = { id: string; date: string; name: string; rehearsal?: string | null };
 
-/** The dustbin on the last request for a session they're still away for: a popup instead of taking it down. */
-function AwayClashDialog({ c, onClose }: { c: CoverItem; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    if (!ref.current?.open) ref.current?.showModal();
-  }, []);
-  return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      onClick={(e) => e.target === ref.current && ref.current?.close()}
-      aria-labelledby="away-clash-title"
-      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-surface p-0 text-foreground shadow-2xl"
-    >
-      <div className="max-h-[85dvh] space-y-4 overflow-y-auto p-6">
-        <div className="flex items-start justify-between gap-2">
-          <h2 id="away-clash-title" className="text-lg font-semibold">
-            Your absence still clashes
-          </h2>
-          <button type="button" aria-label="Close" onClick={() => ref.current?.close()} className="-mr-2 rounded-full p-2 text-muted hover:bg-background">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <AwayFix
-          session={c.session}
-          role={c.role}
-          absence={c.away!}
-          candidates={c.candidates ?? []}
-          bandRoles={c.bandRoles ?? []}
-          replace={c}
-          onDone={() => ref.current?.close()}
-        />
-      </div>
-    </dialog>
-  );
-}
-
 /** A bandmate asking you to take over their band leader / talkback. */
 function HandoverInRow({ h }: { h: HandoverItem }) {
   const { pending, result, run } = useAction();
@@ -1030,17 +1043,31 @@ function HandoverInRow({ h }: { h: HandoverItem }) {
 function HandoverMineRow({ h }: { h: HandoverItem }) {
   const { pending, result, run } = useAction();
   const [target, setTarget] = useState("");
+  const [confirmDown, setConfirmDown] = useState(false);
   const refused = h.status === "refused";
   return (
     <li className="space-y-2 px-4 py-3">
-      <div>
-        <p className="text-sm font-medium">
-          {part(h.role)}: {h.session.name}, {when(h.session.date)}
-        </p>
-        <p className={`text-xs ${refused ? "text-danger" : "text-muted"}`}>
-          {refused ? `${h.target.name} can't take it over.` : `Asked ${h.target.name} to take it over. Waiting for them.`}
-        </p>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">
+            {part(h.role)}: {h.session.name}, {when(h.session.date)}
+          </p>
+          <p className={`text-xs ${refused ? "text-danger" : "text-muted"}`}>
+            {refused ? `${h.target.name} can't take it over.` : `Asked ${h.target.name} to take it over. Waiting for them.`}
+          </p>
+        </div>
+        <WithdrawButton open={confirmDown} label={`Withdraw ${part(h.role).toLowerCase()} handover`} onClick={() => setConfirmDown((v) => !v)} />
       </div>
+      {confirmDown && (
+        <WithdrawConfirm
+          what={`${part(h.role).toLowerCase()} handover`}
+          also={h.away ? undefined : `You keep ${part(h.role).toLowerCase()}.`}
+          away={h.away}
+          pending={pending}
+          onKeep={() => setConfirmDown(false)}
+          onConfirm={() => run(() => takeDownHandover(h.id, h.away?.id ?? null))}
+        />
+      )}
       {refused &&
         (h.candidates?.length ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -1136,7 +1163,7 @@ export function RequestsBoard({ board, before }: { board: Board; /** Shown above
       {board.mine.length > 0 && (
         <Section label="Your requests">
           {groupBySession(board.mine).map((items) => (
-            <MinePlace key={items[0]!.session.id} items={items} />
+            <MinePlace key={items[0]!.session.id} items={items} handovers={board.handoversMine.filter((h) => h.session.id === items[0]!.session.id)} />
           ))}
         </Section>
       )}

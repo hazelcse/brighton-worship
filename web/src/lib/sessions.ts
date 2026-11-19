@@ -9,6 +9,7 @@ import { LOCK_STALE_MS, cleanSheet, keyLabel, partCues, type BuildStage, type Pa
 import type { CurrentUser } from "@/lib/auth";
 import { sheetKeysFor } from "@/lib/session-songsheets";
 import { loadTeams, type Team } from "@/lib/teams";
+import { titlePinyin } from "@/lib/songs";
 import { TEAM_GROUPS, type TeamGroup } from "@/lib/team-config";
 
 /**
@@ -487,6 +488,9 @@ export type BankSong = {
   id: string;
   title: string;
   artist: string | null;
+  /** The lyric lines from its songsheet, and a Chinese title's pinyin: for searching (lib/song-search.ts). */
+  lyrics: string;
+  titlePinyin: string;
   type: SongType | null;
   bpm: number | null;
   language: "en" | "zh";
@@ -501,7 +505,7 @@ export async function loadSongBank(): Promise<BankSong[]> {
   cacheLife(CACHE_LIFE);
   const { data, error } = await createAdminClient()
     .from("songs")
-    .select("id, title, artist, type, bpm, language, original_key, song_versions(keys, key_display)")
+    .select("id, title, artist, lyrics, type, bpm, language, original_key, song_versions(keys, key_display)")
     .order("title");
   if (error) throw error;
   return (data ?? []).map((s) => {
@@ -510,6 +514,8 @@ export async function loadSongBank(): Promise<BankSong[]> {
       id: s.id,
       title: s.title,
       artist: s.artist,
+      lyrics: (s.lyrics as string | null) ?? "",
+      titlePinyin: titlePinyin(s.title as string),
       type: s.type as SongType | null,
       bpm: s.bpm === null ? null : Number(s.bpm),
       language: s.language as "en" | "zh",

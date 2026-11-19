@@ -81,6 +81,8 @@ export type HandoverItem = {
   status: "open" | "refused";
   /** The asker's own: who else they could ask (after a "can't"). */
   candidates?: Candidate[];
+  /** The asker's own: their absence that clashes with this session, if any (withdrawing deletes it). */
+  away?: AwayAbsence | null;
 };
 
 export type CoverItem = {
@@ -655,12 +657,36 @@ export async function releaseCoverAfterAbsence(userId: string, old: { startsOn: 
       covers.map((c) => ({ kind: "cancelled", session_id: c.session_id, role: c.role, actor_id: userId, member_id: c.target_id })),
     );
   }
+  // They're doing their band leader / talkback there after all: those handovers come down too.
+  await cancelHandovers(db, userId, ids);
   await db
     .from("serve_requests")
     .update({ status: "pending", reason: null, responded_at: null })
     .eq("member_id", userId)
     .in("session_id", ids)
     .eq("status", "declined");
+}
+
+/**
+ * Withdraw this person's band leader / talkback handovers (waiting or turned down) at these
+ * sessions, or only the one `handoverId`: they keep the role, and the updates asking someone to
+ * take it over (or saying nobody can) are settled.
+ */
+export async function cancelHandovers(db: Db, userId: string, sessionIds: string[], handoverId?: string) {
+  if (!sessionIds.length) return [];
+  let q = db
+    .from("handover_requests")
+    .update({ status: "cancelled", closed_at: new Date().toISOString() })
+    .eq("member_id", userId)
+    .in("session_id", sessionIds)
+    .in("status", ["open", "refused"]);
+  if (handoverId) q = q.eq("id", handoverId);
+  const { data } = await q.select("id, session_id, role, target_id");
+  for (const h of data ?? []) {
+    await logRosterUpdate(db, { kind: "cancelled", session_id: h.session_id, role: h.role, actor_id: userId, member_id: h.target_id });
+    await resolveUpdates(db, { sessionId: h.session_id, role: h.role, kinds: ["band_role_asked", "band_role_refused", "band_role_missing"] });
+  }
+  return data ?? [];
 }
 
 /**
@@ -828,6 +854,7 @@ export async function loadRequestsBoard(userId: string): Promise<RequestsBoard> 
         target: person(h.target_id)!,
         status: h.status as "open" | "refused",
         candidates: h.status === "refused" ? await bandRoleCandidates(h.session_id, h.role, [userId, h.target_id], db) : undefined,
+        away: awayAt(info(sessions.get(h.session_id)!)),
       })),
   );
   // Checked on every load: rostered while away, and nothing open asking anyone to cover it.

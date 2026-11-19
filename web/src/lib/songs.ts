@@ -186,6 +186,8 @@ export async function loadSong(id: string) {
       standard_steps: unknown;
       themes: string[];
       original_key: string | null;
+      /** The key the admin team / leads suggest; typed in by hand, never by the scanner. */
+      suggested_key: string | null;
       reviewed_at: string | null;
       missing_from_drive_at: string | null;
       notes: string;
