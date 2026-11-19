@@ -16,7 +16,25 @@ export type PlanLink = { label: string; url: string };
  * existed have no `parts`. A comment (e.g. WL sings "You are good" x3) puts the step on a line of
  * its own in the sequence, with the comment under it.
  */
-export type SeqStep = { id: string; name: string; repeat: number; tags: string[]; parts?: string[]; comment?: string };
+/**
+ * One part of a sequence, between two bars: | before (Chorus x2) comment |.
+ * before / comment: free text typed in the builder before or after the element.
+ * free: no element, just text (name holds it, up to 160 characters), e.g. | Transpose to E |. It
+ * reads like an element in the simplified view but never joins the element buttons.
+ * loose: free text outside the bars, before the first | ("start", always the first step) or after
+ * the last | ("end", always the last). Not a step of its own: it reads as a note there.
+ */
+export type SeqStep = {
+  id: string;
+  name: string;
+  repeat: number;
+  tags: string[];
+  parts?: string[];
+  comment?: string;
+  before?: string;
+  free?: true;
+  loose?: "start" | "end";
+};
 
 export type PlanItem = {
   id: string;
@@ -154,7 +172,7 @@ export function defaultPlan(service: string): PlanSection[] {
 // ---------------------------------------------------------------------------
 
 /** Offered as extra elements for any song. */
-export const SUGGESTED_ELEMENTS = ["Music", "L2L", "L3L"];
+export const SUGGESTED_ELEMENTS = ["Music", "LL", "L2L", "L3L"];
 /** Offered as tags for any step, alongside every tag already used in the session. */
 export const SUGGESTED_TAGS = ["High", "Low", "Soft", "Half-time"];
 
@@ -172,7 +190,7 @@ export function stepsFrom(names: string[]): SeqStep[] {
  */
 export function insertElement(steps: SeqStep[], at: number, name: string): { steps: SeqStep[]; at: number } {
   const prev = steps[at - 1];
-  if (prev && prev.name === name && prev.tags.length === 0 && !prev.parts?.length && !prev.comment) {
+  if (prev && !prev.free && prev.name === name && prev.tags.length === 0 && !prev.parts?.length && !prev.comment) {
     return { steps: steps.map((s, i) => (i === at - 1 ? { ...s, repeat: s.repeat + 1 } : s)), at };
   }
   return { steps: [...steps.slice(0, at), step(name), ...steps.slice(at)], at: at + 1 };
@@ -182,7 +200,7 @@ export function insertElement(steps: SeqStep[], at: number, name: string): { ste
 export const copySteps = (steps: SeqStep[]): SeqStep[] => steps.map((s) => ({ ...s, id: newId(), tags: [...s.tags], parts: s.parts ? [...s.parts] : undefined }));
 
 /** A sequence as plain section names, repeats written out: Verse x2 → Verse, Verse. */
-export const stepNames = (steps: SeqStep[]): string[] => steps.flatMap((s) => Array<string>(s.repeat).fill(s.name));
+export const stepNames = (steps: SeqStep[]): string[] => steps.flatMap((s) => (s.free ? [] : Array<string>(s.repeat).fill(s.name)));
 
 /** A song's standard sequence: the steps built on its page, or else its plain section names. */
 export function songSteps(standardSteps: unknown, standardSequence: string[] | null | undefined): SeqStep[] {
@@ -197,6 +215,12 @@ export function cleanSteps(raw: unknown[]): SeqStep[] {
   return raw
     .map((x): SeqStep | null => {
       const s = x as Record<string, unknown>;
+      // Free text (no element): just its words.
+      if (s?.free === true) {
+        const text = clip(s.name, 160);
+        const loose = s.loose === "start" || s.loose === "end" ? { loose: s.loose as "start" | "end" } : {};
+        return text ? { id: typeof s.id === "string" && UUID_RE.test(s.id) ? s.id : newId(), name: text, repeat: 1, tags: [], parts: [], free: true, ...loose } : null;
+      }
       const name = clip(s?.name, 40);
       if (!name) return null;
       const repeat = Math.round(Number(s.repeat));
@@ -207,10 +231,26 @@ export function cleanSteps(raw: unknown[]): SeqStep[] {
         tags: Array.isArray(s.tags) ? [...new Set((s.tags as unknown[]).map((t) => clip(t, 30)).filter(Boolean))].slice(0, 8) : [],
         parts: Array.isArray(s.parts) ? PART_ROLES.map((p) => p.role).filter((r) => (s.parts as unknown[]).includes(r)) : [],
         ...(clip(s.comment, 160) ? { comment: clip(s.comment, 160) } : {}),
+        ...(clip(s.before, 160) ? { before: clip(s.before, 160) } : {}),
       };
     })
     .filter((s): s is SeqStep => s !== null)
-    .slice(0, 60);
+    .slice(0, 60)
+    // Loose text only at the very start or end; anywhere else it's ordinary free text.
+    .map((s, i, all) => {
+      if (!s.loose || (s.loose === "start" && i === 0) || (s.loose === "end" && i === all.length - 1 && i > 0)) return s;
+      const rest = { ...s };
+      delete rest.loose;
+      return rest;
+    });
+}
+
+/** A sequence's loose text before the first bar and after the last, and the steps in between. */
+export function looseParts(steps: SeqStep[]): { head: SeqStep | null; body: SeqStep[]; tail: SeqStep | null } {
+  const head = steps[0]?.loose === "start" ? steps[0] : null;
+  const last = steps.at(-1);
+  const tail = last && last !== head && last.loose === "end" ? last : null;
+  return { head, body: steps.slice(head ? 1 : 0, tail ? -1 : undefined), tail };
 }
 
 /** Short names for the simplified view: Verse 3 -> V3, Chorus -> C. Anything else stays as it is. */
@@ -227,6 +267,7 @@ export function shortName(name: string): string {
 
 /** "Verse 1 x2 (High, Half-time)". */
 export function stepLabel(s: SeqStep): string {
+  if (s.free) return s.name;
   return `${s.name}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
 }
 

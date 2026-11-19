@@ -22,4 +22,11 @@ say clearly in your summary which font changed, where and why.
 - The greeting was semibold, then regular, and the owner settled on medium.
 - The navbar logo was is medium.
 - 11 Nov 2026: service names in "1. Sessions to plan" were 16px; the owner asked for 13px. The rows' spacing was tightened at the same time.
+- 20 Nov 2026: free text in sequences (| Transpose to E |: the builder, and the session's full and
+  simplified views) is 13px, a little bigger than
+  the 12px notes and element pills but under the 14px body text, at the owner's request.
+- 20 Nov 2026: notes in song sequences (the builder, the session's full and simplified views,
+  Show changes) are slanted 7° (the `slant` class, a skew) instead of `italic`, at the owner's
+  request for a less slanted italic. Geist has no italic face, so browsers make one up at about
+  twice that angle and ignore `font-style: oblique 7deg`. The typing cursor stays upright.
 - 18 Nov 2026: the login title's cycling word ("Worship" / "Media") made italic at the owner's request; Cormorant Garamond's italic is now loaded for it.

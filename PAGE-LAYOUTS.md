@@ -300,7 +300,12 @@ sticky **song bank** panel on the right (384px at lg, 448px at xl by default; co
 minimised). The 16px gap between them is a drag handle (line shows on hover; arrow keys move it
 16px, Shift 64px; double-click resets): it moves the split only, never the page width. The bank
 stays 320px to half the row and the plan keeps at least 560px; the chosen width is remembered per
-browser (`localStorage` `sessions.songBankWidth`). Left: back link, date line (underlines on hover; opens the **Dates** dialog, 448px: service and
+browser (`localStorage` `sessions.songBankWidth`). **While a song is open in the bank** (desktop,
+not minimised) the panel reaches past the page's right edge to the window's right edge, over the
+page margin, with no border or rounding on that side, and its left edge doesn't move. The plan
+keeps its width but slides left to sit centred in the space left of the panel (as much space
+between the window's left edge and the plan as between the plan and the panel). Going back to the
+list puts both back. Left: back link, date line (underlines on hover; opens the **Dates** dialog, 448px: service and
 rehearsal with times, and for its worship leaders "Change rehearsal date" (or "Add rehearsal" when there's none) bottom right, which turns
 it into a 512px dialog: a month calendar from this month to the service's month, 56px rows with
 the band's absences as 4px bars, days before today or after the service greyed out, the service
@@ -311,12 +316,12 @@ otherwise as a row under it), a row of 36px icon buttons and "Publish". **Phones
 the date line moves under the title and badges, shortened to one line ("Sun, 15 Nov 2026 ·
 Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row the eye
 (simplified view) and, when there's something to compare, the ± "Show changes" button stay at the
-left and Undo / Edit / Publish sit at the right; while editing,
+left and Edit / Publish sit at the right; while editing,
 × and save sit at the left and + at the right. **Leaving while editing**: any in-app link
 ("← Sessions", the nav) opens a 384px dialog like the save prompt: "Save before you go?" (or "You're
-still editing" with nothing changed), an × in the top right corner to stay, and Leave anyway / Save
-and leave (Stop editing and leave) centred under the text; closing the tab, reloading or going to another site gets the browser's own "Leave site?"
-prompt. Leaving anyway (or by the browser's back button, or closing the tab) throws the edits away
+still editing" with nothing changed), an × in the top right corner to stay, and Leave / Save
+changes and leave centred under the text; closing the tab, reloading or going to another site gets the browser's own "Leave site?"
+prompt. Leaving (or by the browser's back button, or closing the tab) throws the edits away
 and unlocks the session. If the editing lock lapses instead (2 minutes without the page renewing
 it, e.g. the phone slept), coming back autosaves the edits, unless the other worship leader is
 editing or saved in the meantime: then they're dropped, and the alert says why. Then
@@ -334,6 +339,30 @@ with a thin red line; anything put in is light green (green-100). A whole song o
 out is a tinted block with a 4px green or red bar down its left; a kept one marks each change in
 place (title, key, tempo, lead, links, sequence steps, instruments, step comments, then notes under the sequence), and a
 song that moved has a small amber "Moved" pill. Session links appear at the top only when they changed.
+In the sequence builder (song details and session plans) the elements are 24px amber pills with a
+faint "|" between steps; you type straight into the sequence, like a line of text (it's laid out
+inline, 32px lines, so long text wraps to the start of the next line). A note being typed shows
+upright and slants once you leave it (a slant can't follow text across lines without tilting the
+cursor). Everything
+between two bars is one step: | before (Element) after |. Text can go on either side of an element
+(muted, slanted 7°: the `slant` class, not the browser's italic), or alone between two bars as free
+text (| Transpose to E |: upright, not a pill, read like an element in the simplified view but
+never added to the element buttons). Tapping blank space or a gap puts a text cursor at the
+nearest spot (phones get their keyboard); the boxes are only as wide as their text, and the
+cursor itself stays upright. Typing "|" starts a new step there. ← and → move through the text and
+past each element and bar; Backspace at the start of the text after an element deletes the
+element (its text stays, as free text), and at the start of a step deletes the bar before it,
+joining the two steps (unless both have an element). An element button adds its element at the
+cursor: inside free text it becomes that step's element, with the words before and after it on
+either side. With no text cursor (after clicking a pill or a drag) a thin blinking cursor shows in
+the gap where elements go; while dragging, the drop spot is an accent bar. The selected pill's
+editor has no note button: notes are typed in the sequence; its "Link:" instruments are a
+pill-shaped dropdown (linked ones as tinted pills, else a dashed "Choose instruments") whose 224px
+menu ("Bring out") has a tick box in each instrument's colour, linked rows tinted, and Clear.
+The cursor can also go before the first bar and after the last (tap the blank spot there, or
+arrow past the end): text typed there is loose, not a step of its own (it's stored as free text
+marked `loose`, and the full and simplified views show it as a slanted note outside the bars)
+until a "|" typed in it encloses part of it, which becomes free text. Elements never go out there.
 In a sequence you read (both views), a step comment of up to 24 characters sits beside its step;
 a step with a longer one starts a line of its own ("| Chorus (Bass) (Drums)", no bar after it) and
 the next step starts a new line after its comment. The full view puts that comment on the line
@@ -481,12 +510,14 @@ rows, whichever they may change, and one Save for both (links are checked first,
 saves nothing). Saving goes back to the read-only view, and while editing the back link reads "← Back to song"
 and does the same (dropping the edits). Leaving the page drops the edits without asking, and there's no cancel button.
 
-**Songsheet views** (the Preview card here and in the session song bank, its Full size popup, the
+**Songsheet views** (the Preview card here, the session song bank's songsheet, the Full size popup, the
 song cards' eye popup, and the session PDF popup): each page is shown zoomed in on its white
 margins — each side margin halved, top and bottom trimmed by the same share so the page keeps its
 shape. Margins are measured per page from its pixels (`web/src/lib/sheet-crop.ts`), never cut
 into ink, and all pages of a sheet share one zoom. The Preview card's padding is `p-2 sm:p-2.5`
-(half a section card's).
+(half a section card's). **Session builder only**: in the song bank's song details the songsheet
+has no Preview card (no "Preview" heading or "Full size" link; tapping a page still opens full
+size).
 
 **`/songs/transpose`**: narrow **768px**. Back link, title "Transpose songsheet", intro. Step
 cards "1. Songsheet" and "2. New key" (key grid 4 → 6 columns), action row, success box.

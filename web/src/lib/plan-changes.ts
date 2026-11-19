@@ -133,7 +133,7 @@ const PART_NOUN: Record<string, string> = {
 const partNoun = (role: string) => PART_NOUN[role] ?? `${PART_ROLES.find((p) => p.role === role)?.label.toLowerCase() ?? role} part`;
 
 /** "Chorus x2 (High)". */
-const stepText = (s: SeqStep) => `${s.name}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
+const stepText = (s: SeqStep) => (s.free ? s.name : `${s.name}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`);
 /** "Chorus (High)": where in the song, for instrument parts. */
 const stepPlace = (s: SeqStep) => `${s.name}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
 
@@ -209,6 +209,9 @@ function sequenceDetails(before: SeqStep[] | null, after: SeqStep[] | null, song
     const now = new Set(s.parts ?? []);
     for (const p of now) if (!before.has(p)) out.push(`There is a new ${partNoun(p)} during ${stepPlace(s)} in ${song}`);
     for (const p of before) if (!now.has(p)) out.push(`The ${partNoun(p)} during ${stepPlace(s)} in ${song} has been taken out`);
+    if (was && (was.before ?? "") !== (s.before ?? "")) {
+      out.push(s.before ? `New note before ${stepPlace(s)} in ${song}: “${s.before}”` : `The note before ${stepPlace(s)} in ${song} has been taken out`);
+    }
     if (was && (was.comment ?? "") !== (s.comment ?? "")) {
       out.push(s.comment ? `New note on ${stepPlace(s)} in ${song}: “${s.comment}”` : `The note on ${stepPlace(s)} in ${song} has been taken out`);
     }

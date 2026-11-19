@@ -197,7 +197,7 @@ export function SongDetailsForm({
             <legend className="text-sm font-medium">Standard sequence</legend>
             <p className="text-xs text-muted">
               Click sections to build the sequence. Click a step to repeat it, tag it (High, Half-time or your own) or link the instruments to bring out
-              there. Session plans start from this sequence.
+              there. Tap the sequence to type in it: | starts a new step, and text on its own between bars is free text. Session plans start from this sequence.
             </p>
             <SequenceBuilder
               steps={sequence}

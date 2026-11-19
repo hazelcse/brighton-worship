@@ -183,20 +183,31 @@ export function PreviewDialog({
   );
 }
 
-/** Preview panel on the song page; tap to open full size. openFullSize: start open (a link straight to the songsheet). */
+/** Preview panel on the song page; tap to open full size. openFullSize: start open (a link straight to the songsheet).
+ *  bare: just the pages (no "Preview" heading or framed card), for the session builder's song bank. */
 export function SongsheetPreview({
   versionId,
   previewPages,
   title,
   openFullSize = false,
+  bare = false,
 }: {
   versionId: string;
   previewPages: number | null;
   title: string;
   openFullSize?: boolean;
+  bare?: boolean;
 }) {
   const [open, setOpen] = useState(openFullSize);
   const meta = usePreviewPages(versionId, previewPages);
+  if (bare) {
+    return (
+      <div>
+        <Pages versionId={versionId} meta={meta} title={title} onOpen={() => setOpen(true)} />
+        <PreviewDialog open={open} onClose={() => setOpen(false)} versionId={versionId} previewPages={previewPages} title={title} />
+      </div>
+    );
+  }
   return (
     <section aria-labelledby="preview-title" className="space-y-3 rounded-xl border border-border bg-surface p-2 sm:p-2.5">
       <div className="flex items-center justify-between gap-2">

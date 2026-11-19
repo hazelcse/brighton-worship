@@ -67,6 +67,20 @@ body {
   }
 }
 
+/* Sequence notes: a gentler slant than the browser's italic. Geist has no italic of its own and
+   browsers ignore an oblique angle when they make one up, so it's a 7 degree skew. Works on boxes
+   only (inline-block, flex): see SlantWords in components/sessions/slant.tsx. */
+.slant {
+  transform: skewX(-7deg);
+}
+
+/* Sequence builder: the insertion point blinks like a text cursor. */
+@keyframes seq-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
 /* Schedule: the days a cover or swap needs (the service and its rehearsal) flash a few times. */
 @keyframes day-flash {
   50% {

@@ -50,8 +50,6 @@ export type EditorApi = {
   numbers: Record<string, number>;
   /** The session's worship leaders and vocalists, who can lead a song. */
   singers: Singer[];
-  /** Every tag used in the session's sequences. */
-  tags: string[];
   /** The viewer's part in the session, so their instrument stands out in sequences. */
   myRole: string | null;
   /** Once the plan's published: the session's id, for its songsheets (one button per song under each set). */
@@ -686,10 +684,12 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
           presets={[{ label: item.sheet ? "Use songsheet's sequence" : "Use song's sequence", steps: detail?.steps ?? sheetSteps }]}
           custom={item.custom_elements}
           onCustom={(custom_elements) => api.updateItem(item.id, { custom_elements })}
-          tagSuggestions={api.tags}
+          // This song's own tags only (its sequence here and its standard one), not other songs'.
+          tagSuggestions={[...new Set([...(item.sequence ?? []), ...(detail?.steps ?? [])].flatMap((s) => s.tags))]}
         />
       </div>
-      <div>
+      {/* More room above Links (24px): the sequence builder ends in its own row of buttons. */}
+      <div className="pt-3">
         <span className={label}>Links</span>
         <LinksField item={item} detail={detail} api={api} />
       </div>

@@ -52,6 +52,7 @@ export type PanelTarget = { label: string; songId: string | null } | null;
  */
 export function SongBankPanel({
   inSheet = false,
+  toEdge = false,
   bank,
   canBrowse,
   query,
@@ -67,6 +68,8 @@ export function SongBankPanel({
 }: {
   /** Phones: inside the bottom sheet (which draws the frame), with an ✕ that closes it instead of ">". */
   inSheet?: boolean;
+  /** Stretched to the window's right edge (a song open on desktop): no border or rounding on that side. */
+  toEdge?: boolean;
   bank: BankSong[];
   canBrowse: boolean;
   query: string;
@@ -104,7 +107,7 @@ export function SongBankPanel({
   const bankSong = detailId ? bank.find((s) => s.id === detailId) : undefined;
 
   return (
-    <section aria-label="Song bank" className={`flex h-full flex-col overflow-hidden bg-surface ${inSheet ? "" : "rounded-xl border border-border"}`}>
+    <section aria-label="Song bank" className={`flex h-full flex-col overflow-hidden bg-surface ${inSheet ? "" : toEdge ? "rounded-l-xl border-y border-l border-border" : "rounded-xl border border-border"}`}>
       <div className={`flex items-center gap-2 border-b border-border px-3 ${inSheet ? "pb-2.5" : "py-2.5"}`}>
         {detailId ? (
           <button type="button" onClick={() => onDetail(null)} className="-ml-1 flex items-center gap-1 rounded-md px-1 py-1 text-sm text-muted hover:text-foreground">
@@ -173,7 +176,7 @@ export function SongBankPanel({
               )}
               {/* The songsheet first, then its sequence, links and notes. */}
               {detail.versionId ? (
-                <SongsheetPreview versionId={detail.versionId} previewPages={detail.previewPages} title={detail.title} />
+                <SongsheetPreview versionId={detail.versionId} previewPages={detail.previewPages} title={detail.title} bare />
               ) : (
                 <p className="text-sm text-muted">No songsheet yet.</p>
               )}

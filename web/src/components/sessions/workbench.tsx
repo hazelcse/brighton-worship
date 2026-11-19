@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   acquireLock,
   dismissPlanChanges,
@@ -10,7 +10,6 @@ import {
   publishSession,
   releaseLock,
   renewLock,
-  revertToPublished,
   saveDraft,
   type BankSongDetail,
 } from "@/app/(app)/sessions/actions";
@@ -518,16 +517,16 @@ function LeavePrompt({
           </h2>
           <p className="mt-1 text-sm text-muted">
             {dirty
-              ? "You haven't saved your edits to this session yet. If you leave anyway, they're thrown away."
+              ? "You haven't saved your edits to this session yet. If you leave, they're thrown away."
               : "This session is still in edit mode. Leaving stops editing, so the other worship leader can edit it."}
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           <button type="button" onClick={onLeaveAnyway} disabled={busy} className={`${btn} border border-border bg-surface hover:border-accent/50`}>
-            Leave anyway
+            Leave
           </button>
           <button type="button" onClick={onSave} disabled={busy} className={`${btn} bg-ink text-ink-foreground hover:bg-ink/90`}>
-            {busy ? (dirty ? "Saving…" : "Stopping…") : dirty ? "Save and leave" : "Stop editing and leave"}
+            {busy ? (dirty ? "Saving…" : "Stopping…") : "Save changes and leave"}
           </button>
         </div>
       </div>
@@ -583,6 +582,47 @@ export function Workbench({
   const bankWidth = useSyncExternalStore(subscribeBankWidth, readBankWidth, () => null);
   const [query, setQuery] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  // While a song is open in the desktop song bank, the panel reaches out to the window's right edge
+  // (over the page margin) so its songsheet is as big as it can be. The column itself keeps its width.
+  // The plan then slides left (`shift`, px) to sit centred in the space left of the panel: the same
+  // space between the window's left edge and the plan as between the plan and the panel.
+  const asideRef = useRef<HTMLElement>(null);
+  const planRef = useRef<HTMLDivElement>(null);
+  const [reach, setReach] = useState(0);
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    const aside = asideRef.current;
+    const planEl = planRef.current;
+    if (!detailId || minimised || !aside || !planEl) {
+      setReach(0);
+      setShift(0);
+      return;
+    }
+    const measure = () => {
+      const box = aside.getBoundingClientRect();
+      // Hidden below 1024px (the phone sheet is used instead): nothing to stretch.
+      if (!box.width) {
+        setReach(0);
+        setShift(0);
+        return;
+      }
+      setReach(Math.max(0, Math.floor(document.documentElement.clientWidth - box.right)));
+      // Layout positions (the shift is a relative offset, so it doesn't change these).
+      const plan = planEl.offsetWidth;
+      const planLeft = box.left - GAP - plan;
+      const centred = (box.left - plan) / 2;
+      setShift(Math.min(0, Math.round(centred - planLeft)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(aside);
+    ro.observe(planEl);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [detailId, minimised]);
   const [details, setDetails] = useState<Record<string, BankSongDetail | null | undefined>>({});
   const [focusSearch, setFocusSearch] = useState(0);
 
@@ -802,16 +842,6 @@ export function Workbench({
     router.refresh();
   }
 
-  async function revert() {
-    if (!confirm("Undo all your unpublished changes? The draft goes back to a copy of the published version.")) return;
-    setBusy(true);
-    setError(null);
-    const res = await revertToPublished(initial.id);
-    setBusy(false);
-    if (!res.ok) return setError(res.message);
-    router.refresh();
-  }
-
   async function closeChanges() {
     setChangesClosed(true);
     await dismissPlanChanges(initial.changes.map((c) => c.id));
@@ -901,10 +931,6 @@ export function Workbench({
     [initial.band],
   );
 
-  const tags = useMemo(
-    () => [...new Set(plan.flatMap((s) => s.items.flatMap((i) => (i.sequence ?? []).flatMap((st) => st.tags))))].sort(),
-    [plan],
-  );
 
   function insert(item: PlanItem, sectionId?: string) {
     change((p) => {
@@ -991,7 +1017,6 @@ export function Workbench({
     details,
     numbers,
     singers,
-    tags,
     myRole: initial.myRole,
     // Songsheets are made for the published plan, so only shown while that's what's on the page.
     sheetsFor: published && !editing && !viewingRevision ? initial.id : null,
@@ -1002,9 +1027,10 @@ export function Workbench({
   const otherEditor = !editing && initial.lockedBy ? initial.lockedBy.name : null;
 
   // The same panel twice: the desktop column (">" collapses it) and the phone sheet ("✕" closes it).
-  const renderPanel = (inSheet: boolean) => (
+  const renderPanel = (inSheet: boolean, toEdge = false) => (
     <SongBankPanel
       inSheet={inSheet}
+      toEdge={toEdge}
       bank={bank}
       canBrowse={canBrowse}
       query={query}
@@ -1035,7 +1061,8 @@ export function Workbench({
       {/* View mode only: pick up the worship leaders' changes. Never while editing, so a refresh can't fight the draft. */}
       {!editing && <AutoRefresh />}
       {/* The session being built */}
-      <div className="min-w-0 space-y-4">
+      {/* position:relative + left (not a transform), so fixed overlays inside still cover the window. */}
+      <div ref={planRef} className="relative min-w-0 space-y-4" style={shift ? { left: shift } : undefined}>
         <Link href={projection ? "/projection" : "/sessions"} className="block w-fit text-sm text-muted hover:text-foreground">
           {projection ? "← Projection" : "← Sessions"}
         </Link>
@@ -1099,13 +1126,6 @@ export function Workbench({
                 )}
                 {canEdit && (
                 <>
-                  {published && revision && (
-                    <IconButton label="Undo unpublished changes (back to the published version)" onClick={revert} disabled={busy || Boolean(otherEditor)}>
-                      {/* Arrow back to the original */}
-                      <path d="M3 7v6h6" />
-                      <path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
-                    </IconButton>
-                  )}
                   <IconButton
                     label={otherEditor ? `${otherEditor} is editing` : "Edit"}
                     onClick={startEditing}
@@ -1261,7 +1281,7 @@ export function Workbench({
       {/* Song bank: a column on wide screens, a sheet on phones (not on Projection) */}
       {!projection && (
       <>
-      <aside className="hidden lg:block">
+      <aside ref={asideRef} className="hidden lg:block">
         <div className="sticky top-[4.5rem] h-[calc(100dvh-6rem)]">
           {minimised ? (
             <button
@@ -1276,7 +1296,9 @@ export function Workbench({
           ) : (
             <>
               <BankResizer grid={gridRef} width={bankWidth} />
-              {renderPanel(false)}
+              <div className="h-full" style={reach ? { marginRight: -reach } : undefined}>
+                {renderPanel(false, reach > 0)}
+              </div>
             </>
           )}
         </div>

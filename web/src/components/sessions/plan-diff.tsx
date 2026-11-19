@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode } from "react";
+import { SlantWords } from "@/components/sessions/slant";
 import { PART_ROLES, keyLabel, shortName, type PlanItem, type PlanLink, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 /*
@@ -75,7 +76,8 @@ function blockClass(state: State) {
 const partLabel = (role: string) => PART_ROLES.find((p) => p.role === role)?.label ?? role;
 
 /** "V1 x2 (High)", as the simplified view writes a step. */
-const stepText = (s: SeqStep) => `${shortName(s.name)}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
+const stepText = (s: SeqStep) =>
+  `${s.before ? `${s.before} ` : ""}${s.free ? s.name : shortName(s.name)}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
 
 function Step({ row }: { row: Row<SeqStep> }) {
   const a = row.a;
@@ -85,7 +87,7 @@ function Step({ row }: { row: Row<SeqStep> }) {
       <Ins>
         {stepText(b!)}
         {(b!.parts ?? []).length > 0 && <span className="text-xs"> [{b!.parts!.map(partLabel).join(", ")}]</span>}
-        {b!.comment && <span className="text-xs italic"> {b!.comment}</span>}
+        {b!.comment && <span className="text-xs"> <SlantWords text={b!.comment} /></span>}
       </Ins>
     );
   }
@@ -94,7 +96,7 @@ function Step({ row }: { row: Row<SeqStep> }) {
       <Del>
         {stepText(a!)}
         {(a!.parts ?? []).length > 0 && <span className="text-xs"> [{a!.parts!.map(partLabel).join(", ")}]</span>}
-        {a!.comment && <span className="text-xs italic"> {a!.comment}</span>}
+        {a!.comment && <span className="text-xs"> <SlantWords text={a!.comment} /></span>}
       </Del>
     );
   }
@@ -120,7 +122,7 @@ function Step({ row }: { row: Row<SeqStep> }) {
         </span>
       )}
       {(a!.comment || b!.comment) && (
-        <span className="text-xs italic text-muted">
+        <span className="slant inline-block text-xs text-muted">
           {" "}
           <Changed a={a!.comment} b={b!.comment} />
         </span>

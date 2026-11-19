@@ -1,14 +1,18 @@
 "use client";
 
 import { Fragment } from "react";
+import { SlantWords } from "@/components/sessions/slant";
 import { SectionSongsheets } from "@/components/sessions/plan-editor";
-import { isLongComment, keyLabel, partInfo, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
+import { isLongComment, keyLabel, looseParts, partInfo, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
-const isChorus = (s: SeqStep | undefined) => Boolean(s && /^chorus\b/i.test(s.name.trim()));
+const isChorus = (s: SeqStep | undefined) => Boolean(s && !s.free && /^chorus\b/i.test(s.name.trim()));
+/** V1, C... for an element; free text (| Transpose to E |) as written, upright like an element. */
+const label = (s: SeqStep) => (s.free ? s.name : shortName(s.name));
 
 /** How much room a step takes on a line, roughly in characters (with its " | "). A long comment has a line of its own. */
 const width = (s: SeqStep) =>
-  shortName(s.name).length +
+  label(s).length +
+  (s.before ? s.before.length + 1 : 0) +
   (s.repeat > 1 ? 3 : 0) +
   (s.tags.length ? s.tags.join(", ").length + 3 : 0) +
   (s.comment && !isLongComment(s.comment) ? s.comment.length + 1 : 0) +
@@ -87,18 +91,39 @@ function balanced(steps: SeqStep[]): SeqStep[][] {
  * sits beside its step; a step with a long one starts a line of its own (see lines), with no bar
  * after it, and the comment wraps onto the lines under it.
  */
-function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: boolean; last: boolean; highlight: string | null }) {
+function SeqLine({
+  steps,
+  first,
+  last,
+  highlight,
+  head,
+  tail,
+}: {
+  steps: SeqStep[];
+  first: boolean;
+  last: boolean;
+  highlight: string | null;
+  /** Loose text before the first bar / after the last (first and last lines only): a note, not a step. */
+  head?: string;
+  tail?: string;
+}) {
   const mine = highlight ? partInfo(highlight) : undefined;
   // A step with a long comment is on a line of its own: "| Chorus" with no bar after it, then the
   // comment, wrapping (ending in || if it's the song's last step).
   const longComment = steps.length === 1 && isLongComment(steps[0].comment) ? steps[0].comment : null;
   return (
     <p className="break-words leading-7">
+      {head && (
+        <span className="text-xs text-muted">
+          <SlantWords text={head} />{" "}
+        </span>
+      )}
       {steps.map((s, i) => {
         const featured = mine && s.parts?.includes(mine.role);
-        const label = (
+        const name = (
           <>
-            {shortName(s.name)}
+            {/* Free text a touch smaller (13px) than the elements, as in the builder. */}
+            {s.free ? <span className="text-[13px]">{label(s)}</span> : label(s)}
             {s.repeat > 1 && <span className="font-semibold"> x{s.repeat}</span>}
             {s.tags.length > 0 && <span className={featured ? "" : "text-muted"}> ({s.tags.join(", ")})</span>}
           </>
@@ -110,14 +135,24 @@ function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: b
             {/* The step, its instruments and a short comment on one line, never split. */}
             <span className="whitespace-nowrap">
               {i === 0 && <span className="text-muted">{first ? "|| " : "| "}</span>}
+              {s.before && (
+                <span className="text-xs text-muted">
+                  <SlantWords text={s.before} />{" "}
+                </span>
+              )}
               {featured ? (
                 <span title={`${mine.label} featured here`} className="rounded px-1 py-px font-semibold" style={{ color: mine.color, background: partTint(mine.color) }}>
-                  {label}
+                  {name}
                 </span>
               ) : (
-                label
+                name
               )}
-              {s.comment && !isLongComment(s.comment) && <span className="text-xs italic text-muted"> {s.comment}</span>}
+              {s.comment && !isLongComment(s.comment) && (
+                <span className="text-xs text-muted">
+                  {" "}
+                  <SlantWords text={s.comment} />
+                </span>
+              )}
               {!longComment && <span className="text-muted"> {closing}</span>}
             </span>
           </Fragment>
@@ -126,9 +161,17 @@ function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: b
       {longComment && (
         <>
           {" "}
-          <span className="text-xs italic text-muted">{longComment}</span>
+          <span className="text-xs text-muted">
+            <SlantWords text={longComment} />
+          </span>
           {last && <span className="text-muted">{" ||"}</span>}
         </>
+      )}
+      {tail && (
+        <span className="text-xs text-muted">
+          {" "}
+          <SlantWords text={tail} />
+        </span>
       )}
     </p>
   );
@@ -136,7 +179,7 @@ function SeqLine({ steps, first, last, highlight }: { steps: SeqStep[]; first: b
 
 function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; lead: string | null; highlight: string | null }) {
   const key = keyLabel(item.key, item.transpose_to);
-  const steps = item.sequence ?? [];
+  const { head, body: steps, tail } = looseParts(item.sequence ?? []);
   const ls = lines(steps);
   // The links set for this song in the session (as in the full view), under its title and above its sequence.
   const links = (item.links ?? []).filter((l) => l.url);
@@ -164,7 +207,15 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
       {steps.length > 0 && (
         <div className="pl-4">
           {ls.map((l, i) => (
-            <SeqLine key={l[0]?.id ?? i} steps={l} first={i === 0} last={i === ls.length - 1} highlight={highlight} />
+            <SeqLine
+              key={l[0]?.id ?? i}
+              steps={l}
+              first={i === 0}
+              last={i === ls.length - 1}
+              highlight={highlight}
+              head={i === 0 ? head?.name : undefined}
+              tail={i === ls.length - 1 ? tail?.name : undefined}
+            />
           ))}
         </div>
       )}
