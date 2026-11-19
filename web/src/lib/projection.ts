@@ -11,9 +11,10 @@ import { loadTeams, type Team } from "@/lib/teams";
  * media team serves at, so the projectionists can get the songs ready.
  *
  * A worship session is crewed by a media session when the services are the same: a standard one by
- * kind and date (same group), an ad hoc one by link (lib/service-links.ts). Members see the plans
- * of the services they're rostered on; the lead sees every upcoming published plan of the group's
- * worship teams (marked when their team isn't crewing it).
+ * kind and date (same group), an ad hoc one by link (lib/service-links.ts). Everyone on the media
+ * team (crewed or not) sees every upcoming published plan for a service their team serves at: the
+ * standard kinds in its config (e.g. EM Sunday, PnP; not CM's), whether or not the media roster has
+ * that date yet, and ad hoc sessions linked to one of its sessions.
  */
 
 export type ProjectionPlan = {
@@ -50,8 +51,11 @@ const projectionFor = cache(async (viewerId: string, isLead: boolean, teamId: st
   const team = { id: teamId, group };
   const db = createAdminClient();
   const today = todayYmd();
-  const worshipTeams = (await loadTeams()).filter((t) => t.group === team.group && t.kind === "worship");
+  const teams = await loadTeams();
+  const worshipTeams = teams.filter((t) => t.group === team.group && t.kind === "worship");
   if (!worshipTeams.length) return [];
+  // The standard services this media team serves at (e.g. EM Sunday and PnP, not CM's).
+  const servedKinds = new Set<string>(teams.find((t) => t.id === team.id)?.config.sessionKinds ?? []);
   const teamName = new Map(worshipTeams.map((t) => [t.id, t.name]));
 
   const [{ data: plans }, { data: crewRows }, { data: me }] = await Promise.all([
@@ -104,7 +108,8 @@ const projectionFor = cache(async (viewerId: string, isLead: boolean, teamId: st
       // The media team's sessions at this service: same kind that day, or linked to it.
       const crewing = crew.filter((c) => (kind === "custom" ? Boolean(rs.link_id) && c.linkId === rs.link_id : c.kind === kind && c.date === rs.date));
       const roleHere = crewing.map((c) => myRole.get(c.id)).find(Boolean) ?? null;
-      if (!viewer.isLead && !roleHere) return [];
+      // Only services the team serves at (its standard kinds, or ad hoc ones linked to it).
+      if (!crewing.length && (kind === "custom" || !servedKinds.has(kind))) return [];
       const publishedAt = (plan.published_at as string | null) ?? null;
       const songs = ((plan.worship_session_sections ?? []) as Sec[])
         .sort((a, b) => a.position - b.position)
@@ -132,7 +137,7 @@ const projectionFor = cache(async (viewerId: string, isLead: boolean, teamId: st
 
 /**
  * Plans published (or republished with changes) for services the media team serves at, since the
- * viewer last opened Projection: members' own services; the lead's team's. For the nav badge and
+ * viewer last opened Projection (any of the team's, rostered on or not). For the nav badge and
  * the home page's notices. Only services the media team is linked to count.
  */
 export async function loadNewlyPublishedForCrew(viewer: Viewer, team: Pick<Team, "id" | "group" | "kind">): Promise<ProjectionPlan[]> {

@@ -12,7 +12,8 @@ export const metadata: Metadata = { title: "Projection · Brighton Media" };
 
 /**
  * A media team's Projection page: the worship team's upcoming published session plans, so the
- * crew can get the songs ready. Members: the services they're rostered on. The lead: every one.
+ * crew can get the songs ready. Everyone on the team sees every one the team serves at (its
+ * standard kinds, plus linked ad hoc sessions), whether or not they're rostered on it.
  */
 async function ProjectionView() {
   const user = await requireTeamUser("/projection", "media");
@@ -23,9 +24,7 @@ async function ProjectionView() {
       <div>
         <h1 className="font-display text-3xl font-semibold">Projection</h1>
         <p className="text-sm text-muted">
-          {user.isLead
-            ? "Every upcoming session, once the worship team publishes its plan."
-            : "Upcoming sessions you're serving at, once the worship team publishes the plan."}
+          Every upcoming session your team serves at, once the worship team publishes its plan.
         </p>
       </div>
 
