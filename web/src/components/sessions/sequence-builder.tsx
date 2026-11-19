@@ -1189,7 +1189,7 @@ export function SequenceBuilder({
               Remove
             </button>
           </div>
-          {/* Phones: 8px more under the Remove row. The new-tag box and Add sit at the right. */}
+          {/* Phones: 8px more under the Remove row, and the new-tag box and Add at the right. From 640px they follow the tags (left). */}
           <div className="flex flex-wrap items-center gap-1.5 max-sm:pt-2" role="group" aria-label="Tags">
             {tags.map((t) => {
               const on = active.tags.includes(t);
@@ -1206,7 +1206,7 @@ export function SequenceBuilder({
               );
             })}
             {/* Enter adds the tag: see useEnterToAdd. */}
-            <div className="ml-auto flex items-center gap-1">
+            <div className="flex items-center gap-1 max-sm:ml-auto">
               {tagEnter.form}
               <input
                 value={ownTag}
