@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { BankSongDetail } from "@/app/(app)/sessions/actions";
 import { SongsheetPreview } from "@/components/songs/songsheet-preview";
-import { PdfSheetPreview } from "@/components/songs/pdf-viewer-dialog";
+import { DownloadIcon, PdfSheetPreview } from "@/components/songs/pdf-viewer-dialog";
 import { SequenceView } from "@/components/sessions/sequence-builder";
 import { SONG_TYPE_LABEL, type SongType } from "@/lib/session-plan";
 import { searchSongs, songIndex } from "@/lib/song-search";
@@ -42,6 +42,21 @@ function Chevron({ dir }: { dir: "left" | "right" }) {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={dir === "left" ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} />
     </svg>
+  );
+}
+
+/** The songsheet's download button: an icon only, at the top right beside the song's title. */
+function DownloadLink({ href, name, className = "" }: { href: string; name: string; className?: string }) {
+  return (
+    <a
+      href={href}
+      download={name}
+      aria-label="Download songsheet"
+      title="Download songsheet"
+      className={`-mr-2 -mt-0.5 shrink-0 rounded-full p-2 text-muted hover:bg-background hover:text-foreground ${className}`}
+    >
+      <DownloadIcon />
+    </a>
   );
 }
 
@@ -155,7 +170,10 @@ export function SongBankPanel({
       {sheet && !detailId ? (
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           <div className="space-y-1">
-            <h3 className="font-display text-2xl font-semibold leading-tight">{sheet.title}</h3>
+            <div className="flex items-start gap-2">
+              <h3 className="min-w-0 flex-1 font-display text-2xl font-semibold leading-tight">{sheet.title}</h3>
+              <DownloadLink href={sheet.src} name={`${sheet.title}${sheet.keyLabel ? ` (${sheet.keyLabel})` : ""}.pdf`} />
+            </div>
             {sheet.artist && <p className="text-sm text-muted">{sheet.artist}</p>}
             {(sheet.badge || sheet.keyLabel) && (
               <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
@@ -190,6 +208,7 @@ export function SongBankPanel({
                   {target && bankSong && target.songId === bankSong.id && (
                     <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted">In {target.label}</span>
                   )}
+                  {detail.versionId && <DownloadLink href={`/api/songsheets/${detail.versionId}/preview/pdf?download`} name={`${detail.title}.pdf`} className="ml-auto self-start" />}
                 </div>
                 {detail.artist && <p className="text-sm text-muted">{detail.artist}</p>}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">

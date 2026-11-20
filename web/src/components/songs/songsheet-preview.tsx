@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCloseOnLeave } from "@/lib/use-close-on-leave";
 import { NO_CROP, marginsOf, sheetCrops, type Margins } from "@/lib/sheet-crop";
 import { NoteLoader } from "@/components/note-loader";
+import { DownloadIcon } from "@/components/songs/pdf-viewer-dialog";
 
 
 type Meta = { pages: number } | { error: string } | null;
@@ -158,6 +159,17 @@ export function PreviewDialog({
               className="shrink-0 text-sm text-accent underline-offset-2 hover:underline"
             >
               Open PDF
+            </a>
+          )}
+          {versionId && meta && "pages" in meta && (
+            <a
+              href={`/api/songsheets/${versionId}/preview/pdf?download`}
+              download
+              aria-label="Download PDF"
+              title="Download PDF"
+              className="-mx-1 shrink-0 rounded-full p-2 text-muted hover:bg-background hover:text-foreground"
+            >
+              <DownloadIcon />
             </a>
           )}
           {songId && (
