@@ -56,6 +56,8 @@ export type EditorApi = {
   sheetsFor: string | null;
   /** Songs that change key: item id -> the keys their songsheets come in (see Workbench.sheetKeys). */
   sheetKeys: Record<string, string[]>;
+  /** Open a songsheet button's sheet in the right-hand panel (unset on Projection: a popup instead). */
+  openSheet?: (sheet: SessionSheet) => void;
 };
 
 function GripIcon() {
@@ -847,19 +849,32 @@ function SheetIcon() {
  * A button per song with a songsheet, opening it in the session's key: under each set in the full
  * view, and every song's at the bottom of the simplified view (with its own `className`).
  */
+/** A session songsheet button's sheet: a song that changes key gets a second one (`to`) unless its songsheet already covers the change. */
+export type SessionSheet = { item: PlanItem; key: string | null; label: string | null; to: boolean };
+
+/** Where a session songsheet opens: the song's own upload, or the bank song's sheet in the session's key. */
+export function sessionSheetSrc(sessionId: string, { item, key, to }: SessionSheet): string {
+  return item.sheet && !item.song_id
+    ? uploadSrc(sessionId, item, key)
+    : // The key is in the address so a changed key never shows the old sheet.
+      `/api/sessions/${sessionId}/songsheets/${item.id}?key=${encodeURIComponent(key ?? "")}${to ? "&to=1" : ""}`;
+}
+
 export function SectionSongsheets({
   sessionId,
   items,
   sheetKeys,
+  onOpen,
   className = "mt-3 border-t border-border pt-3",
 }: {
   sessionId: string;
   items: PlanItem[];
   sheetKeys: Record<string, string[]>;
+  /** Open the sheet somewhere else (the workbench's right-hand panel) instead of in a popup. */
+  onOpen?: (sheet: SessionSheet) => void;
   className?: string;
 }) {
-  // A song that changes key gets a second sheet (`to`) unless its songsheet already covers the change.
-  type Sheet = { item: PlanItem; key: string | null; label: string | null; to: boolean };
+  type Sheet = SessionSheet;
   const [open, setOpen] = useState<Sheet | null>(null);
   const songs = items.filter((i) => i.kind === "song" && (i.song_id || i.sheet));
   if (!songs.length) return null;
@@ -888,7 +903,7 @@ export function SectionSongsheets({
           <button
             key={`${sh.item.id}${sh.to ? "-to" : ""}`}
             type="button"
-            onClick={() => setOpen(sh)}
+            onClick={() => (onOpen ? onOpen(sh) : setOpen(sh))}
             className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm hover:border-accent hover:text-accent"
           >
             <SheetIcon />
@@ -899,12 +914,7 @@ export function SectionSongsheets({
       </div>
       {open && (
         <PdfViewerDialog
-          src={
-            open.item.sheet && !open.item.song_id
-              ? uploadSrc(sessionId, open.item, open.key)
-              : // The key is in the address so a changed key never shows the old sheet.
-                `/api/sessions/${sessionId}/songsheets/${open.item.id}?key=${encodeURIComponent(open.key ?? "")}${open.to ? "&to=1" : ""}`
-          }
+          src={sessionSheetSrc(sessionId, open)}
           title={`${open.item.title}${open.label ? ` (${open.label})` : ""}`}
           onClose={() => setOpen(null)}
         />
@@ -978,7 +988,7 @@ export function PlanEditor({ plan, api }: { plan: PlanSection[]; api: EditorApi 
                 {api.editing ? "Drag a song here, or add one below." : "Nothing in this section yet."}
               </p>
             )}
-            {api.sheetsFor && <SectionSongsheets sessionId={api.sheetsFor} items={s.items} sheetKeys={api.sheetKeys} />}
+            {api.sheetsFor && <SectionSongsheets sessionId={api.sheetsFor} items={s.items} sheetKeys={api.sheetKeys} onOpen={api.openSheet} />}
             {api.editing && (
               <div className="mt-2 flex gap-3 px-1">
                 <button type="button" onClick={() => api.addItem("song", s.id)} className="text-xs font-medium text-accent hover:underline">

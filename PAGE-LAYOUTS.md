@@ -276,7 +276,12 @@ by link); the lead sees every upcoming published plan of the group's worship tea
 **`/projection/[id]`** (a worship plan opened from Projection): the session page below, read only,
 **without** the band and the song bank, so it's one column at the nav's width (no `<WidePage />`).
 "← Projection" for the back link; each song opens and closes on its own, so several (or all) can be
-open at once; the "what changed" box shows republished changes as it does for the band.
+open at once; the "what changed" box shows republished changes as it does for the band. Opening a
+song, or a Songsheets button, opens a **Songsheet** panel instead of a song bank (the song bank
+column's sizes; header "Songsheet" and ×, which closes it): the song's sheet in the session's key
+(its own uploaded sheet if it has one). While it's open the page splits into the plan and that
+column inside the same width, the panel reaching to the window's edge like the song bank's; phones
+get it as the bottom sheet, with a floating "Songsheet" button while it's closed.
 
 **`/sessions`**: full width. Title "Sessions" + subtitle, "+ Build session" (dark) right; on
 **phones (below 640px)** that button is hidden and a 40px dark "+" (like the roster's New button,
@@ -332,6 +337,10 @@ while editing; only when the session has links; added from the **+** menu's "+ S
 then the plan editor (or, in the simplified view, the run sheet with each song's links, in blue, under its title and above its sequence,
 one "Name: address" per line, no bullets, the song's notes in small text under its sequence, and transitions in italics between the songs, unnumbered; once published, a separate card under it
 holds every song's **Songsheets** buttons, the same buttons as under each set in the full view, in the app's own font) (item cards, 2 → 4 field columns).
+Songsheet buttons (either view) open the sheet in the song bank panel, where a bank song's
+songsheet shows (title, key chip, the pages; tap for full size; "← Song bank" back to the list; on
+phones the bank sheet opens). Opening a song with its own uploaded songsheet (editing, or viewing
+once published / as its worship leader) shows that file there too, with an "Uploaded songsheet" chip.
 Outside editing, songs open and close on their own (several can be open at once); while editing,
 opening one closes the rest. **Show changes** (± button, pressed = on): the plan becomes a run sheet
 like the simplified view comparing it with the version the last publishing replaced (for worship

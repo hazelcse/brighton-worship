@@ -2,7 +2,7 @@
 
 import { Fragment } from "react";
 import { SlantWords } from "@/components/sessions/slant";
-import { SectionSongsheets } from "@/components/sessions/plan-editor";
+import { SectionSongsheets, type SessionSheet } from "@/components/sessions/plan-editor";
 import { isLongComment, keyLabel, looseParts, partInfo, partsPlayedBy, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 const isChorus = (s: SeqStep | undefined) => Boolean(s && !s.free && /^chorus\b/i.test(s.name.trim()));
@@ -238,6 +238,7 @@ export function SimplePlan({
   highlight,
   sheetsFor = null,
   sheetKeys = {},
+  onOpenSheet,
 }: {
   plan: PlanSection[];
   leadName: (id: string | null) => string | null;
@@ -245,12 +246,14 @@ export function SimplePlan({
   /** Once the plan's published: the session's id, for every song's songsheet at the bottom (as in the full view). */
   sheetsFor?: string | null;
   sheetKeys?: Record<string, string[]>;
+  /** Open a songsheet in the right-hand panel instead of a popup. */
+  onOpenSheet?: (sheet: SessionSheet) => void;
 }) {
   const sections = plan.filter((s) => s.items.length > 0);
   if (!sections.length) return <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">Nothing planned yet.</p>;
   const sheets = sheetsFor && (
     // Every song's songsheet in one place under the run sheet, in the app's own font (not the run sheet's Arial).
-    <SectionSongsheets sessionId={sheetsFor} items={sections.flatMap((s) => s.items)} sheetKeys={sheetKeys} className="rounded-xl border border-border bg-surface p-3 sm:p-4" />
+    <SectionSongsheets sessionId={sheetsFor} items={sections.flatMap((s) => s.items)} sheetKeys={sheetKeys} onOpen={onOpenSheet} className="rounded-xl border border-border bg-surface p-3 sm:p-4" />
   );
   return (
     <>

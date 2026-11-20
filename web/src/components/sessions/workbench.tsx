@@ -13,17 +13,17 @@ import {
   saveDraft,
   type BankSongDetail,
 } from "@/app/(app)/sessions/actions";
-import { PlanEditor, ownSheetKey, uploadSrc, type EditorApi, type Singer } from "@/components/sessions/plan-editor";
+import { PlanEditor, ownSheetKey, sessionSheetSrc, uploadSrc, type EditorApi, type SessionSheet, type Singer } from "@/components/sessions/plan-editor";
 import { SimplePlan } from "@/components/sessions/simple-plan";
 import { PlanDiff } from "@/components/sessions/plan-diff";
 import { PartCues } from "@/components/sessions/part-cues";
-import { SongBankPanel, type BankSong, type OwnSheet } from "@/components/sessions/song-bank-panel";
+import { SongBankPanel, type BankSong, type PanelSheet } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
 import { SessionLinks, type SessionLinkEdit } from "@/components/sessions/session-links";
 import { RehearsalDates } from "@/components/sessions/rehearsal-dates";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ROLES, ROLE_SHORT } from "@/lib/roster";
-import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanLink, type PlanSection } from "@/lib/session-plan";
+import { LOCK_RENEW_MS, keyLabel, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanLink, type PlanSection } from "@/lib/session-plan";
 import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessions";
 
 const btn = "inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium disabled:opacity-60";
@@ -599,6 +599,8 @@ export function Workbench({
   const [detailId, setDetailId] = useState<string | null>(null);
   /** The ← in the song bank went back to the list from the open song's own songsheet (until another song is opened). */
   const [ownHidden, setOwnHidden] = useState(false);
+  /** A songsheet button's sheet (simplified view, or under a set), shown in the right-hand panel. */
+  const [openedSheet, setOpenedSheet] = useState<SessionSheet | null>(null);
   const [details, setDetails] = useState<Record<string, BankSongDetail | null | undefined>>({});
   const [focusSearch, setFocusSearch] = useState(0);
 
@@ -864,6 +866,7 @@ export function Workbench({
     (item: PlanItem | null) => {
       setSelectedId(item?.id ?? null);
       setOwnHidden(false);
+      setOpenedSheet(null);
       // Projection has no song bank to show the song in.
       if (!item || item.kind !== "song" || projection) return;
       if (item.song_id) showDetail(item.song_id);
@@ -875,20 +878,65 @@ export function Workbench({
     [editing, showDetail, projection],
   );
 
-  /** Editing a song with its own uploaded songsheet (not from the bank): the panel shows that file. */
-  const ownSheet: OwnSheet = useMemo(
-    () =>
-      editing && !projection && !ownHidden && !detailId && selected?.kind === "song" && !selected.song_id && selected.sheet
-        ? {
-            title: selected.title || "Untitled song",
-            artist: selected.artist ?? null,
-            keyLabel: ownSheetKey(selected) || null,
-            fileName: selected.sheet.file_name,
-            src: uploadSrc(initial.id, selected),
-          }
-        : null,
-    [editing, projection, ownHidden, detailId, selected, initial.id],
-  );
+  /**
+   * The songsheet in the right-hand panel (where a bank song's shows): a songsheet button's, else the
+   * open song's own uploaded one. The band can only open uploads once the plan's published.
+   */
+  const ownSheet: PanelSheet = useMemo(() => {
+    if (detailId) return null;
+    if (openedSheet) {
+      const { item } = openedSheet;
+      const own = Boolean(item.sheet && !item.song_id);
+      return {
+        title: item.title || "Untitled song",
+        artist: item.artist ?? null,
+        badge: own ? "Uploaded songsheet" : null,
+        keyLabel: openedSheet.label,
+        fileName: own ? item.sheet!.file_name : undefined,
+        src: sessionSheetSrc(initial.id, openedSheet),
+      };
+    }
+    if (ownHidden || selected?.kind !== "song") return null;
+    // Projection has no song bank: an open bank song shows its songsheet in the session's key.
+    if (projection && selected.song_id) {
+      const keys = initial.sheetKeys[selected.id];
+      const label = keys && keys.length > 1 ? selected.key : keyLabel(selected.key, selected.transpose_to);
+      return {
+        title: selected.title || "Untitled song",
+        artist: selected.artist ?? null,
+        badge: null,
+        keyLabel: label || null,
+        src: sessionSheetSrc(initial.id, { item: selected, key: selected.key, label, to: false }),
+      };
+    }
+    if (selected.song_id || !selected.sheet) return null;
+    if (!editing && !canEdit && !published) return null;
+    return {
+      title: selected.title || "Untitled song",
+      artist: selected.artist ?? null,
+      badge: "Uploaded songsheet",
+      keyLabel: ownSheetKey(selected) || null,
+      fileName: selected.sheet.file_name,
+      src: uploadSrc(initial.id, selected),
+    };
+  }, [projection, detailId, openedSheet, ownHidden, selected, editing, canEdit, published, initial.id, initial.sheetKeys]);
+
+  /** Projection: the songsheet panel only shows while there's a songsheet in it. */
+  const hasPanel = !projection || Boolean(ownSheet);
+  const closeProjectionSheet = () => {
+    setOwnHidden(true);
+    setOpenedSheet(null);
+    setMobileOpen(false);
+  };
+
+  const openSheet = useCallback((sheet: SessionSheet) => {
+    setDetailId(null);
+    setOwnHidden(false);
+    setOpenedSheet(sheet);
+    setMinimised(false);
+    setMobileOpen(true);
+    setSheetCollapsed(false);
+  }, []);
 
   // While a song is open in the desktop song bank, the panel reaches out to the window's right edge
   // (over the page margin) so its songsheet is as big as it can be. The column itself keeps its width.
@@ -1056,6 +1104,7 @@ export function Workbench({
     // Songsheets are made for the published plan, so only shown while that's what's on the page.
     sheetsFor: published && !editing && !viewingRevision ? initial.id : null,
     sheetKeys: initial.sheetKeys,
+    openSheet,
   };
 
   const target = editing && selected?.kind === "song" ? { label: `song ${numbers[selected.id]}`, songId: selected.song_id } : null;
@@ -1073,14 +1122,17 @@ export function Workbench({
       detailId={detailId}
       onDetail={(id) => {
         if (!id) setOwnHidden(true);
+        setOpenedSheet(null);
         showDetail(id);
       }}
       detail={detailId ? details[detailId] : undefined}
-      ownSheet={ownSheet}
+      sheet={ownSheet}
+      sheetOnly={projection}
       target={target}
       onUse={applySong}
       onMinimise={() => {
-        if (inSheet) {
+        if (projection) closeProjectionSheet();
+        else if (inSheet) {
           setMobileOpen(false);
           setSheetCollapsed(false);
         } else setMinimised(true);
@@ -1095,7 +1147,7 @@ export function Workbench({
       ref={gridRef}
       // --bank: the song bank column; defaults by window size, or the width dragged (BankResizer).
       style={bankWidth && !minimised ? ({ "--bank": bankColumn(bankWidth) } as React.CSSProperties) : undefined}
-      className={`grid gap-4 ${projection ? "" : minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_var(--bank)] lg:[--bank:24rem] xl:[--bank:28rem]"}`}
+      className={`grid gap-4 ${!hasPanel ? "" : minimised ? "lg:grid-cols-[minmax(0,1fr)_2.75rem]" : "lg:grid-cols-[minmax(0,1fr)_var(--bank)] lg:[--bank:24rem] xl:[--bank:28rem]"}`}
     >
       {/* View mode only: pick up the worship leaders' changes. Never while editing, so a refresh can't fight the draft. */}
       {!editing && <AutoRefresh />}
@@ -1273,6 +1325,7 @@ export function Workbench({
             highlight={initial.myRole}
             sheetsFor={api.sheetsFor}
             sheetKeys={initial.sheetKeys}
+            onOpenSheet={api.openSheet}
           />
         ) : (
           <>
@@ -1318,8 +1371,8 @@ export function Workbench({
         )}
       </div>
 
-      {/* Song bank: a column on wide screens, a sheet on phones (not on Projection) */}
-      {!projection && (
+      {/* Song bank: a column on wide screens, a sheet on phones. Projection: just an open songsheet. */}
+      {hasPanel && (
       <>
       <aside ref={asideRef} className="hidden lg:block">
         <div className="sticky top-[4.5rem] h-[calc(100dvh-6rem)]">
@@ -1354,7 +1407,7 @@ export function Workbench({
             onClick={openPanel}
             className="fixed bottom-4 right-4 z-30 rounded-full bg-ink px-4 py-3 text-sm font-medium text-ink-foreground shadow-lg"
           >
-            Song bank
+            {projection ? "Songsheet" : "Song bank"}
           </button>
         )}
       </div>

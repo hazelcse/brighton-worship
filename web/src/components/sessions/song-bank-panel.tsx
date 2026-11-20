@@ -47,8 +47,11 @@ function Chevron({ dir }: { dir: "left" | "right" }) {
 
 export type PanelTarget = { label: string; songId: string | null } | null;
 
-/** The open song's own uploaded songsheet (not from the bank), shown where a bank song's would be. */
-export type OwnSheet = { title: string; artist: string | null; keyLabel: string | null; fileName: string; src: string } | null;
+/**
+ * A session songsheet shown where a bank song's would be: a song's own uploaded one, or one picked
+ * from the simplified view's Songsheets (in the session's key). `badge`: e.g. "Uploaded songsheet".
+ */
+export type PanelSheet = { title: string; artist: string | null; badge: string | null; keyLabel: string | null; fileName?: string; src: string } | null;
 
 /**
  * The song bank, on the right of the workbench: a searchable list of the library, and one song's
@@ -69,7 +72,8 @@ export function SongBankPanel({
   onMinimise,
   focusSearch,
   defaultLanguage,
-  ownSheet = null,
+  sheet = null,
+  sheetOnly = false,
 }: {
   /** Phones: inside the bottom sheet (which draws the frame), with an ✕ that closes it instead of ">". */
   inSheet?: boolean;
@@ -91,8 +95,10 @@ export function SongBankPanel({
   focusSearch: number;
   /** Starting language filter: English for EM sessions, Chinese for CM, "" (all) otherwise. */
   defaultLanguage: "en" | "zh" | "";
-  /** Editing a song with its own uploaded songsheet: shown instead of the list (← goes back to it). */
-  ownSheet?: OwnSheet;
+  /** A session songsheet to show instead of the list (← goes back to it). */
+  sheet?: PanelSheet;
+  /** Projection: just the songsheet (no song bank behind it); × closes it. */
+  sheetOnly?: boolean;
 }) {
   const [type, setType] = useState("");
   const [language, setLanguage] = useState<string>(defaultLanguage);
@@ -114,9 +120,11 @@ export function SongBankPanel({
   const bankSong = detailId ? bank.find((s) => s.id === detailId) : undefined;
 
   return (
-    <section aria-label="Song bank" className={`flex h-full flex-col overflow-hidden bg-surface ${inSheet ? "" : toEdge ? "rounded-l-xl border-y border-l border-border" : "rounded-xl border border-border"}`}>
+    <section aria-label={sheetOnly ? "Songsheet" : "Song bank"} className={`flex h-full flex-col overflow-hidden bg-surface ${inSheet ? "" : toEdge ? "rounded-l-xl border-y border-l border-border" : "rounded-xl border border-border"}`}>
       <div className={`flex items-center gap-2 border-b border-border px-3 ${inSheet ? "pb-2.5" : "py-2.5"}`}>
-        {detailId || ownSheet ? (
+        {sheetOnly ? (
+          <h2 className="font-semibold">Songsheet</h2>
+        ) : detailId || sheet ? (
           <button type="button" onClick={() => onDetail(null)} className="-ml-1 flex items-center gap-1 rounded-md px-1 py-1 text-sm text-muted hover:text-foreground">
             {/* An arrow with a line (←), not a bare chevron. */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -130,11 +138,11 @@ export function SongBankPanel({
         <button
           type="button"
           onClick={onMinimise}
-          aria-label={inSheet ? "Close song bank" : "Minimise song bank"}
-          title={inSheet ? "Close" : "Minimise"}
+          aria-label={sheetOnly ? "Close songsheet" : inSheet ? "Close song bank" : "Minimise song bank"}
+          title={inSheet || sheetOnly ? "Close" : "Minimise"}
           className="ml-auto rounded-md p-1.5 text-muted hover:bg-background hover:text-foreground"
         >
-          {inSheet ? (
+          {inSheet || sheetOnly ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
@@ -144,20 +152,24 @@ export function SongBankPanel({
         </button>
       </div>
 
-      {ownSheet && !detailId ? (
+      {sheet && !detailId ? (
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           <div className="space-y-1">
-            <h3 className="font-display text-2xl font-semibold leading-tight">{ownSheet.title}</h3>
-            {ownSheet.artist && <p className="text-sm text-muted">{ownSheet.artist}</p>}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-              <span className="rounded-full bg-background px-2 py-0.5 font-medium text-muted">Your own songsheet</span>
-              {ownSheet.keyLabel && <span className="rounded-full border border-border px-2 py-0.5">Key {ownSheet.keyLabel}</span>}
-            </div>
+            <h3 className="font-display text-2xl font-semibold leading-tight">{sheet.title}</h3>
+            {sheet.artist && <p className="text-sm text-muted">{sheet.artist}</p>}
+            {(sheet.badge || sheet.keyLabel) && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                {sheet.badge && <span className="rounded-full bg-background px-2 py-0.5 font-medium text-muted">{sheet.badge}</span>}
+                {sheet.keyLabel && <span className="rounded-full border border-border px-2 py-0.5">Key {sheet.keyLabel}</span>}
+              </div>
+            )}
           </div>
-          <PdfSheetPreview key={ownSheet.src} src={ownSheet.src} title={ownSheet.title} fileName={ownSheet.fileName} />
-          <p className="truncate text-xs text-muted" title={ownSheet.fileName}>
-            {ownSheet.fileName}
-          </p>
+          <PdfSheetPreview key={sheet.src} src={sheet.src} title={sheet.keyLabel ? `${sheet.title} (${sheet.keyLabel})` : sheet.title} fileName={sheet.fileName} />
+          {sheet.fileName && (
+            <p className="truncate text-xs text-muted" title={sheet.fileName}>
+              {sheet.fileName}
+            </p>
+          )}
         </div>
       ) : !canBrowse ? (
         <p className="p-4 text-sm text-muted">You don&apos;t have access to the song library.</p>
