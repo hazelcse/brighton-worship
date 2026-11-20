@@ -3,7 +3,7 @@
 import { Fragment } from "react";
 import { SlantWords } from "@/components/sessions/slant";
 import { SectionSongsheets } from "@/components/sessions/plan-editor";
-import { isLongComment, keyLabel, looseParts, partInfo, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
+import { isLongComment, keyLabel, looseParts, partInfo, partsPlayedBy, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 const isChorus = (s: SeqStep | undefined) => Boolean(s && !s.free && /^chorus\b/i.test(s.name.trim()));
 /** V1, C... for an element; free text (| Transpose to E |) as written, upright like an element. */
@@ -107,7 +107,7 @@ function SeqLine({
   head?: string;
   tail?: string;
 }) {
-  const mine = highlight ? partInfo(highlight) : undefined;
+  const played = partsPlayedBy(highlight);
   // A step with a long comment is on a line of its own: "| Chorus" with no bar after it, then the
   // comment, wrapping (ending in || if it's the song's last step).
   const longComment = steps.length === 1 && isLongComment(steps[0].comment) ? steps[0].comment : null;
@@ -119,7 +119,9 @@ function SeqLine({
         </span>
       )}
       {steps.map((s, i) => {
-        const featured = mine && s.parts?.includes(mine.role);
+        // The viewer's own part if it's here, else another they play (keys also covers synth/pads).
+        const featuredRole = played.find((r) => s.parts?.includes(r));
+        const featured = featuredRole ? partInfo(featuredRole) : undefined;
         const name = (
           <>
             {/* Free text a touch smaller (13px) than the elements, as in the builder. */}
@@ -141,7 +143,7 @@ function SeqLine({
                 </span>
               )}
               {featured ? (
-                <span title={`${mine.label} featured here`} className="rounded px-1 py-px font-semibold" style={{ color: mine.color, background: partTint(mine.color) }}>
+                <span title={`${featured.label} featured here`} className="rounded px-1 py-px font-semibold" style={{ color: featured.color, background: partTint(featured.color) }}>
                   {name}
                 </span>
               ) : (

@@ -287,6 +287,15 @@ export const PART_ROLES: { role: string; label: string; color: string }[] = [
 
 export const partInfo = (role: string) => PART_ROLES.find((p) => p.role === role);
 
+/**
+ * The parts a rostered role plays: its own, and for keys also synth/pads (the keys player covers
+ * both), so a synth/pads part reaches them too. Empty for roles that aren't instruments.
+ */
+export function partsPlayedBy(role: string | null | undefined): string[] {
+  if (!role || !partInfo(role)) return [];
+  return role === "keys" ? ["keys", "synth/pads"] : [role];
+}
+
 /** Worship leader and vocalist colours, apart from the instruments', for roles that aren't parts. */
 const SINGER_COLORS: Record<string, string> = { "worship leader": "#b5852a", vocalist: "#c4692f" };
 
@@ -314,12 +323,15 @@ export type PartCue = { title: string; steps: string[] };
 
 /** Where the plan features this instrument (none if the role isn't an instrument). */
 export function partCues(items: Pick<PlanItem, "kind" | "title" | "sequence">[], role: string | null): PartCue[] {
-  if (!role || !partInfo(role)) return [];
+  const played = partsPlayedBy(role);
+  if (played.length === 0) return [];
   return items
     .filter((i) => i.kind === "song")
     .map((i) => ({
       title: i.title || "Untitled song",
-      steps: (Array.isArray(i.sequence) ? i.sequence : []).filter((s) => s.parts?.includes(role)).map(stepLabel),
+      steps: (Array.isArray(i.sequence) ? i.sequence : []).filter((s) => s.parts?.some((p) => played.includes(p)))
+        // A part they cover but isn't their own (keys on synth/pads) says which, after the step.
+        .map((s) => (s.parts?.includes(role!) ? stepLabel(s) : `${stepLabel(s)} on ${played.filter((p) => s.parts?.includes(p)).map((p) => partInfo(p)!.label.toLowerCase()).join(", ")}`)),
     }))
     .filter((c) => c.steps.length > 0);
 }

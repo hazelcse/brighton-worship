@@ -13,16 +13,16 @@ import {
   saveDraft,
   type BankSongDetail,
 } from "@/app/(app)/sessions/actions";
-import { PlanEditor, type EditorApi, type Singer } from "@/components/sessions/plan-editor";
+import { PlanEditor, ownSheetKey, uploadSrc, type EditorApi, type Singer } from "@/components/sessions/plan-editor";
 import { SimplePlan } from "@/components/sessions/simple-plan";
 import { PlanDiff } from "@/components/sessions/plan-diff";
 import { PartCues } from "@/components/sessions/part-cues";
-import { SongBankPanel, type BankSong } from "@/components/sessions/song-bank-panel";
+import { SongBankPanel, type BankSong, type OwnSheet } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
 import { SessionLinks, type SessionLinkEdit } from "@/components/sessions/session-links";
 import { RehearsalDates } from "@/components/sessions/rehearsal-dates";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { ROLE_SHORT } from "@/lib/roster";
+import { ROLES, ROLE_SHORT } from "@/lib/roster";
 import { LOCK_RENEW_MS, majorKey, partCues, blankSong, blankTransition, newId, type PlanItem, type PlanLink, type PlanSection } from "@/lib/session-plan";
 import type { PlanRevisionNotice, Workbench as WorkbenchData } from "@/lib/sessions";
 
@@ -569,8 +569,23 @@ export function Workbench({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
   /** The simplified view: the whole set as one block of text. Remembered on this device. */
-  const simple = useSyncExternalStore(subscribeView, readSimpleView, () => false);
+  const simpleChoice = useSyncExternalStore(subscribeView, readSimpleView, () => false);
+  /**
+   * Band members on this session only get the simplified view, unless they're its BL/TB or lead a
+   * song in it (a worship leader or vocalist).
+   */
+  const simpleOnly = useMemo(() => {
+    const me = initial.band.find((m) => m.id === initial.myId);
+    if (!me || !ROLES.some((r) => r.value === me.role)) return false;
+    const roles = [me.role, ...me.also];
+    if (roles.includes("band leader") || roles.includes("talkback")) return false;
+    const leads = initial.plan.some((sec) => sec.items.some((i) => i.lead_id === me.id));
+    return !leads;
+  }, [initial.band, initial.myId, initial.plan]);
+  const simple = simpleOnly || simpleChoice;
   const toggleSimple = () => writeSimpleView(!simple);
+  /** While editing: the simplified view of the draft, to check how it reads (starts off each time). */
+  const [editPreview, setEditPreview] = useState(false);
 
   // Song bank panel
   const [minimised, setMinimised] = useState(false);
@@ -582,47 +597,8 @@ export function Workbench({
   const bankWidth = useSyncExternalStore(subscribeBankWidth, readBankWidth, () => null);
   const [query, setQuery] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
-  // While a song is open in the desktop song bank, the panel reaches out to the window's right edge
-  // (over the page margin) so its songsheet is as big as it can be. The column itself keeps its width.
-  // The plan then slides left (`shift`, px) to sit centred in the space left of the panel: the same
-  // space between the window's left edge and the plan as between the plan and the panel.
-  const asideRef = useRef<HTMLElement>(null);
-  const planRef = useRef<HTMLDivElement>(null);
-  const [reach, setReach] = useState(0);
-  const [shift, setShift] = useState(0);
-  useLayoutEffect(() => {
-    const aside = asideRef.current;
-    const planEl = planRef.current;
-    if (!detailId || minimised || !aside || !planEl) {
-      setReach(0);
-      setShift(0);
-      return;
-    }
-    const measure = () => {
-      const box = aside.getBoundingClientRect();
-      // Hidden below 1024px (the phone sheet is used instead): nothing to stretch.
-      if (!box.width) {
-        setReach(0);
-        setShift(0);
-        return;
-      }
-      setReach(Math.max(0, Math.floor(document.documentElement.clientWidth - box.right)));
-      // Layout positions (the shift is a relative offset, so it doesn't change these).
-      const plan = planEl.offsetWidth;
-      const planLeft = box.left - GAP - plan;
-      const centred = (box.left - plan) / 2;
-      setShift(Math.min(0, Math.round(centred - planLeft)));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(aside);
-    ro.observe(planEl);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [detailId, minimised]);
+  /** The ← in the song bank went back to the list from the open song's own songsheet (until another song is opened). */
+  const [ownHidden, setOwnHidden] = useState(false);
   const [details, setDetails] = useState<Record<string, BankSongDetail | null | undefined>>({});
   const [focusSearch, setFocusSearch] = useState(0);
 
@@ -714,6 +690,7 @@ export function Workbench({
     // Editing has one song open at a time: several left open from viewing close.
     setOpenIds((o) => (o.size > 1 ? new Set() : o));
     editingRef.current = true;
+    setEditPreview(false);
     setEditing(true);
   }, [initial.id, router]);
 
@@ -886,6 +863,7 @@ export function Workbench({
   const select = useCallback(
     (item: PlanItem | null) => {
       setSelectedId(item?.id ?? null);
+      setOwnHidden(false);
       // Projection has no song bank to show the song in.
       if (!item || item.kind !== "song" || projection) return;
       if (item.song_id) showDetail(item.song_id);
@@ -896,6 +874,63 @@ export function Workbench({
     },
     [editing, showDetail, projection],
   );
+
+  /** Editing a song with its own uploaded songsheet (not from the bank): the panel shows that file. */
+  const ownSheet: OwnSheet = useMemo(
+    () =>
+      editing && !projection && !ownHidden && !detailId && selected?.kind === "song" && !selected.song_id && selected.sheet
+        ? {
+            title: selected.title || "Untitled song",
+            artist: selected.artist ?? null,
+            keyLabel: ownSheetKey(selected) || null,
+            fileName: selected.sheet.file_name,
+            src: uploadSrc(initial.id, selected),
+          }
+        : null,
+    [editing, projection, ownHidden, detailId, selected, initial.id],
+  );
+
+  // While a song is open in the desktop song bank, the panel reaches out to the window's right edge
+  // (over the page margin) so its songsheet is as big as it can be. The column itself keeps its width.
+  // The plan then slides left (`shift`, px) to sit centred in the space left of the panel: the same
+  // space between the window's left edge and the plan as between the plan and the panel.
+  const asideRef = useRef<HTMLElement>(null);
+  const planRef = useRef<HTMLDivElement>(null);
+  const [reach, setReach] = useState(0);
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    const aside = asideRef.current;
+    const planEl = planRef.current;
+    if (!(detailId || ownSheet) || minimised || !aside || !planEl) {
+      setReach(0);
+      setShift(0);
+      return;
+    }
+    const measure = () => {
+      const box = aside.getBoundingClientRect();
+      // Hidden below 1024px (the phone sheet is used instead): nothing to stretch.
+      if (!box.width) {
+        setReach(0);
+        setShift(0);
+        return;
+      }
+      setReach(Math.max(0, Math.floor(document.documentElement.clientWidth - box.right)));
+      // Layout positions (the shift is a relative offset, so it doesn't change these).
+      const plan = planEl.offsetWidth;
+      const planLeft = box.left - GAP - plan;
+      const centred = (box.left - plan) / 2;
+      setShift(Math.min(0, Math.round(centred - planLeft)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(aside);
+    ro.observe(planEl);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [detailId, ownSheet, minimised]);
 
   const updateItem = useCallback(
     (id: string, patch: Partial<PlanItem>) =>
@@ -1036,8 +1071,12 @@ export function Workbench({
       query={query}
       onQuery={setQuery}
       detailId={detailId}
-      onDetail={showDetail}
+      onDetail={(id) => {
+        if (!id) setOwnHidden(true);
+        showDetail(id);
+      }}
       detail={detailId ? details[detailId] : undefined}
+      ownSheet={ownSheet}
       target={target}
       onUse={applySong}
       onMinimise={() => {
@@ -1094,12 +1133,11 @@ export function Workbench({
               </div>
             </div>
           </div>
-          {/* Phones: while editing, × and save sit at the left and + at the right; otherwise the eye stays
+          {/* Phones: while editing, × and save sit at the left and the eye and + at the right; otherwise the eye stays
               at the left and Undo / Edit / Publish sit at the right. */}
           <div className="flex flex-wrap items-center gap-2">
             {editing ? (
               <>
-                {dirty && <span className="text-xs text-muted">Unsaved changes</span>}
                 <IconButton label="Stop editing" onClick={() => (dirty ? setLeaving({ href: null }) : void discardAndStop())} disabled={busy}>
                   <path d="M18 6 6 18M6 6l12 12" />
                 </IconButton>
@@ -1108,15 +1146,22 @@ export function Workbench({
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
                   <path d="M17 21v-8H7v8M7 3v5h8" />
                 </IconButton>
-                <AddMenu onAdd={add} />
-              </>
-            ) : (
-              <>
-                <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className={diff ? "" : "max-sm:mr-auto"}>
+                <IconButton label={editPreview ? "Back to the editor" : "Preview the simplified view"} onClick={() => setEditPreview((v) => !v)} pressed={editPreview}>
                   {/* Eye */}
                   <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
                   <circle cx="12" cy="12" r="3" />
                 </IconButton>
+                <AddMenu onAdd={add} />
+              </>
+            ) : (
+              <>
+                {!simpleOnly && (
+                  <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className={diff ? "" : "max-sm:mr-auto"}>
+                    {/* Eye */}
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </IconButton>
+                )}
                 {diff && (
                   <IconButton label={diffing ? "Hide changes" : "Show changes (added and taken out)"} onClick={() => setShowDiff((v) => !v)} pressed={diffing} className="max-sm:mr-auto">
                     {/* Plus over minus, like a diff */}
@@ -1167,11 +1212,6 @@ export function Workbench({
         {/* Republished: what changed, until they close it. */}
         {!editing && !changesClosed && initial.changes.length > 0 && <ChangesBox changes={initial.changes} onClose={closeChanges} />}
 
-        {editing && published && (
-          <p className="rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-muted">
-            You&apos;re editing the revised draft. The band keeps seeing the published version until you publish your changes.
-          </p>
-        )}
         {!editing && published && revision && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-sm">
             <span className="min-w-0 flex-1">
@@ -1215,7 +1255,7 @@ export function Workbench({
           </details>
         )}
 
-        {!diffing && <SessionLinks links={links} editing={editing} dialog={linkDialog} onDialog={setLinkDialog} onChange={changeLinks} />}
+        {!diffing && <SessionLinks links={links} editing={editing && !editPreview} dialog={linkDialog} onDialog={setLinkDialog} onChange={changeLinks} />}
 
         {diffing ? (
           <PlanDiff
@@ -1226,7 +1266,7 @@ export function Workbench({
             leadName={(id) => (id ? (initial.band.find((m) => m.id === id)?.name ?? null) : null)}
             caption={diff.caption}
           />
-        ) : !editing && simple ? (
+        ) : (editing ? editPreview : simple) ? (
           <SimplePlan
             plan={plan}
             leadName={(id) => (id ? (singers.find((x) => x.id === id)?.name ?? null) : null)}

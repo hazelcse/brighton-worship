@@ -16,35 +16,11 @@ import { NoteLoader } from "@/components/note-loader";
  */
 export function PdfViewerDialog({ src, title, fileName, onClose }: { src: string; title: string; fileName?: string; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [file, setFile] = useState<{ url: string; name: string; blob: Blob } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { file, error } = usePdfFile(src, title, fileName);
 
   useEffect(() => {
     ref.current?.showModal();
   }, []);
-
-  useEffect(() => {
-    let url: string | null = null;
-    let cancelled = false;
-    fetch(src)
-      .then(async (res) => {
-        if (!res.ok) {
-          const json = await res.json().catch(() => null);
-          throw new Error(json?.error ?? "The songsheet couldn't be loaded.");
-        }
-        const header = res.headers.get("x-file-name");
-        const raw = await res.blob();
-        if (cancelled) return;
-        const blob = raw.type ? raw : new Blob([raw], { type: "application/pdf" });
-        url = URL.createObjectURL(blob);
-        setFile({ url, name: header ? decodeURIComponent(header) : (fileName ?? `${title}.pdf`), blob });
-      })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
-    return () => {
-      cancelled = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [src, title, fileName]);
 
   return (
     <dialog
@@ -85,6 +61,67 @@ export function PdfViewerDialog({ src, title, fileName, onClose }: { src: string
   );
 }
 
+/**
+ * A PDF songsheet shown inline, its pages stacked at the width they're given, like a song bank
+ * songsheet's preview: tap a page to open it full size (PdfViewerDialog, without fetching it again).
+ */
+export function PdfSheetPreview({ src, title, fileName }: { src: string; title: string; fileName?: string }) {
+  const { file, error } = usePdfFile(src, title, fileName);
+  const [open, setOpen] = useState(false);
+  if (error) return <p className="rounded-lg bg-background p-4 text-sm text-muted">{error}</p>;
+  if (!file) return <InlineLoading />;
+  return (
+    <div>
+      <PdfPages data={file.blob} title={title} inline onOpen={() => setOpen(true)} />
+      {open && <PdfViewerDialog src={file.url} title={title} fileName={file.name} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function InlineLoading() {
+  return (
+    <div className="flex aspect-[8.5/11] w-full items-center justify-center rounded-lg bg-background">
+      <NoteLoader label="Getting the songsheet ready" />
+    </div>
+  );
+}
+
+/** Fetches a songsheet PDF (`src`, see PdfViewerDialog) into a blob: URL, let go when `src` changes. */
+function usePdfFile(src: string, title: string, fileName?: string) {
+  const [file, setFile] = useState<{ url: string; name: string; blob: Blob } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [forSrc, setForSrc] = useState(src);
+  if (forSrc !== src) {
+    setForSrc(src);
+    setFile(null);
+    setError(null);
+  }
+
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    fetch(src)
+      .then(async (res) => {
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          throw new Error(json?.error ?? "The songsheet couldn't be loaded.");
+        }
+        const header = res.headers.get("x-file-name");
+        const raw = await res.blob();
+        if (cancelled) return;
+        const blob = raw.type ? raw : new Blob([raw], { type: "application/pdf" });
+        url = URL.createObjectURL(blob);
+        setFile({ url, name: header ? decodeURIComponent(header) : (fileName ?? `${title}.pdf`), blob });
+      })
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [src, title, fileName]);
+  return { file, error };
+}
+
 /** NoteLoader is its own status region, so it isn't wrapped in Status. */
 function Loading() {
   return (
@@ -112,7 +149,7 @@ async function loadPdfjs() {
 }
 
 /** Every page of the PDF, stacked and fitted to the popup's width; redrawn when that width changes. */
-function PdfPages({ data, title }: { data: Blob; title: string }) {
+function PdfPages({ data, title, inline = false, onOpen }: { data: Blob; title: string; inline?: boolean; onOpen?: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [crops, setCrops] = useState<Crop[]>([]);
@@ -154,8 +191,25 @@ function PdfPages({ data, title }: { data: Blob; title: string }) {
     return () => observer.disconnect();
   }, [doc]);
 
-  if (error) return <Status>{error}</Status>;
-  if (!doc) return <Loading />;
+  if (error) return inline ? <p className="rounded-lg bg-background p-4 text-sm text-muted">{error}</p> : <Status>{error}</Status>;
+  if (!doc) return inline ? <InlineLoading /> : <Loading />;
+  if (inline) {
+    return (
+      <div ref={box} className="space-y-3">
+        {width > 0 &&
+          Array.from({ length: doc.numPages }, (_, i) => {
+            const page = <PdfPage doc={doc} n={i + 1} width={width} crop={crops[i] ?? NO_CROP} label={`${title} songsheet, page ${i + 1} of ${doc.numPages}`} framed />;
+            return onOpen ? (
+              <button key={i} type="button" onClick={onOpen} className="block w-full cursor-zoom-in" aria-label={`Open ${title} songsheet full size`}>
+                {page}
+              </button>
+            ) : (
+              <div key={i}>{page}</div>
+            );
+          })}
+      </div>
+    );
+  }
   return (
     <div className="flex-1 overflow-y-auto bg-background p-2 sm:p-4">
       <div ref={box} className="mx-auto space-y-2 sm:space-y-4">
@@ -187,7 +241,7 @@ async function pageMargins(doc: PDFDocumentProxy, n: number): Promise<Margins | 
 /** Larger canvases than this run phones (iOS especially) out of canvas memory. */
 const MAX_PIXELS = 12_000_000;
 
-function PdfPage({ doc, n, width, crop, label }: { doc: PDFDocumentProxy; n: number; width: number; crop: Crop; label: string }) {
+function PdfPage({ doc, n, width, crop, label, framed = false }: { doc: PDFDocumentProxy; n: number; width: number; crop: Crop; label: string; framed?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [ratio, setRatio] = useState<number | null>(null);
 
@@ -226,7 +280,8 @@ function PdfPage({ doc, n, width, crop, label }: { doc: PDFDocumentProxy; n: num
       role="img"
       aria-label={label}
       style={{ aspectRatio: ratio ?? 1 / Math.SQRT2 }}
-      className="block h-auto w-full rounded-sm bg-white shadow-sm"
+      // framed: inline, bordered like a song bank songsheet's preview pages.
+      className={`block h-auto w-full bg-white shadow-sm ${framed ? "rounded-lg border border-border" : "rounded-sm"}`}
     />
   );
 }

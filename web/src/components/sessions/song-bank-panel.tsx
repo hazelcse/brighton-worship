@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { BankSongDetail } from "@/app/(app)/sessions/actions";
 import { SongsheetPreview } from "@/components/songs/songsheet-preview";
+import { PdfSheetPreview } from "@/components/songs/pdf-viewer-dialog";
 import { SequenceView } from "@/components/sessions/sequence-builder";
 import { SONG_TYPE_LABEL, type SongType } from "@/lib/session-plan";
 import { searchSongs, songIndex } from "@/lib/song-search";
@@ -46,6 +47,9 @@ function Chevron({ dir }: { dir: "left" | "right" }) {
 
 export type PanelTarget = { label: string; songId: string | null } | null;
 
+/** The open song's own uploaded songsheet (not from the bank), shown where a bank song's would be. */
+export type OwnSheet = { title: string; artist: string | null; keyLabel: string | null; fileName: string; src: string } | null;
+
 /**
  * The song bank, on the right of the workbench: a searchable list of the library, and one song's
  * details and songsheet. With a song slot selected in edit mode, songs can be used for that slot.
@@ -65,6 +69,7 @@ export function SongBankPanel({
   onMinimise,
   focusSearch,
   defaultLanguage,
+  ownSheet = null,
 }: {
   /** Phones: inside the bottom sheet (which draws the frame), with an ✕ that closes it instead of ">". */
   inSheet?: boolean;
@@ -86,6 +91,8 @@ export function SongBankPanel({
   focusSearch: number;
   /** Starting language filter: English for EM sessions, Chinese for CM, "" (all) otherwise. */
   defaultLanguage: "en" | "zh" | "";
+  /** Editing a song with its own uploaded songsheet: shown instead of the list (← goes back to it). */
+  ownSheet?: OwnSheet;
 }) {
   const [type, setType] = useState("");
   const [language, setLanguage] = useState<string>(defaultLanguage);
@@ -109,7 +116,7 @@ export function SongBankPanel({
   return (
     <section aria-label="Song bank" className={`flex h-full flex-col overflow-hidden bg-surface ${inSheet ? "" : toEdge ? "rounded-l-xl border-y border-l border-border" : "rounded-xl border border-border"}`}>
       <div className={`flex items-center gap-2 border-b border-border px-3 ${inSheet ? "pb-2.5" : "py-2.5"}`}>
-        {detailId ? (
+        {detailId || ownSheet ? (
           <button type="button" onClick={() => onDetail(null)} className="-ml-1 flex items-center gap-1 rounded-md px-1 py-1 text-sm text-muted hover:text-foreground">
             {/* An arrow with a line (←), not a bare chevron. */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -137,7 +144,22 @@ export function SongBankPanel({
         </button>
       </div>
 
-      {!canBrowse ? (
+      {ownSheet && !detailId ? (
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="space-y-1">
+            <h3 className="font-display text-2xl font-semibold leading-tight">{ownSheet.title}</h3>
+            {ownSheet.artist && <p className="text-sm text-muted">{ownSheet.artist}</p>}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+              <span className="rounded-full bg-background px-2 py-0.5 font-medium text-muted">Your own songsheet</span>
+              {ownSheet.keyLabel && <span className="rounded-full border border-border px-2 py-0.5">Key {ownSheet.keyLabel}</span>}
+            </div>
+          </div>
+          <PdfSheetPreview key={ownSheet.src} src={ownSheet.src} title={ownSheet.title} fileName={ownSheet.fileName} />
+          <p className="truncate text-xs text-muted" title={ownSheet.fileName}>
+            {ownSheet.fileName}
+          </p>
+        </div>
+      ) : !canBrowse ? (
         <p className="p-4 text-sm text-muted">You don&apos;t have access to the song library.</p>
       ) : detailId ? (
         <div className="flex-1 space-y-4 overflow-y-auto p-4">

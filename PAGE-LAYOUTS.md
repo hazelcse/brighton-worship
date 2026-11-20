@@ -316,8 +316,10 @@ otherwise as a row under it), a row of 36px icon buttons and "Publish". **Phones
 the date line moves under the title and badges, shortened to one line ("Sun, 15 Nov 2026 ·
 Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row the eye
 (simplified view) and, when there's something to compare, the ± "Show changes" button stay at the
-left and Edit / Publish sit at the right; while editing,
-× and save sit at the left and + at the right. **Leaving while editing**: any in-app link
+left and Edit / Publish sit at the right (band members on the session other than its BL/TB
+and whoever leads a song in it get no eye: they only see the simplified view, outside editing); while editing,
+× and save sit at the left and the eye (previews the draft in the simplified view; starts off
+each time editing starts) and + at the right. **Leaving while editing**: any in-app link
 ("← Sessions", the nav) opens a 384px dialog like the save prompt: "Save before you go?" (or "You're
 still editing" with nothing changed), an × in the top right corner to stay, and Leave / Save
 changes and leave centred under the text; closing the tab, reloading or going to another site gets the browser's own "Leave site?"

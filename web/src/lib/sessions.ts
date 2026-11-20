@@ -302,6 +302,8 @@ export type Workbench = {
   band: BandMember[];
   /** The viewer's part in this session, if they're on it (e.g. "drums"). */
   myRole: string | null;
+  /** The viewer's member id when they're on this session's band (null otherwise). */
+  myId: string | null;
   /**
    * What the band sees: the published plan, or for a session never published, the draft (its
    * worship leaders' work so far).
@@ -446,6 +448,7 @@ export async function loadWorkbench(id: string, userId: string, { withRevision =
       .map((a) => ({ id: a.member_id, name: people.get(a.member_id) ?? "Someone", role: a.role, also: (a.also_roles as string[]) ?? [] }))
       .sort((a, b) => order(a.role) - order(b.role) || a.name.localeCompare(b.name)),
     myRole: ((assignments ?? []).find((a) => a.member_id === userId)?.role as string | undefined) ?? null,
+    myId: (assignments ?? []).some((a) => a.member_id === userId) ? userId : null,
     plan,
     links: sessionLinks(s.links),
     sheetKeys: await sheetKeysFor(plan.flatMap((sec) => sec.items).filter((i) => i.kind === "song")),

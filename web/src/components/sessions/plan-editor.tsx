@@ -451,7 +451,7 @@ function LeadSelect({ item, api, id }: { item: PlanItem; api: EditorApi; id: str
  * key a song that changes key goes to), so that key (as on the page, maybe not saved yet) and the key
  * it's written in go in the address.
  */
-function uploadSrc(sessionId: string, item: PlanItem, key: string | null = item.key): string {
+export function uploadSrc(sessionId: string, item: PlanItem, key: string | null = item.key): string {
   const sheet = item.sheet!;
   const base = `/api/sessions/${sessionId}/uploads/${sheet.id}`;
   if (!sheet.transposable || !sheet.key || !key) return base;
@@ -470,7 +470,7 @@ function UploadIcon() {
  * The key a worship leader's own songsheet shows as (a Word sheet: the song's key, as it's
  * transposed), or for a sheet uploaded before sheets had their own key, the song's key.
  */
-const ownSheetKey = (item: PlanItem) =>
+export const ownSheetKey = (item: PlanItem) =>
   // A Word sheet covering the song's key change in one copy (written E→F#, sung F→G) shows as "F→G".
   ownSheetKeys(item).length === 1 ? keyLabel(item.key, item.transpose_to) : (ownSheetShownKey(item) ?? keyLabel(item.key, item.transpose_to));
 

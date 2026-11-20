@@ -24,7 +24,7 @@ async function View({ params }: { params: Promise<{ id: string }> }) {
   if (!loaded || loaded.workbench.status !== "published") notFound();
   // Not on the band: no part to highlight. The band stays in the data (it names who leads each
   // song) but isn't shown.
-  const workbench = { ...loaded.workbench, myRole: null, revision: null };
+  const workbench = { ...loaded.workbench, myRole: null, myId: null, revision: null };
   return (
     <>
       <MarkSessionsSeen href="/projection" />

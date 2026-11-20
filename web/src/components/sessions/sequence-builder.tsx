@@ -4,7 +4,7 @@ import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, useSyncE
 import { createPortal, flushSync } from "react-dom";
 import { SlantWords } from "@/components/sessions/slant";
 import { backspaceAtStart, fieldText, insertAtCursor, neighbour, splitAtBar, withLoose, withText, type Cursor, type Part } from "@/lib/seq-text";
-import { PART_ROLES, SUGGESTED_ELEMENTS, looseParts, SUGGESTED_TAGS, copySteps, insertElement, isLongComment, partInfo, partTint, stepLabel, type SeqStep } from "@/lib/session-plan";
+import { PART_ROLES, SUGGESTED_ELEMENTS, looseParts, SUGGESTED_TAGS, copySteps, insertElement, isLongComment, partInfo, partsPlayedBy, partTint, stepLabel, type SeqStep } from "@/lib/session-plan";
 
 // The sequence's steps: small (24px, 12px text), fully rounded, with a very light amber tint.
 const chipBase = "inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border px-2 text-xs";
@@ -307,7 +307,7 @@ export function SequenceView({ steps: all, highlight }: { steps: SeqStep[]; high
                 {s.repeat > 1 && <span className="font-semibold text-accent"> x{s.repeat}</span>}
                 {s.tags.length > 0 && <span className="text-muted"> ({s.tags.join(", ")})</span>}
                 {parts.map((p) => {
-                  const mine = p.role === highlight;
+                  const mine = partsPlayedBy(highlight).includes(p.role);
                   return (
                     <span
                       key={p.role}
@@ -533,7 +533,7 @@ function StepColumn({ step, highlight, active, onClick }: { step: SeqStep; highl
     <div className="inline-flex items-center align-middle">
       <StepChip step={step} active={active} onClick={onClick} />
       {parts.map((p) => {
-        const mine = p.role === highlight;
+        const mine = partsPlayedBy(highlight).includes(p.role);
         return (
           <div key={p.role} className="flex items-center">
             <span aria-hidden className="h-0.5 w-2.5" style={{ background: p.color }} />
