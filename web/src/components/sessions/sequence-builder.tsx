@@ -661,6 +661,18 @@ export function SequenceBuilder({
   const activeIndex = steps.findIndex((s) => s.id === activeId);
   const active = activeIndex >= 0 ? steps[activeIndex] : null;
 
+  // An element added for this session goes once its last use is taken out of the sequence (a
+  // misspelt "CHorus", say). Only on a change that drops it: one that's saved but unused stays.
+  const prevSteps = useRef(steps);
+  useEffect(() => {
+    const used = (list: SeqStep[]) => new Set(list.filter((s) => !s.free).map((s) => s.name.toLowerCase()));
+    const before = used(prevSteps.current);
+    prevSteps.current = steps;
+    const now = used(steps);
+    const left = custom.filter((c) => !before.has(c.toLowerCase()) || now.has(c.toLowerCase()));
+    if (left.length !== custom.length) onCustom(left);
+  }, [steps, custom, onCustom]);
+
   const palette = [...new Set([...scanned, ...custom, ...SUGGESTED_ELEMENTS])];
   const tags = [...new Set([...SUGGESTED_TAGS, ...tagSuggestions, ...(active?.tags ?? [])])];
 
