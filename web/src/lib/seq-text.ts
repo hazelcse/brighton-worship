@@ -59,7 +59,7 @@ export function neighbour(steps: SeqStep[], c: { id: string; part: Part }, dir: 
  * in a "before" field, the text before it does). A "|" right after an existing bar is ignored.
  */
 export function splitAtBar(steps: SeqStep[], id: string, part: Part, value: string): { steps: SeqStep[]; cursor: Cursor } {
-  const k = value.indexOf("|");
+  const k = barIndex(value);
   const i = steps.findIndex((s) => s.id === id);
   const s = steps[i];
   if (k < 0 || !s) return { steps: s ? replaceAt(steps, i, withText(s, part, value)) : steps, cursor: { id, part, offset: value.length } };
@@ -86,7 +86,7 @@ export function splitAtBar(steps: SeqStep[], id: string, part: Part, value: stri
   // More bars (pasted text): split again in the new field.
   const c = out.cursor;
   const t = fieldText(out.steps.find((x) => x.id === c.id)!, c.part);
-  return t.includes("|") ? splitAtBar(out.steps, c.id, c.part, t) : out;
+  return barIndex(t) >= 0 ? splitAtBar(out.steps, c.id, c.part, t) : out;
 }
 
 /**
@@ -163,3 +163,40 @@ export function backspaceAtStart(steps: SeqStep[], c: { id: string; part: Part }
   // Deleting the last bar: the loose text after it joins the step before it (enclosed already).
   return { steps: [...steps.slice(0, i - 1), withText(prev, "after", join(a, b)), ...steps.slice(i + 1)], cursor: { id: prev.id, part: "after", offset: a.length + (a && b ? 1 : 0) } };
 }
+
+/**
+ * Notes in <angle brackets>: typed text can hold a note, e.g. | <here!> Transpose to E <play | C> |.
+ * Inside one, "|" is just text (no new step). A "<" not yet closed runs to the end, so a bar typed
+ * after it stays text while the note is still being written.
+ */
+export function noteParts(text: string): { text: string; note: boolean; from: number }[] {
+  const out: { text: string; note: boolean; from: number }[] = [];
+  let note = false;
+  let from = 0;
+  const push = (to: number, next: boolean) => {
+    if (to > from) out.push({ text: text.slice(from, to), note, from });
+    from = to;
+    note = next;
+  };
+  for (let i = 0; i < text.length; i++) {
+    // The brackets go with the note they open or close.
+    if (!note && text[i] === "<") push(i, true);
+    else if (note && text[i] === ">") push(i + 1, false);
+  }
+  push(text.length, note);
+  return out;
+}
+
+/** Where the first "|" outside a <note> is (-1: none). */
+export function barIndex(text: string): number {
+  let note = false;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") note = true;
+    else if (text[i] === ">") note = false;
+    else if (text[i] === "|" && !note) return i;
+  }
+  return -1;
+}
+
+/** A note's words without its brackets: "<play | C>" → "play | C". */
+export const unbracket = (text: string) => text.replace(/^<\s*/, "").replace(/\s*>$/, "");

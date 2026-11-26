@@ -1,5 +1,7 @@
 "use client";
 
+import { NotesText } from "@/components/sessions/notes-text";
+import { bulletOnEnter, bulletOnType } from "@/lib/notes";
 import { useEffect, useRef, useState } from "react";
 import type { BankSongDetail } from "@/app/(app)/sessions/actions";
 import { SequenceBuilder, SequenceView } from "@/components/sessions/sequence-builder";
@@ -703,8 +705,19 @@ function SongEditor({ item, api }: { item: PlanItem; api: EditorApi }) {
           id={`notes-${item.id}`}
           rows={2}
           value={item.notes}
-          onChange={(e) => api.updateItem(item.id, { notes: e.target.value })}
-          placeholder="e.g. Start with keys only, drums in at the chorus"
+          onChange={(e) => {
+            // "- " at the start of a line becomes a bullet point.
+            bulletOnType(e.currentTarget);
+            api.updateItem(item.id, { notes: e.currentTarget.value });
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+            const el = e.currentTarget;
+            if (!bulletOnEnter(el)) return;
+            e.preventDefault();
+            api.updateItem(item.id, { notes: el.value });
+          }}
+          placeholder="e.g. Start with keys only, drums in at the chorus. Start a line with - for a bullet point."
           className={`${input} h-auto py-2`}
         />
       </div>
@@ -736,7 +749,7 @@ function SongDetails({ item, api }: { item: PlanItem; api: EditorApi }) {
         <SequenceView steps={item.sequence ?? []} highlight={myRole} />
       </div>
       {item.links && item.links.length > 0 && <LinkList links={item.links} />}
-      {item.notes && <p className="whitespace-pre-line">{item.notes}</p>}
+      {item.notes.trim() && <NotesText notes={item.notes} />}
       {/* Once published it's with the set's songsheets; before then, the worship leaders can open it here. */}
       {item.sheet && !api.sheetsFor && <AttachedSheet item={item} api={api} />}
       <SheetKeyNote item={item} />

@@ -16,6 +16,7 @@ import {
 import { PlanEditor, ownSheetKey, sessionSheetSrc, uploadSrc, type EditorApi, type SessionSheet, type Singer } from "@/components/sessions/plan-editor";
 import { SimplePlan } from "@/components/sessions/simple-plan";
 import { PlanDiff } from "@/components/sessions/plan-diff";
+import { newEditsText, simplePlanText, type PlanCopy } from "@/components/sessions/plan-text";
 import { PartCues } from "@/components/sessions/part-cues";
 import { SongBankPanel, type BankSong, type PanelSheet } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
@@ -531,6 +532,41 @@ function LeavePrompt({
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** Buttons that copy text for a message; each says "Copied" for a moment after. */
+function CopyPlanButtons({ texts }: { texts: { label: string; text: () => PlanCopy }[] }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => void (timer.current && window.clearTimeout(timer.current)), []);
+  async function copy(t: { label: string; text: () => PlanCopy }) {
+    try {
+      const { text, html } = t.text();
+      // Formatted (bold, underline, indents, links) where the paste takes it, plain text elsewhere.
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) }),
+        ]);
+      } else await navigator.clipboard.writeText(text);
+      setFailed(false);
+      setCopied(t.label);
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setFailed(true);
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {texts.map((t) => (
+        <button key={t.label} type="button" onClick={() => void copy(t)} className={`${btn} border border-border bg-surface hover:border-accent hover:text-accent`}>
+          {copied === t.label ? "Copied" : t.label}
+        </button>
+      ))}
+      {failed && <span role="alert" className="text-xs text-danger">Couldn&apos;t copy. Check the browser lets this site use the clipboard.</span>}
+    </div>
   );
 }
 
@@ -1107,6 +1143,8 @@ export function Workbench({
     openSheet,
   };
 
+  const bandName = (id: string | null) => (id ? (initial.band.find((m) => m.id === id)?.name ?? null) : null);
+
   const target = editing && selected?.kind === "song" ? { label: `song ${numbers[selected.id]}`, songId: selected.song_id } : null;
   const otherEditor = !editing && initial.lockedBy ? initial.lockedBy.name : null;
 
@@ -1361,6 +1399,35 @@ export function Workbench({
             onSave={() => void saveAndStop()}
             onDiscard={() => void discardAndStop()}
             onKeep={() => setLeaving(null)}
+          />
+        )}
+
+        {/* Worship leaders, once published: copy the published run sheet (and, after a republish, just what it added) as text. */}
+        {canEdit && published && !editing && !projection && (
+          <CopyPlanButtons
+            texts={[
+              {
+                label: "Copy simplified version",
+                text: () => simplePlanText({ service: initial.serviceName, date: initial.date, plan: initial.plan, links: initial.links, names: bandName }),
+              },
+              ...(initial.previous
+                ? [
+                    {
+                      label: "Copy new edits",
+                      text: () =>
+                        newEditsText({
+                          service: initial.serviceName,
+                          date: initial.date,
+                          before: initial.previous!.plan,
+                          after: initial.plan,
+                          linksBefore: initial.previous!.links,
+                          linksAfter: initial.links,
+                          names: bandName,
+                        }),
+                    },
+                  ]
+                : []),
+            ]}
           />
         )}
 

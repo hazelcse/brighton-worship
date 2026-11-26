@@ -2,6 +2,8 @@
 
 import { Fragment, type ReactNode } from "react";
 import { SlantWords } from "@/components/sessions/slant";
+import { lines } from "@/lib/seq-lines";
+import { noteParts, unbracket } from "@/lib/seq-text";
 import { PART_ROLES, keyLabel, shortName, type PlanItem, type PlanLink, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 /*
@@ -73,11 +75,47 @@ function blockClass(state: State) {
   return "";
 }
 
+/** Comments: Gmail's grey, as in the simplified view. */
+const NOTE = "text-[#666666]";
+/** Text typed with <notes> in it, the brackets dropped. */
+const plainNotes = (t: string) => noteParts(t).map((p) => (p.note ? unbracket(p.text) : p.text)).join("");
+
+/**
+ * A song's notes: a bold "Notes:", then each line as in the simplified view ("• " lines as dot
+ * points), lines put in highlighted and lines taken out struck through under them. plain: nothing marked.
+ */
+function Notes({ a, b, plain = false }: { a: string; b: string; plain?: boolean }) {
+  const words = (t: string) => t.trim().replace(/^(?:•|-)\s+/, "");
+  const rows = (t: string) => t.trim().split("\n").filter((x) => x.trim());
+  const was = new Set(rows(a).map(words));
+  const now = new Set(rows(b).map(words));
+  const shown = [
+    ...rows(b).map((t) => ({ t, state: plain || was.has(words(t)) ? "same" : "added" })),
+    ...rows(a).filter((t) => !now.has(words(t))).map((t) => ({ t, state: "removed" })),
+  ];
+  return (
+    <div className="pl-6">
+      <p className="font-bold">Notes:</p>
+      {shown.map((r, i) => {
+        const w = words(r.t);
+        const body = r.state === "added" ? <Ins>{w}</Ins> : r.state === "removed" ? <Del>{w}</Del> : w;
+        return /^\s*(?:•|-)\s+/.test(r.t) ? (
+          <ul key={i} className="list-disc pl-5">
+            <li>{body}</li>
+          </ul>
+        ) : (
+          <p key={i}>{body}</p>
+        );
+      })}
+    </div>
+  );
+}
+
 const partLabel = (role: string) => PART_ROLES.find((p) => p.role === role)?.label ?? role;
 
 /** "V1 x2 (High)", as the simplified view writes a step. */
 const stepText = (s: SeqStep) =>
-  `${s.before ? `${s.before} ` : ""}${s.free ? s.name : shortName(s.name)}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
+  `${s.before ? `${plainNotes(s.before)} ` : ""}${s.free ? plainNotes(s.name) : shortName(s.name)}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
 
 function Step({ row }: { row: Row<SeqStep> }) {
   const a = row.a;
@@ -86,8 +124,8 @@ function Step({ row }: { row: Row<SeqStep> }) {
     return (
       <Ins>
         {stepText(b!)}
-        {(b!.parts ?? []).length > 0 && <span className="text-xs"> [{b!.parts!.map(partLabel).join(", ")}]</span>}
-        {b!.comment && <span className="text-xs"> <SlantWords text={b!.comment} /></span>}
+        {(b!.parts ?? []).length > 0 && <span> [{b!.parts!.map(partLabel).join(", ")}]</span>}
+        {b!.comment && <span className={NOTE}> <SlantWords text={b!.comment} /></span>}
       </Ins>
     );
   }
@@ -95,8 +133,8 @@ function Step({ row }: { row: Row<SeqStep> }) {
     return (
       <Del>
         {stepText(a!)}
-        {(a!.parts ?? []).length > 0 && <span className="text-xs"> [{a!.parts!.map(partLabel).join(", ")}]</span>}
-        {a!.comment && <span className="text-xs"> <SlantWords text={a!.comment} /></span>}
+        {(a!.parts ?? []).length > 0 && <span> [{a!.parts!.map(partLabel).join(", ")}]</span>}
+        {a!.comment && <span className={NOTE}> <SlantWords text={a!.comment} /></span>}
       </Del>
     );
   }
@@ -110,7 +148,7 @@ function Step({ row }: { row: Row<SeqStep> }) {
       {row.moved && <span className="text-[10px] font-semibold uppercase text-amber-700"> moved</span>}
       {/* Instruments only when they changed: the ones that stayed in plain text. */}
       {partsChanged && (
-        <span className="text-xs">
+        <span>
           {" ["}
           {parts.map((r, i) => (
             <Fragment key={r}>
@@ -122,29 +160,37 @@ function Step({ row }: { row: Row<SeqStep> }) {
         </span>
       )}
       {(a!.comment || b!.comment) && (
-        <span className="slant inline-block text-xs text-muted">
+        <span className={`slant inline-block ${NOTE}`}>
           {" "}
-          <Changed a={a!.comment} b={b!.comment} />
+          <Changed a={a!.comment && plainNotes(a!.comment)} b={b!.comment && plainNotes(b!.comment)} />
         </span>
       )}
     </>
   );
 }
 
+/** The sequence in the simplified view's lines (|| V1 | C |, then | B | C ||), steps taken out in their old places. */
 function Sequence({ a, b }: { a: SeqStep[]; b: SeqStep[] }) {
   const after = new Set(b.map((s) => s.id));
   const rows = merge(a, b, (id) => !after.has(id));
   if (!rows.length) return null;
+  const byId = new Map(rows.map((r) => [(r.b ?? r.a)!.id, r]));
+  const ls = lines(rows.map((r) => (r.b ?? r.a)!));
   return (
-    <p className="break-words pl-4 leading-7">
-      <span className="text-muted">|| </span>
-      {rows.map((r, i) => (
-        <Fragment key={(r.b ?? r.a)!.id}>
-          <Step row={r} />
-          <span className="text-muted">{i === rows.length - 1 ? " ||" : " | "}</span>
-        </Fragment>
+    <div className="pl-6">
+      {ls.map((l, li) => (
+        <p key={l[0].id} className="break-words">
+          {li === 0 ? "|| " : "| "}
+          {l.map((s, i) => (
+            <Fragment key={s.id}>
+              {i > 0 && " "}
+              <Step row={byId.get(s.id)!} />
+              {li === ls.length - 1 && i === l.length - 1 ? " ||" : " |"}
+            </Fragment>
+          ))}
+        </p>
       ))}
-    </p>
+    </div>
   );
 }
 
@@ -157,10 +203,10 @@ function Links({ a, b }: { a: PlanLink[]; b: PlanLink[] }) {
   ];
   if (!rows.length) return null;
   return (
-    <ul className="space-y-0.5 pl-4 leading-6">
+    <ul className="pl-6">
       {rows.map((r) => {
         const link = (
-          <a href={r.url} target="_blank" rel="noopener noreferrer" className="break-all text-blue-600 underline underline-offset-2 hover:text-blue-800">
+          <a href={r.url} target="_blank" rel="noopener noreferrer" className="break-all text-[#1155cc] underline">
             {r.url}
           </a>
         );
@@ -195,8 +241,8 @@ function Song({ row, n, leadName }: { row: Row<PlanItem>; n: number; leadName: (
   // A whole song in or out is tinted as one block; a kept one shows each change in place.
   const field = (f: (i: PlanItem | null) => string | null) => (whole ? f(one) : null);
   return (
-    <li className={`space-y-1 ${blockClass(row.state)}`}>
-      <p className="font-semibold">
+    <li className={blockClass(row.state)}>
+      <p className="font-bold">
         {n}.{" "}
         {whole ? title(one) : <Changed a={title(a)} b={title(b)} />}
         {(whole ? field(key) : key(a) || key(b)) && (
@@ -223,15 +269,8 @@ function Song({ row, n, leadName }: { row: Row<PlanItem>; n: number; leadName: (
       </p>
       <Links a={a?.links ?? []} b={b?.links ?? []} />
       <Sequence a={a?.sequence ?? []} b={b?.sequence ?? []} />
-      {/* Notes under the sequence, as in the simplified view. */}
-      {whole
-        ? one.notes.trim() && <p className="whitespace-pre-line pl-4 text-xs">Notes: {one.notes}</p>
-        : (a?.notes.trim() || b?.notes.trim()) && (
-            <p className="whitespace-pre-line pl-4 text-xs">
-              <span className="text-muted">Notes: </span>
-              <Changed a={a?.notes} b={b?.notes} />
-            </p>
-          )}
+      {/* Notes under the sequence, as in the simplified view: a bold "Notes:", then line by line. */}
+      {whole ? one.notes.trim() && <Notes a="" b={one.notes} plain /> : (a?.notes.trim() || b?.notes.trim()) && <Notes a={a?.notes ?? ""} b={b?.notes ?? ""} />}
     </li>
   );
 }
@@ -240,7 +279,7 @@ function Transition({ row }: { row: Row<PlanItem> }) {
   const a = row.a;
   const b = row.b;
   return (
-    <li className={`italic text-foreground/80 ${blockClass(row.state)}`}>
+    <li className={blockClass(row.state)}>
       {"// Transition"}
       {row.state === "same" ? (
         (a!.notes || b!.notes) && (
@@ -289,12 +328,16 @@ export function PlanDiff({
   const newN = numberIn(after);
 
   return (
-    <article aria-label="Changes" className="space-y-6 rounded-xl border border-border bg-surface p-4 text-sm sm:p-5" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+    <article
+      aria-label="Changes"
+      className="space-y-[1.15em] rounded-xl border border-border bg-surface p-4 text-[14px] leading-[1.4] text-[#222222] sm:p-5"
+      style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+    >
       <p className="text-xs text-muted">{caption}</p>
       {unchanged && <p className="text-muted">Nothing in the plan changed.</p>}
       {(linksBefore.length > 0 || linksAfter.length > 0) && JSON.stringify(linksBefore) !== JSON.stringify(linksAfter) && (
-        <section className="space-y-1">
-          <h2 className="text-base font-bold underline underline-offset-4">Session links</h2>
+        <section>
+          <h2 className="font-bold underline">Session links</h2>
           <Links a={linksBefore} b={linksAfter} />
         </section>
       )}
@@ -307,11 +350,11 @@ export function PlanDiff({
             : merge(a?.items ?? [], b!.items, (id) => !newItems.has(id), (id) => oldItems.get(id));
         if (!rows.length && sec.state === "same") return null;
         return (
-          <section key={(b ?? a)!.id} className="space-y-3">
-            <h2 className="text-base font-bold underline underline-offset-4">
+          <section key={(b ?? a)!.id} className="space-y-[1.15em]">
+            <h2 className="font-bold underline">
               {sec.state === "same" ? <Changed a={a!.name} b={b!.name} /> : sec.state === "added" ? <Ins>{b!.name}</Ins> : <Del>{a!.name}</Del>}
             </h2>
-            <ol className="space-y-4">
+            <ol className="space-y-[1.15em]">
               {rows.map((r) => {
                 const item = (r.b ?? r.a)!;
                 return item.kind === "transition" ? (

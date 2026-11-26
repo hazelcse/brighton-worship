@@ -2,8 +2,8 @@
 
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { SlantWords } from "@/components/sessions/slant";
-import { backspaceAtStart, fieldText, insertAtCursor, neighbour, splitAtBar, withLoose, withText, type Cursor, type Part } from "@/lib/seq-text";
+import { FreeText, SlantWords } from "@/components/sessions/slant";
+import { backspaceAtStart, barIndex, fieldText, insertAtCursor, neighbour, splitAtBar, noteParts, withLoose, withText, type Cursor, type Part } from "@/lib/seq-text";
 import { PART_ROLES, SUGGESTED_ELEMENTS, looseParts, SUGGESTED_TAGS, copySteps, insertElement, isLongComment, partInfo, partsPlayedBy, partTint, stepLabel, type SeqStep } from "@/lib/session-plan";
 
 // The sequence's steps: small (24px, 12px text), fully rounded, with a very light amber tint.
@@ -303,7 +303,7 @@ export function SequenceView({ steps: all, highlight }: { steps: SeqStep[]; high
                     <SlantWords text={s.before} />
                   </span>
                 )}
-                <span className={s.free ? "text-[13px]" : "font-medium"}>{s.name}</span>
+                <span className={s.free ? "text-[13px]" : "font-medium"}>{s.free ? <FreeText text={s.name} /> : s.name}</span>
                 {s.repeat > 1 && <span className="font-semibold text-accent"> x{s.repeat}</span>}
                 {s.tags.length > 0 && <span className="text-muted"> ({s.tags.join(", ")})</span>}
                 {parts.map((p) => {
@@ -465,7 +465,8 @@ function TextField({
     return () => document.removeEventListener("selectionchange", moved);
   }, [editing, onCursor]);
 
-  const tone = plain ? "text-[13px] text-foreground" : "text-xs text-muted";
+  // Notes and free text the same size (13px); notes stay muted and slanted.
+  const tone = plain ? "text-[13px] text-foreground" : "text-[13px] text-muted";
   if (editing) {
     return (
       // Its own key: the browser has edited this span's text, so React must not reuse it for the
@@ -496,7 +497,26 @@ function TextField({
       />
     );
   }
-  const words = (t: string) => (plain ? t : <SlantWords text={t} />);
+  // The text as written, brackets and all (a tap must land on the letter tapped). In free text the
+  // <notes> are muted and slanted; each piece is drawn on its own so the cursor can sit inside one.
+  const piece = (t: string, note: boolean, key: string | number) =>
+    !t ? null : plain && !note ? <Fragment key={key}>{t}</Fragment> : (
+      <span key={key} className={plain ? "text-muted" : undefined}>
+        <SlantWords text={t} raw />
+      </span>
+    );
+  const words = (caret: number | null) => {
+    const ps = (plain ? noteParts(value) : [{ text: value, note: false, from: 0 }]).filter((p) => p.text);
+    return ps.flatMap((p) => {
+      if (caret === null || caret < p.from || caret > p.from + p.text.length || (caret === p.from && p.from > 0)) return [piece(p.text, p.note, p.from)];
+      const k = caret - p.from;
+      return [
+        piece(p.text.slice(0, k), p.note, `${p.from}a`),
+        <span key="caret" aria-hidden className="inline-block h-4 w-px align-[-3px] bg-foreground [animation:seq-caret_1.06s_steps(1)_infinite]" />,
+        piece(p.text.slice(k), p.note, `${p.from}b`),
+      ];
+    });
+  };
   return (
     <span
       key="showing"
@@ -513,15 +533,9 @@ function TextField({
       }}
       className={`cursor-text whitespace-pre-wrap break-words px-1.5 ${tone}`}
     >
-      {caretAt === null ? (
-        words(value)
-      ) : (
-        <>
-          {words(value.slice(0, caretAt))}
-          <span aria-hidden className="inline-block h-4 w-px align-[-3px] bg-foreground [animation:seq-caret_1.06s_steps(1)_infinite]" />
-          {words(value.slice(caretAt))}
-        </>
-      )}
+      {words(caretAt)}
+      {/* Empty text with the cursor in it: just the cursor. */}
+      {caretAt !== null && !value && <span aria-hidden className="inline-block h-4 w-px align-[-3px] bg-foreground [animation:seq-caret_1.06s_steps(1)_infinite]" />}
     </span>
   );
 }
@@ -769,6 +783,8 @@ export function SequenceBuilder({
   const tapBlank = (e: React.MouseEvent<HTMLElement>) => {
     const t = e.target as HTMLElement;
     if (t.closest("button, input, [data-field], [data-step], [data-zone], [data-loose]")) return;
+    // Nothing in it yet: a text cursor all the same (typing, or an element button, starts it off).
+    if (!steps.length) return openLoose("start");
     let best: string | null = null;
     let dist = Infinity;
     stripRef.current?.querySelectorAll<HTMLElement>("[data-zone], [data-field]").forEach((el) => {
@@ -794,7 +810,7 @@ export function SequenceBuilder({
 
   /** Typing in a field; a "|" starts a new step (splitAtBar). */
   const typeIn = (id: string, part: Part, v: string, caret: number) => {
-    if (v.includes("|")) {
+    if (barIndex(v) >= 0) {
       const r = splitAtBar(steps, id, part, v);
       // The cursor keeps its place from the end of the text (after a paste "a | bc", after "bc").
       const tail = v.length - caret;
@@ -853,17 +869,21 @@ export function SequenceBuilder({
       if (c) focusField(c);
     };
     typeRef.current = (char) => {
-      const c = cur ?? fieldAtGap(at, -1) ?? fieldAtGap(at, 1);
+      let c = cur ?? fieldAtGap(at, -1) ?? fieldAtGap(at, 1);
+      let list = steps;
+      // An empty sequence: the letter starts its text.
+      if (!c && !steps.length) ({ steps: list, cursor: c } = withLoose(steps, "start"));
       if (!c) return false;
-      const s = steps.find((x) => x.id === c.id);
+      const at_ = c;
+      const s = list.find((x) => x.id === at_.id);
       if (!s) return false;
-      const text = fieldText(s, c.part);
-      const offset = Math.min(c.offset, text.length);
+      const text = fieldText(s, at_.part);
+      const offset = Math.min(at_.offset, text.length);
       const v = text.slice(0, offset) + char + text.slice(offset);
-      if (v.includes("|")) {
-        const r = splitAtBar(steps, c.id, c.part, v);
+      if (barIndex(v) >= 0) {
+        const r = splitAtBar(list, at_.id, at_.part, v);
         focusField(r.cursor, r.steps);
-      } else focusField({ id: c.id, part: c.part, offset: offset + 1 }, steps.map((x) => (x.id === c.id ? withText(x, c.part, v) : x)));
+      } else focusField({ id: at_.id, part: at_.part, offset: offset + 1 }, list.map((x) => (x.id === at_.id ? withText(x, at_.part, v) : x)));
       return true;
     };
   });
@@ -1169,7 +1189,8 @@ export function SequenceBuilder({
             ) : null}
           </ol>
         ) : (
-          <p className="px-1 py-1 text-sm text-muted">Click elements below to build the sequence.</p>
+          // Tapping here (tapBlank) puts a text cursor in the empty sequence.
+          <p className="px-1 py-1 text-sm text-muted">Click elements below to build the sequence, or tap here to type.</p>
         )}
       </div>
       {/* What's being dragged, following the pointer. */}

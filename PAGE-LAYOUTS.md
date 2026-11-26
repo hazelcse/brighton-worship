@@ -334,33 +334,51 @@ it, e.g. the phone slept), coming back autosaves the edits, unless the other wor
 editing or saved in the meantime: then they're dropped, and the alert says why. Then
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
-then the plan editor (or, in the simplified view, the run sheet with each song's links, in blue, under its title and above its sequence,
-one "Name: address" per line, no bullets, the song's notes in small text under its sequence, and transitions in italics between the songs, unnumbered; once published, a separate card under it
+then the plan editor (or, in the simplified view, the run sheet, styled like the copied email in Gmail: Arial 14px (the email is 13px) #222, lines 1.4 apart, section names bold and underlined, song lines bold, comments #666666 and slanted, a blank line's space between blocks, links / sequence / notes indented 24px; each song's links, in Gmail's link blue #1155cc, under its title and above its sequence,
+one "Name: address" per line, no bullets, the song's notes under its sequence at the elements' size, under a bold "Notes:" on a line of its own, lines starting "• " as a dot list (in the notes box, "- " at the start of a line turns into "• "; Enter on a bullet starts the next, Enter on an empty one ends the list), and transitions in italics between the songs, unnumbered; once published, a separate card under it
 holds every song's **Songsheets** buttons, the same buttons as under each set in the full view, in the app's own font) (item cards, 2 → 4 field columns).
 Songsheet buttons (either view) open the sheet in the song bank panel, where a bank song's
 songsheet shows (title, key chip, the pages; tap for full size; "← Song bank" back to the list; on
 phones the bank sheet opens). Opening a song with its own uploaded songsheet (editing, or viewing
 once published / as its worship leader) shows that file there too, with an "Uploaded songsheet" chip.
 Outside editing, songs open and close on their own (several can be open at once); while editing,
-opening one closes the rest. **Show changes** (± button, pressed = on): the plan becomes a run sheet
-like the simplified view comparing it with the version the last publishing replaced (for worship
+opening one closes the rest. **Show changes** (± button, pressed = on): the plan becomes a run sheet laid out and styled exactly
+like the simplified view (Arial 14px, the same lines, indents, bold "Notes:" and note lines, grey comments) comparing it with the version the last publishing replaced (for worship
 leaders looking at their revised draft: the draft against the published version), with a caption
 and "Added" / "Taken out" key on top. Anything taken out is light red (red-100) and struck through
 with a thin red line; anything put in is light green (green-100). A whole song or transition in or
 out is a tinted block with a 4px green or red bar down its left; a kept one marks each change in
 place (title, key, tempo, lead, links, sequence steps, instruments, step comments, then notes under the sequence), and a
 song that moved has a small amber "Moved" pill. Session links appear at the top only when they changed.
+**Copy buttons** (worship leaders, once published, outside editing): a row of 36px outlined
+buttons under the plan, above "Last changed by". "Copy simplified version" copies the published
+run sheet (service and date, session links, sections, songs, sequences in the simplified view's
+lines, notes, transitions) as formatted text, with plain text alongside for apps that don't take
+formatting: section names bold and underlined, song lines bold, each song's links, sequence and
+notes indented (24px; four spaces in plain text), links kept as links, in Gmail's default "Normal" text (Sans Serif: arial, `font-size: small`, 13px), so it matches an email typed around it. After a republish there's also "Copy new edits": the
+same whole run sheet (titled "… (updated)"), with what the last publishing put in or changed in
+red (Gmail's #ff0000; Show changes' green) and nothing of what it took out: new songs,
+transitions and session links all red; in a kept song, each changed part of its title line (title,
+key, tempo, lead; never the number), new or renamed links, new or changed sequence steps (the bars
+stay black) and new note lines; new or renamed section names. Plain text has no red. A button reads "Copied"
+for 2 seconds.
 In the sequence builder (song details and session plans) the elements are 24px amber pills with a
 faint "|" between steps; you type straight into the sequence, like a line of text (it's laid out
 inline, 32px lines, so long text wraps to the start of the next line). A note being typed shows
 upright and slants once you leave it (a slant can't follow text across lines without tilting the
 cursor). Everything
 between two bars is one step: | before (Element) after |. Text can go on either side of an element
-(muted, slanted 7°: the `slant` class, not the browser's italic), or alone between two bars as free
+(muted, 13px like free text, slanted 7°: the `slant` class, not the browser's italic), or alone between two bars as free
 text (| Transpose to E |: upright, not a pill, read like an element in the simplified view but
 never added to the element buttons). Tapping blank space or a gap puts a text cursor at the
-nearest spot (phones get their keyboard); the boxes are only as wide as their text, and the
-cursor itself stays upright. Typing "|" starts a new step there. ← and → move through the text and
+nearest spot (phones get their keyboard); in an empty sequence ("Click elements below to build the
+sequence, or tap here to type.") a tap anywhere in the box puts it there, as loose text until a
+"|" or an element button; the boxes are only as wide as their text, and the
+cursor itself stays upright. Typing "|" starts a new step there, except inside a note in angle
+brackets: `| (Chorus) | <here!> Transpose to E <play | C | D E | x3> |` is one free-text step, its
+"|"s plain text (a "<" not yet closed holds back the bars after it while it's being typed). In free
+text the bracketed notes show muted and slanted, brackets kept in the builder and dropped in the
+full and simplified views (Show changes keeps them as typed; the copy buttons drop them and put the note, like every step comment, in grey (#666666) italics, red if new). ← and → move through the text and
 past each element and bar; Backspace at the start of the text after an element deletes the
 element (its text stays, as free text), and at the start of a step deletes the bar before it,
 joining the two steps (unless both have an element). An element button adds its element at the

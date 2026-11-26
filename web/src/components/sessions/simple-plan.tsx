@@ -1,89 +1,14 @@
 "use client";
 
 import { Fragment } from "react";
-import { SlantWords } from "@/components/sessions/slant";
+import { FreeText, SlantWords } from "@/components/sessions/slant";
+import { NotesText } from "@/components/sessions/notes-text";
 import { SectionSongsheets, type SessionSheet } from "@/components/sessions/plan-editor";
-import { isLongComment, keyLabel, looseParts, partInfo, partsPlayedBy, partTint, shortName, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
+import { isLongComment, keyLabel, looseParts, partInfo, partsPlayedBy, partTint, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
+import { label, lines } from "@/lib/seq-lines";
 
-const isChorus = (s: SeqStep | undefined) => Boolean(s && !s.free && /^chorus\b/i.test(s.name.trim()));
-/** V1, C... for an element; free text (| Transpose to E |) as written, upright like an element. */
-const label = (s: SeqStep) => (s.free ? s.name : shortName(s.name));
-
-/** How much room a step takes on a line, roughly in characters (with its " | "). A long comment has a line of its own. */
-const width = (s: SeqStep) =>
-  label(s).length +
-  (s.before ? s.before.length + 1 : 0) +
-  (s.repeat > 1 ? 3 : 0) +
-  (s.tags.length ? s.tags.join(", ").length + 3 : 0) +
-  (s.comment && !isLongComment(s.comment) ? s.comment.length + 1 : 0) +
-  3;
-
-/**
- * The sequence split into lines. A step with a long comment has a line of its own (the comment goes
- * under it); the steps in between are evened out into lines (see balanced).
- */
-function lines(steps: SeqStep[]): SeqStep[][] {
-  const out: SeqStep[][] = [];
-  let run: SeqStep[] = [];
-  const flush = () => {
-    if (run.length) out.push(...balanced(run));
-    run = [];
-  };
-  for (const s of steps) {
-    if (isLongComment(s.comment)) {
-      flush();
-      out.push([s]);
-    } else run.push(s);
-  }
-  flush();
-  return out;
-}
-
-/**
- * Steps split into lines of about the same length (the last can be shorter), about four
- * steps or 32 characters each. Lines prefer to end on a chorus that's followed by something new
- * (a verse, the bridge), so each line reads as one pass of the song.
- */
-function balanced(steps: SeqStep[]): SeqStep[][] {
-  const n = steps.length;
-  if (n <= 3) return [steps];
-  const w = steps.map(width);
-  const total = w.reduce((a, b) => a + b, 0);
-  const k = Math.min(n, Math.max(Math.ceil(n / 5), Math.ceil(total / 32)));
-  if (k <= 1) return [steps];
-  const avg = total / k;
-  const sum = (a: number, b: number) => w.slice(a, b).reduce((x, y) => x + y, 0);
-  // A break that doesn't come after a chorus costs about a third of a line's length, squared.
-  const offBeat = (avg * 0.35) ** 2;
-  const lineCost = (a: number, b: number, last: boolean) => {
-    const d = sum(a, b) - avg;
-    return last && d < 0 ? d * d * 0.2 : d * d;
-  };
-  // best[j][i]: cheapest way to put the first i steps on j lines; from[j][i]: where line j starts.
-  const best = Array.from({ length: k + 1 }, () => Array<number>(n + 1).fill(Infinity));
-  const from = Array.from({ length: k + 1 }, () => Array<number>(n + 1).fill(0));
-  best[0][0] = 0;
-  for (let j = 1; j <= k; j++) {
-    for (let i = j; i <= n; i++) {
-      for (let a = j - 1; a < i; a++) {
-        if (best[j - 1][a] === Infinity) continue;
-        const brk = a > 0 && !(isChorus(steps[a - 1]) && !isChorus(steps[a])) ? offBeat : 0;
-        const c = best[j - 1][a] + brk + lineCost(a, i, j === k);
-        if (c < best[j][i]) {
-          best[j][i] = c;
-          from[j][i] = a;
-        }
-      }
-    }
-  }
-  const out: SeqStep[][] = [];
-  for (let j = k, i = n; j > 0; j--) {
-    const a = from[j][i];
-    out.unshift(steps.slice(a, i));
-    i = a;
-  }
-  return out;
-}
+/** Comments: Gmail's grey, as in the copied email (slanted rather than italic, see FONTS.md). */
+const NOTE = "text-[#666666]";
 
 /**
  * One line of a sequence: || Intro x2 | V1 | C |, with the viewer's instrument picked out. Each step
@@ -112,9 +37,9 @@ function SeqLine({
   // comment, wrapping (ending in || if it's the song's last step).
   const longComment = steps.length === 1 && isLongComment(steps[0].comment) ? steps[0].comment : null;
   return (
-    <p className="break-words leading-7">
+    <p className="break-words">
       {head && (
-        <span className="text-xs text-muted">
+        <span className={NOTE}>
           <SlantWords text={head} />{" "}
         </span>
       )}
@@ -124,10 +49,10 @@ function SeqLine({
         const featured = featuredRole ? partInfo(featuredRole) : undefined;
         const name = (
           <>
-            {/* Free text a touch smaller (13px) than the elements, as in the builder. */}
-            {s.free ? <span className="text-[13px]">{label(s)}</span> : label(s)}
-            {s.repeat > 1 && <span className="font-semibold"> x{s.repeat}</span>}
-            {s.tags.length > 0 && <span className={featured ? "" : "text-muted"}> ({s.tags.join(", ")})</span>}
+            {/* Free text the same size as the elements; its <notes> grey and slanted like the other comments. */}
+            {s.free ? <FreeText text={label(s)} noteClass={NOTE} /> : label(s)}
+            {s.repeat > 1 && ` x${s.repeat}`}
+            {s.tags.length > 0 && ` (${s.tags.join(", ")})`}
           </>
         );
         const closing = last && i === steps.length - 1 ? "||" : "|";
@@ -136,9 +61,9 @@ function SeqLine({
             {i > 0 && " "}
             {/* The step, its instruments and a short comment on one line, never split. */}
             <span className="whitespace-nowrap">
-              {i === 0 && <span className="text-muted">{first ? "|| " : "| "}</span>}
+              {i === 0 && (first ? "|| " : "| ")}
               {s.before && (
-                <span className="text-xs text-muted">
+                <span className={NOTE}>
                   <SlantWords text={s.before} />{" "}
                 </span>
               )}
@@ -150,12 +75,12 @@ function SeqLine({
                 name
               )}
               {s.comment && !isLongComment(s.comment) && (
-                <span className="text-xs text-muted">
+                <span className={NOTE}>
                   {" "}
                   <SlantWords text={s.comment} />
                 </span>
               )}
-              {!longComment && <span className="text-muted"> {closing}</span>}
+              {!longComment && ` ${closing}`}
             </span>
           </Fragment>
         );
@@ -163,14 +88,14 @@ function SeqLine({
       {longComment && (
         <>
           {" "}
-          <span className="text-xs text-muted">
+          <span className={NOTE}>
             <SlantWords text={longComment} />
           </span>
-          {last && <span className="text-muted">{" ||"}</span>}
+          {last && " ||"}
         </>
       )}
       {tail && (
-        <span className="text-xs text-muted">
+        <span className={NOTE}>
           {" "}
           <SlantWords text={tail} />
         </span>
@@ -186,8 +111,8 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
   // The links set for this song in the session (as in the full view), under its title and above its sequence.
   const links = (item.links ?? []).filter((l) => l.url);
   return (
-    <li className="space-y-1">
-      <p className="font-semibold">
+    <li>
+      <p className="font-bold">
         {n}. {item.title || "Song to be chosen"}
         {key && ` (${key})`}
         {item.bpm && ` - ${item.bpm}bpm`}
@@ -195,11 +120,11 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
       </p>
       {links.length > 0 && (
         // "Live version: https://…", one per line. A link with no name is just its address.
-        <ul className="space-y-0.5 pl-4 leading-6">
+        <ul className="pl-6">
           {links.map((l, i) => (
             <li key={i}>
               {l.label && `${l.label}: `}
-              <a href={l.url} target="_blank" rel="noopener noreferrer" className="break-all text-blue-600 underline underline-offset-2 hover:text-blue-800">
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className="break-all text-[#1155cc] underline">
                 {l.url}
               </a>
             </li>
@@ -207,7 +132,7 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
         </ul>
       )}
       {steps.length > 0 && (
-        <div className="pl-4">
+        <div className="pl-6">
           {ls.map((l, i) => (
             <SeqLine
               key={l[0]?.id ?? i}
@@ -221,14 +146,22 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
           ))}
         </div>
       )}
-      {/* The song's notes, under its sequence. */}
-      {item.notes.trim() && <p className="whitespace-pre-line pl-4 text-xs">Notes: {item.notes.trim()}</p>}
+      {/* The song's notes under its sequence: a bold "Notes:", then the notes on the lines under it, as
+          written ("• " lines as a dot list), the elements' size. */}
+      {item.notes.trim() && (
+        <div className="pl-6">
+          <p className="font-bold">Notes:</p>
+          <NotesText notes={item.notes} />
+        </div>
+      )}
     </li>
   );
 }
 
 /**
- * The whole set as one block of text, like a printed run sheet: each section's songs numbered,
+ * Styled like the copied email in Gmail (see plan-text): arial (14px, a touch bigger than Gmail's 13px Normal; #222),
+ * section names bold and underlined, song lines bold, links / sequence / notes indented 24px, a
+ * blank line's space between blocks. The whole set as one block of text, like a printed run sheet: each section's songs numbered,
  * with key, tempo and lead, and the sequence written out with short names (V1, C).
  * Transitions sit in their place between the songs, unnumbered, as in the full view.
  */
@@ -259,16 +192,16 @@ export function SimplePlan({
     <>
     <article
       aria-label="Simplified set"
-      className="space-y-6 rounded-xl border border-border bg-surface p-4 text-sm sm:p-5"
+      className="space-y-[1.15em] rounded-xl border border-border bg-surface p-4 text-[14px] leading-[1.4] text-[#222222] sm:p-5"
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       {sections.map((s) => (
-        <section key={s.id} className="space-y-3">
-          <h2 className="text-base font-bold underline underline-offset-4">{s.name}</h2>
-          <ol className="space-y-4">
+        <section key={s.id} className="space-y-[1.15em]">
+          <h2 className="font-bold underline">{s.name}</h2>
+          <ol className="space-y-[1.15em]">
             {s.items.map((item, i) =>
               item.kind === "transition" ? (
-                <li key={item.id} className="italic text-foreground/80">
+                <li key={item.id}>
                   {"// Transition"}{item.notes ? `: ${item.notes}` : ""}
                 </li>
               ) : (
