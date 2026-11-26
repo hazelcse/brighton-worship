@@ -3,6 +3,8 @@
 import { Fragment } from "react";
 import { FreeText, SlantWords } from "@/components/sessions/slant";
 import { NotesText } from "@/components/sessions/notes-text";
+import { useCopyOnClick } from "@/components/sessions/copy-on-click";
+import type { PlanCopy } from "@/components/sessions/plan-text";
 import { SectionSongsheets, type SessionSheet } from "@/components/sessions/plan-editor";
 import { isLongComment, keyLabel, looseParts, partInfo, partsPlayedBy, partTint, type PlanItem, type PlanSection, type SeqStep } from "@/lib/session-plan";
 import { label, lines } from "@/lib/seq-lines";
@@ -59,8 +61,9 @@ function SeqLine({
         return (
           <Fragment key={s.id}>
             {i > 0 && " "}
-            {/* The step, its instruments and a short comment on one line, never split. */}
-            <span className="whitespace-nowrap">
+            {/* The step, its instruments and a short comment on one line, never split; free text (up to
+                160 characters) wraps like words, so it can't run past the box on a phone. */}
+            <span className={s.free ? undefined : "whitespace-nowrap"}>
               {i === 0 && (first ? "|| " : "| ")}
               {s.before && (
                 <span className={NOTE}>
@@ -131,8 +134,9 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
           ))}
         </ul>
       )}
+      {/* A little room (8px) between the sequence and the links above it and the notes under it. */}
       {steps.length > 0 && (
-        <div className="pl-6">
+        <div className={`pl-6 ${links.length ? "mt-2" : ""}`}>
           {ls.map((l, i) => (
             <SeqLine
               key={l[0]?.id ?? i}
@@ -149,7 +153,7 @@ function SongBlock({ item, n, lead, highlight }: { item: PlanItem; n: number; le
       {/* The song's notes under its sequence: a bold "Notes:", then the notes on the lines under it, as
           written ("• " lines as a dot list), the elements' size. */}
       {item.notes.trim() && (
-        <div className="pl-6">
+        <div className={`pl-6 ${steps.length ? "mt-2" : ""}`}>
           <p className="font-bold">Notes:</p>
           <NotesText notes={item.notes} />
         </div>
@@ -172,6 +176,7 @@ export function SimplePlan({
   sheetsFor = null,
   sheetKeys = {},
   onOpenSheet,
+  copy,
 }: {
   plan: PlanSection[];
   leadName: (id: string | null) => string | null;
@@ -181,7 +186,10 @@ export function SimplePlan({
   sheetKeys?: Record<string, string[]>;
   /** Open a songsheet in the right-hand panel instead of a popup. */
   onOpenSheet?: (sheet: SessionSheet) => void;
+  /** Worship leaders, once published: clicking the box copies this (see useCopyOnClick). */
+  copy?: () => PlanCopy;
 }) {
+  const copier = useCopyOnClick(copy, "the simplified version");
   const sections = plan.filter((s) => s.items.length > 0);
   if (!sections.length) return <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-sm text-muted">Nothing planned yet.</p>;
   const sheets = sheetsFor && (
@@ -192,9 +200,11 @@ export function SimplePlan({
     <>
     <article
       aria-label="Simplified set"
-      className="space-y-[1.15em] rounded-xl border border-border bg-surface p-4 text-[14px] leading-[1.4] text-[#222222] sm:p-5"
+      className={`space-y-[1.15em] rounded-xl border border-border bg-surface px-5 py-4 text-[13px] leading-[1.4] text-[#222222] [overflow-wrap:anywhere] sm:p-5 sm:text-[14px] ${copier.className}`}
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+      {...copier.props}
     >
+      {copier.badge}
       {sections.map((s) => (
         <section key={s.id} className="space-y-[1.15em]">
           <h2 className="font-bold underline">{s.name}</h2>
@@ -219,6 +229,7 @@ export function SimplePlan({
         </section>
       ))}
     </article>
+    {copier.hint}
     {sheets}
     </>
   );

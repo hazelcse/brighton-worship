@@ -43,4 +43,5 @@ say clearly in your summary which font changed, where and why.
   (#666666), still slanted 7° rather than italic; bars, tags and repeats in the text colour.
   Everything in it (elements, free text, comments, notes) is 13px.
 - 26 Nov 2026: then 14px, slightly bigger, at the owner's request (the copied email stays at Gmail's 13px).
+- 26 Nov 2026: on phones (below 640px) the simplified view and Show changes are 13px, slightly smaller, at the owner's request; 14px from 640px.
 - 18 Nov 2026: the login title's cycling word ("Worship" / "Media") made italic at the owner's request; Cormorant Garamond's italic is now loaded for it.

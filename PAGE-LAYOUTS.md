@@ -320,7 +320,8 @@ Cancel / Save), title + badges (the badges in one row, to the right of the title
 otherwise as a row under it), a row of 36px icon buttons and "Publish". **Phones (below 640px)**:
 the date line moves under the title and badges, shortened to one line ("Sun, 15 Nov 2026 ·
 Rehearsal Sat 14 Nov"; it wraps only if it still doesn't fit). In the button row the eye
-(simplified view) and, when there's something to compare, the ± "Show changes" button stay at the
+(simplified view) and, in the simplified view when there's something to compare, the ± "Show
+changes" button (never in the full view: switching to it turns Show changes off) stay at the
 left and Edit / Publish sit at the right (band members on the session other than its BL/TB
 and whoever leads a song in it get no eye: they only see the simplified view, outside editing); while editing,
 × and save sit at the left and the eye (previews the draft in the simplified view; starts off
@@ -334,7 +335,7 @@ it, e.g. the phone slept), coming back autosaves the edits, unless the other wor
 editing or saved in the meantime: then they're dropped, and the alert says why. Then
 alerts, band (collapsible), "Session links (N)" (collapsible like band, closed to read and open
 while editing; only when the session has links; added from the **+** menu's "+ Session link"),
-then the plan editor (or, in the simplified view, the run sheet, styled like the copied email in Gmail: Arial 14px (the email is 13px) #222, lines 1.4 apart, section names bold and underlined, song lines bold, comments #666666 and slanted, a blank line's space between blocks, links / sequence / notes indented 24px; each song's links, in Gmail's link blue #1155cc, under its title and above its sequence,
+then the plan editor (or, in the simplified view, the run sheet, styled like the copied email in Gmail: Arial 14px (13px on phones; the email is 13px) #222, lines 1.4 apart, padding 16px top and bottom and 20px at the sides on phones (20px all round from 640px), long words and free text wrapping inside the box, section names bold and underlined, song lines bold, comments #666666 and slanted, a blank line's space between blocks, links / sequence / notes indented 24px, 8px more space between the sequence and the links above it and the notes under it (Show changes too); each song's links, in Gmail's link blue #1155cc, under its title and above its sequence,
 one "Name: address" per line, no bullets, the song's notes under its sequence at the elements' size, under a bold "Notes:" on a line of its own, lines starting "• " as a dot list (in the notes box, "- " at the start of a line turns into "• "; Enter on a bullet starts the next, Enter on an empty one ends the list), and transitions in italics between the songs, unnumbered; once published, a separate card under it
 holds every song's **Songsheets** buttons, the same buttons as under each set in the full view, in the app's own font) (item cards, 2 → 4 field columns).
 Songsheet buttons (either view) open the sheet in the song bank panel, where a bank song's
@@ -344,24 +345,27 @@ once published / as its worship leader) shows that file there too, with an "Uplo
 Outside editing, songs open and close on their own (several can be open at once); while editing,
 opening one closes the rest. **Show changes** (± button, pressed = on): the plan becomes a run sheet laid out and styled exactly
 like the simplified view (Arial 14px, the same lines, indents, bold "Notes:" and note lines, grey comments) comparing it with the version the last publishing replaced (for worship
-leaders looking at their revised draft: the draft against the published version), with a caption
-and "Added" / "Taken out" key on top. Anything taken out is light red (red-100) and struck through
+leaders looking at their revised draft: the draft against the published version), with no caption (who published and when is in "Last changed by" under it).
+Anything taken out is light red (red-100) and struck through
 with a thin red line; anything put in is light green (green-100). A whole song or transition in or
 out is a tinted block with a 4px green or red bar down its left; a kept one marks each change in
 place (title, key, tempo, lead, links, sequence steps, instruments, step comments, then notes under the sequence), and a
 song that moved has a small amber "Moved" pill. Session links appear at the top only when they changed.
-**Copy buttons** (worship leaders, once published, outside editing): a row of 36px outlined
-buttons under the plan, above "Last changed by". "Copy simplified version" copies the published
-run sheet (service and date, session links, sections, songs, sequences in the simplified view's
+**Tap to copy** (worship leaders, once published, outside editing; no buttons): tapping or clicking
+the simplified view's box copies it, and tapping Show changes' box copies the edits. Each box gets a
+pointer cursor, an accent border on hover, a muted 12px line under it ("Tap or click the box to
+copy the simplified version." / "… the edits."), and a dark "Copied" pill in its top right corner
+for 2 seconds ("Couldn't copy" in red if the browser refused). Taps on a link, or that end a text
+selection, don't copy; Enter or Space copies from the keyboard. Each copies what's on the page (the
+revised draft while that's shown). The simplified version is the run sheet (service and date, session links, sections, songs, sequences in the simplified view's
 lines, notes, transitions) as formatted text, with plain text alongside for apps that don't take
 formatting: section names bold and underlined, song lines bold, each song's links, sequence and
-notes indented (24px; four spaces in plain text), links kept as links, in Gmail's default "Normal" text (Sans Serif: arial, `font-size: small`, 13px), so it matches an email typed around it. After a republish there's also "Copy new edits": the
+notes indented (24px; four spaces in plain text), links kept as links, in Gmail's default "Normal" text (Sans Serif: arial, `font-size: small`, 13px), so it matches an email typed around it. The edits are the
 same whole run sheet (titled "… (updated)"), with what the last publishing put in or changed in
 red (Gmail's #ff0000; Show changes' green) and nothing of what it took out: new songs,
 transitions and session links all red; in a kept song, each changed part of its title line (title,
 key, tempo, lead; never the number), new or renamed links, new or changed sequence steps (the bars
-stay black) and new note lines; new or renamed section names. Plain text has no red. A button reads "Copied"
-for 2 seconds.
+stay black) and new note lines; new or renamed section names. Plain text has no red.
 In the sequence builder (song details and session plans) the elements are 24px amber pills with a
 faint "|" between steps; you type straight into the sequence, like a line of text (it's laid out
 inline, 32px lines, so long text wraps to the start of the next line). A note being typed shows
@@ -378,7 +382,7 @@ cursor itself stays upright. Typing "|" starts a new step there, except inside a
 brackets: `| (Chorus) | <here!> Transpose to E <play | C | D E | x3> |` is one free-text step, its
 "|"s plain text (a "<" not yet closed holds back the bars after it while it's being typed). In free
 text the bracketed notes show muted and slanted, brackets kept in the builder and dropped in the
-full and simplified views (Show changes keeps them as typed; the copy buttons drop them and put the note, like every step comment, in grey (#666666) italics, red if new). ← and → move through the text and
+full and simplified views (Show changes keeps them as typed; the copied text drops them and put the note, like every step comment, in grey (#666666) italics, red if new). ← and → move through the text and
 past each element and bar; Backspace at the start of the text after an element deletes the
 element (its text stays, as free text), and at the start of a step deletes the bar before it,
 joining the two steps (unless both have an element). An element button adds its element at the

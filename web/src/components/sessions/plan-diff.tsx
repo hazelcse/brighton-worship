@@ -1,9 +1,10 @@
 "use client";
 
 import { Fragment, type ReactNode } from "react";
-import { SlantWords } from "@/components/sessions/slant";
+import { FreeText, SlantWords } from "@/components/sessions/slant";
+import { useCopyOnClick } from "@/components/sessions/copy-on-click";
+import type { PlanCopy } from "@/components/sessions/plan-text";
 import { lines } from "@/lib/seq-lines";
-import { noteParts, unbracket } from "@/lib/seq-text";
 import { PART_ROLES, keyLabel, shortName, type PlanItem, type PlanLink, type PlanSection, type SeqStep } from "@/lib/session-plan";
 
 /*
@@ -77,14 +78,12 @@ function blockClass(state: State) {
 
 /** Comments: Gmail's grey, as in the simplified view. */
 const NOTE = "text-[#666666]";
-/** Text typed with <notes> in it, the brackets dropped. */
-const plainNotes = (t: string) => noteParts(t).map((p) => (p.note ? unbracket(p.text) : p.text)).join("");
 
 /**
  * A song's notes: a bold "Notes:", then each line as in the simplified view ("• " lines as dot
  * points), lines put in highlighted and lines taken out struck through under them. plain: nothing marked.
  */
-function Notes({ a, b, plain = false }: { a: string; b: string; plain?: boolean }) {
+function Notes({ a, b, plain = false, className = "" }: { a: string; b: string; plain?: boolean; className?: string }) {
   const words = (t: string) => t.trim().replace(/^(?:•|-)\s+/, "");
   const rows = (t: string) => t.trim().split("\n").filter((x) => x.trim());
   const was = new Set(rows(a).map(words));
@@ -94,7 +93,7 @@ function Notes({ a, b, plain = false }: { a: string; b: string; plain?: boolean 
     ...rows(a).filter((t) => !now.has(words(t))).map((t) => ({ t, state: "removed" })),
   ];
   return (
-    <div className="pl-6">
+    <div className={`pl-6 ${className}`}>
       <p className="font-bold">Notes:</p>
       {shown.map((r, i) => {
         const w = words(r.t);
@@ -113,38 +112,63 @@ function Notes({ a, b, plain = false }: { a: string; b: string; plain?: boolean 
 
 const partLabel = (role: string) => PART_ROLES.find((p) => p.role === role)?.label ?? role;
 
-/** "V1 x2 (High)", as the simplified view writes a step. */
-const stepText = (s: SeqStep) =>
-  `${s.before ? `${plainNotes(s.before)} ` : ""}${s.free ? plainNotes(s.name) : shortName(s.name)}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
+/** A comment: grey and slanted, its <> dropped (as in the simplified view). */
+const note = (t: string) => (
+  <span className={NOTE}>
+    <SlantWords text={t} />
+  </span>
+);
+
+/** "V1 x2 (High)", as the simplified view writes a step's element (or its free text). */
+const core = (s: SeqStep) => `${s.free ? s.name : shortName(s.name)}${s.repeat > 1 ? ` x${s.repeat}` : ""}${s.tags.length ? ` (${s.tags.join(", ")})` : ""}`;
+/** Free text's <notes> grey and slanted, as in the simplified view; an element as it reads. */
+const coreView = (t: string, free: boolean | undefined) => (free ? <FreeText text={t} noteClass={NOTE} /> : t);
+
+/** As it is, or the old one struck out and the new one highlighted, each drawn by `show`. Blank sides are left out. */
+function Diffed({ a, b, show }: { a: string | undefined; b: string | undefined; show: (t: string) => ReactNode }) {
+  const was = a?.trim() ?? "";
+  const now = b?.trim() ?? "";
+  if (was === now) return <>{now && show(now)}</>;
+  return (
+    <>
+      {was && <Del>{show(was)}</Del>}
+      {was && now && " "}
+      {now && <Ins>{show(now)}</Ins>}
+    </>
+  );
+}
+
+const partsText = (s: SeqStep) => ((s.parts ?? []).length > 0 ? <span> [{s.parts!.map(partLabel).join(", ")}]</span> : null);
+
+/** A step put in or taken out, whole: comment before, element, instruments, comment after. */
+function WholeStep({ s }: { s: SeqStep }) {
+  return (
+    <>
+      {s.before && <>{note(s.before)} </>}
+      {coreView(core(s), s.free)}
+      {partsText(s)}
+      {s.comment && <> {note(s.comment)}</>}
+    </>
+  );
+}
 
 function Step({ row }: { row: Row<SeqStep> }) {
   const a = row.a;
   const b = row.b;
-  if (row.state === "added") {
-    return (
-      <Ins>
-        {stepText(b!)}
-        {(b!.parts ?? []).length > 0 && <span> [{b!.parts!.map(partLabel).join(", ")}]</span>}
-        {b!.comment && <span className={NOTE}> <SlantWords text={b!.comment} /></span>}
-      </Ins>
-    );
-  }
-  if (row.state === "removed") {
-    return (
-      <Del>
-        {stepText(a!)}
-        {(a!.parts ?? []).length > 0 && <span> [{a!.parts!.map(partLabel).join(", ")}]</span>}
-        {a!.comment && <span className={NOTE}> <SlantWords text={a!.comment} /></span>}
-      </Del>
-    );
-  }
+  if (row.state === "added") return <Ins><WholeStep s={b!} /></Ins>;
+  if (row.state === "removed") return <Del><WholeStep s={a!} /></Del>;
   const was = new Set(a!.parts ?? []);
   const now = new Set(b!.parts ?? []);
   const parts = PART_ROLES.map((p) => p.role).filter((r) => was.has(r) || now.has(r));
   const partsChanged = parts.some((r) => was.has(r) !== now.has(r));
   return (
     <>
-      <Changed a={stepText(a!)} b={stepText(b!)} />
+      {(a!.before || b!.before) && (
+        <>
+          <Diffed a={a!.before} b={b!.before} show={note} />{" "}
+        </>
+      )}
+      <Diffed a={core(a!)} b={core(b!)} show={(t) => coreView(t, b!.free)} />
       {row.moved && <span className="text-[10px] font-semibold uppercase text-amber-700"> moved</span>}
       {/* Instruments only when they changed: the ones that stayed in plain text. */}
       {partsChanged && (
@@ -159,25 +183,26 @@ function Step({ row }: { row: Row<SeqStep> }) {
           {"]"}
         </span>
       )}
+      {/* The space sits outside the comment, so it always shows between the element and it. */}
       {(a!.comment || b!.comment) && (
-        <span className={`slant inline-block ${NOTE}`}>
+        <>
           {" "}
-          <Changed a={a!.comment && plainNotes(a!.comment)} b={b!.comment && plainNotes(b!.comment)} />
-        </span>
+          <Diffed a={a!.comment} b={b!.comment} show={note} />
+        </>
       )}
     </>
   );
 }
 
 /** The sequence in the simplified view's lines (|| V1 | C |, then | B | C ||), steps taken out in their old places. */
-function Sequence({ a, b }: { a: SeqStep[]; b: SeqStep[] }) {
+function Sequence({ a, b, className = "" }: { a: SeqStep[]; b: SeqStep[]; className?: string }) {
   const after = new Set(b.map((s) => s.id));
   const rows = merge(a, b, (id) => !after.has(id));
   if (!rows.length) return null;
   const byId = new Map(rows.map((r) => [(r.b ?? r.a)!.id, r]));
   const ls = lines(rows.map((r) => (r.b ?? r.a)!));
   return (
-    <div className="pl-6">
+    <div className={`pl-6 ${className}`}>
       {ls.map((l, li) => (
         <p key={l[0].id} className="break-words">
           {li === 0 ? "|| " : "| "}
@@ -238,6 +263,8 @@ function Song({ row, n, leadName }: { row: Row<PlanItem>; n: number; leadName: (
   const bpm = (i: PlanItem | null) => (i?.bpm ? `${i.bpm}bpm` : null);
   const lead = (i: PlanItem | null) => (i?.lead_id ? (leadName(i.lead_id) ?? "Someone") : null);
   const whole = row.state !== "same";
+  const hasLinks = [...(a?.links ?? []), ...(b?.links ?? [])].some((l) => l.url);
+  const hasSequence = (a?.sequence ?? []).length > 0 || (b?.sequence ?? []).length > 0;
   // A whole song in or out is tinted as one block; a kept one shows each change in place.
   const field = (f: (i: PlanItem | null) => string | null) => (whole ? f(one) : null);
   return (
@@ -268,9 +295,10 @@ function Song({ row, n, leadName }: { row: Row<PlanItem>; n: number; leadName: (
         {row.moved && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800 no-underline">Moved</span>}
       </p>
       <Links a={a?.links ?? []} b={b?.links ?? []} />
-      <Sequence a={a?.sequence ?? []} b={b?.sequence ?? []} />
+      {/* A little room (8px) between the sequence and the links above it and the notes under it, as in the simplified view. */}
+      <Sequence a={a?.sequence ?? []} b={b?.sequence ?? []} className={hasLinks ? "mt-2" : ""} />
       {/* Notes under the sequence, as in the simplified view: a bold "Notes:", then line by line. */}
-      {whole ? one.notes.trim() && <Notes a="" b={one.notes} plain /> : (a?.notes.trim() || b?.notes.trim()) && <Notes a={a?.notes ?? ""} b={b?.notes ?? ""} />}
+      {whole ? one.notes.trim() && <Notes a="" b={one.notes} plain className={hasSequence ? "mt-2" : ""} /> : (a?.notes.trim() || b?.notes.trim()) && <Notes a={a?.notes ?? ""} b={b?.notes ?? ""} className={hasSequence ? "mt-2" : ""} />}
     </li>
   );
 }
@@ -301,16 +329,17 @@ export function PlanDiff({
   linksBefore,
   linksAfter,
   leadName,
-  caption,
+  copy,
 }: {
   before: PlanSection[];
   after: PlanSection[];
   linksBefore: PlanLink[];
   linksAfter: PlanLink[];
   leadName: (id: string | null) => string | null;
-  /** What's being compared, e.g. "Changes published by Anna on 3 Nov, 14:20". */
-  caption: string;
+  /** Worship leaders, once published: clicking the box copies this (see useCopyOnClick). */
+  copy?: () => PlanCopy;
 }) {
+  const copier = useCopyOnClick(copy, "the edits");
   const oldItems = new Map(before.flatMap((s) => s.items).map((i) => [i.id, i]));
   const newItems = new Set(after.flatMap((s) => s.items).map((i) => i.id));
   const newSections = new Set(after.map((s) => s.id));
@@ -328,12 +357,14 @@ export function PlanDiff({
   const newN = numberIn(after);
 
   return (
+    <>
     <article
       aria-label="Changes"
-      className="space-y-[1.15em] rounded-xl border border-border bg-surface p-4 text-[14px] leading-[1.4] text-[#222222] sm:p-5"
+      className={`space-y-[1.15em] rounded-xl border border-border bg-surface px-5 py-4 text-[13px] leading-[1.4] text-[#222222] [overflow-wrap:anywhere] sm:p-5 sm:text-[14px] ${copier.className}`}
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+      {...copier.props}
     >
-      <p className="text-xs text-muted">{caption}</p>
+      {copier.badge}
       {unchanged && <p className="text-muted">Nothing in the plan changed.</p>}
       {(linksBefore.length > 0 || linksAfter.length > 0) && JSON.stringify(linksBefore) !== JSON.stringify(linksAfter) && (
         <section>
@@ -368,5 +399,7 @@ export function PlanDiff({
         );
       })}
     </article>
+    {copier.hint}
+    </>
   );
 }

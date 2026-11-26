@@ -16,7 +16,7 @@ import {
 import { PlanEditor, ownSheetKey, sessionSheetSrc, uploadSrc, type EditorApi, type SessionSheet, type Singer } from "@/components/sessions/plan-editor";
 import { SimplePlan } from "@/components/sessions/simple-plan";
 import { PlanDiff } from "@/components/sessions/plan-diff";
-import { newEditsText, simplePlanText, type PlanCopy } from "@/components/sessions/plan-text";
+import { newEditsText, simplePlanText } from "@/components/sessions/plan-text";
 import { PartCues } from "@/components/sessions/part-cues";
 import { SongBankPanel, type BankSong, type PanelSheet } from "@/components/sessions/song-bank-panel";
 import { StageBadge } from "@/components/sessions/stage-badge";
@@ -535,41 +535,6 @@ function LeavePrompt({
   );
 }
 
-/** Buttons that copy text for a message; each says "Copied" for a moment after. */
-function CopyPlanButtons({ texts }: { texts: { label: string; text: () => PlanCopy }[] }) {
-  const [copied, setCopied] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const timer = useRef<number | null>(null);
-  useEffect(() => () => void (timer.current && window.clearTimeout(timer.current)), []);
-  async function copy(t: { label: string; text: () => PlanCopy }) {
-    try {
-      const { text, html } = t.text();
-      // Formatted (bold, underline, indents, links) where the paste takes it, plain text elsewhere.
-      if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) }),
-        ]);
-      } else await navigator.clipboard.writeText(text);
-      setFailed(false);
-      setCopied(t.label);
-      if (timer.current) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setCopied(null), 2000);
-    } catch {
-      setFailed(true);
-    }
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {texts.map((t) => (
-        <button key={t.label} type="button" onClick={() => void copy(t)} className={`${btn} border border-border bg-surface hover:border-accent hover:text-accent`}>
-          {copied === t.label ? "Copied" : t.label}
-        </button>
-      ))}
-      {failed && <span role="alert" className="text-xs text-danger">Couldn&apos;t copy. Check the browser lets this site use the clipboard.</span>}
-    </div>
-  );
-}
-
 export function Workbench({
   initial,
   canEdit,
@@ -654,15 +619,15 @@ export function Workbench({
   const diff = editing
     ? null
     : viewingRevision
-      ? { before: initial.plan, linksBefore: initial.links, caption: "Your revised draft compared with the published version (what the band sees now)." }
+      ? { before: initial.plan, linksBefore: initial.links }
       : initial.previous
         ? {
             before: initial.previous.plan,
             linksBefore: initial.previous.links,
-            caption: `Changes ${initial.previous.publishedBy ? `published by ${initial.previous.publishedBy}` : "published"} on ${new Date(initial.previous.publishedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.`,
           }
         : null;
-  const diffing = showDiff && diff !== null;
+  // Show changes is part of the simplified view: hidden (and off) in the full view.
+  const diffing = showDiff && diff !== null && simple;
 
   // ---- editing --------------------------------------------------------------
   // Nothing saves until the floppy disk, except when the lock lapses (then the edits are autosaved).
@@ -1145,6 +1110,16 @@ export function Workbench({
 
   const bandName = (id: string | null) => (id ? (initial.band.find((m) => m.id === id)?.name ?? null) : null);
 
+  // Worship leaders, once published: tapping the simplified view copies it, and tapping Show changes
+  // copies the same run sheet with what's new in red. Each copies what's on the page (the revised
+  // draft while that's shown).
+  const canCopy = canEdit && published && !editing && !projection;
+  const copySimple = canCopy ? () => simplePlanText({ service: initial.serviceName, date: initial.date, plan, links, names: bandName }) : undefined;
+  const copyEdits =
+    canCopy && diff
+      ? () => newEditsText({ service: initial.serviceName, date: initial.date, before: diff.before, after: plan, linksBefore: diff.linksBefore, linksAfter: links, names: bandName })
+      : undefined;
+
   const target = editing && selected?.kind === "song" ? { label: `song ${numbers[selected.id]}`, songId: selected.song_id } : null;
   const otherEditor = !editing && initial.lockedBy ? initial.lockedBy.name : null;
 
@@ -1246,13 +1221,13 @@ export function Workbench({
             ) : (
               <>
                 {!simpleOnly && (
-                  <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className={diff ? "" : "max-sm:mr-auto"}>
+                  <IconButton label={simple ? "Show full view" : "Show simplified view"} onClick={toggleSimple} pressed={simple} className={diff && simple ? "" : "max-sm:mr-auto"}>
                     {/* Eye */}
                     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
                     <circle cx="12" cy="12" r="3" />
                   </IconButton>
                 )}
-                {diff && (
+                {diff && simple && (
                   <IconButton label={diffing ? "Hide changes" : "Show changes (added and taken out)"} onClick={() => setShowDiff((v) => !v)} pressed={diffing} className="max-sm:mr-auto">
                     {/* Plus over minus, like a diff */}
                     <path d="M12 4v8M8 8h8" />
@@ -1354,7 +1329,7 @@ export function Workbench({
             linksBefore={diff.linksBefore}
             linksAfter={links}
             leadName={(id) => (id ? (initial.band.find((m) => m.id === id)?.name ?? null) : null)}
-            caption={diff.caption}
+            copy={copyEdits}
           />
         ) : (editing ? editPreview : simple) ? (
           <SimplePlan
@@ -1364,6 +1339,7 @@ export function Workbench({
             sheetsFor={api.sheetsFor}
             sheetKeys={initial.sheetKeys}
             onOpenSheet={api.openSheet}
+            copy={editing ? undefined : copySimple}
           />
         ) : (
           <>
@@ -1399,35 +1375,6 @@ export function Workbench({
             onSave={() => void saveAndStop()}
             onDiscard={() => void discardAndStop()}
             onKeep={() => setLeaving(null)}
-          />
-        )}
-
-        {/* Worship leaders, once published: copy the published run sheet (and, after a republish, just what it added) as text. */}
-        {canEdit && published && !editing && !projection && (
-          <CopyPlanButtons
-            texts={[
-              {
-                label: "Copy simplified version",
-                text: () => simplePlanText({ service: initial.serviceName, date: initial.date, plan: initial.plan, links: initial.links, names: bandName }),
-              },
-              ...(initial.previous
-                ? [
-                    {
-                      label: "Copy new edits",
-                      text: () =>
-                        newEditsText({
-                          service: initial.serviceName,
-                          date: initial.date,
-                          before: initial.previous!.plan,
-                          after: initial.plan,
-                          linksBefore: initial.previous!.links,
-                          linksAfter: initial.links,
-                          names: bandName,
-                        }),
-                    },
-                  ]
-                : []),
-            ]}
           />
         )}
 
