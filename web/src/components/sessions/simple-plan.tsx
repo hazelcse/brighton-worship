@@ -94,7 +94,7 @@ function SeqLine({
           <span className={NOTE}>
             <SlantWords text={longComment} />
           </span>
-          {last && " ||"}
+          {last ? " ||" : " |"}
         </>
       )}
       {tail && (

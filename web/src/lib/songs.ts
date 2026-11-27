@@ -190,6 +190,8 @@ export async function loadSong(id: string) {
       suggested_key: string | null;
       reviewed_at: string | null;
       missing_from_drive_at: string | null;
+      /** Two or more songsheets for it in the Drive folder, until someone keeps one. */
+      duplicate_drive_at: string | null;
       notes: string;
     },
     /** Issues people raised that haven't been resolved yet. */

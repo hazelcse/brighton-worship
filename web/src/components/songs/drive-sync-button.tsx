@@ -11,6 +11,7 @@ const RESULT_LABEL = {
   updated: { text: "Updated", style: "bg-sky-100 text-sky-800" },
   replaced: { text: "Replaced library copy", style: "bg-violet-100 text-violet-800" },
   unchanged: { text: "Already in library", style: "bg-stone-100 text-muted" },
+  duplicate: { text: "Second songsheet", style: "bg-orange-100 text-orange-800" },
   failed: { text: "Failed", style: "bg-red-100 text-red-800" },
   removed: { text: "Gone from Drive", style: "bg-amber-100 text-amber-800" },
 } as const;
@@ -108,6 +109,7 @@ export function DriveSyncButton({ lastSyncedAt, everyMinutes, running = false }:
             <p className="text-sm text-muted">
               {summary.files} {summary.files === 1 ? "songsheet" : "songsheets"} in the folder · {summary.added} added · {summary.updated} updated
               {summary.replaced ? ` · ${summary.replaced} replaced` : ""} · {summary.unchanged} unchanged
+              {summary.duplicate ? ` · ${summary.duplicate} duplicate` : ""}
               {summary.failed ? ` · ${summary.failed} failed` : ""}
               {summary.removed ? ` · ${summary.removed} gone from Drive` : ""}
             </p>
@@ -129,6 +131,11 @@ export function DriveSyncButton({ lastSyncedAt, everyMinutes, running = false }:
                       <span className="min-w-0 flex-1 truncate font-medium">{i.title || i.name}</span>
                     )}
                     {i.error && <span className="w-full text-xs text-danger">{i.error}</span>}
+                    {i.result === "duplicate" && i.song_id && (
+                      <Link href={`/songs/${i.song_id}?duplicates=1`} className="w-full text-xs text-accent underline-offset-2 hover:underline">
+                        This song already has a songsheet in Drive. Compare them and keep one →
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

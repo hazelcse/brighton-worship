@@ -12,6 +12,7 @@ const KIND: Record<SongUpdateKind, { label: string; dot: string }> = {
   songsheet_reuploaded: { label: "Songsheet re-uploaded", dot: "bg-sky-500" },
   issues_flagged: { label: "Scanner issues", dot: "bg-amber-500" },
   songsheet_missing: { label: "Missing from Drive", dot: "bg-stone-500" },
+  songsheet_duplicate: { label: "Duplicate songsheets", dot: "bg-orange-500" },
 };
 const ORDER = Object.keys(KIND) as SongUpdateKind[];
 
@@ -23,6 +24,9 @@ function when(at: string) {
 
 function how(u: SongUpdate) {
   if (u.kind === "songsheet_missing") return "No longer in the Google Drive folder. The app still has its copy.";
+  if (u.kind === "songsheet_duplicate") {
+    return `${u.files.length || "More than one"} songsheets in Google Drive for this song${u.files.length ? ` (${u.files.join(", ")})` : ""}`;
+  }
   if (u.how) return u.how.charAt(0).toUpperCase() + u.how.slice(1);
   if (u.source === "drive") return "From Google Drive";
   return u.by ? `Uploaded by ${u.by}` : "Uploaded in the app";
@@ -171,6 +175,12 @@ export function SongUpdatesButton({ updates, kinds }: { updates: SongUpdate[]; k
                         {how(u)}
                         {u.file && ` · ${u.file}`} · {when(u.at)}
                       </p>
+                      {u.kind === "songsheet_duplicate" && u.songId && u.open && (
+                        <Link href={`/songs/${u.songId}?duplicates=1`} className="inline-block text-sm font-medium text-accent underline-offset-2 hover:underline">
+                          Compare and keep one →
+                        </Link>
+                      )}
+                      {u.kind === "songsheet_duplicate" && !u.open && <p className="text-xs text-emerald-700">Sorted: one was kept.</p>}
                       {u.issues.length > 0 && (
                         <ul className="mt-1 space-y-0.5">
                           {u.issues.map((i, n) => (

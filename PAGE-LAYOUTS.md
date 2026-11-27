@@ -527,7 +527,14 @@ takes the session off Pending for good without tracking it, and the next one ope
   Code asks the owner before an edit that would change them.
 
 **`/songs/[id]`**: full width. Back link; title 36px → 48px (sm) with a round raise-issue button
-beside it; artist (no fact pills). Optional "Missing from Drive" and issues boxes. Then two columns
+beside it; artist (no fact pills). Optional "Missing from Drive", "Two or more songsheets in
+Google Drive" (amber; song editors who can add songs get a dark "Compare songsheets" button) and
+issues boxes. **Compare songsheets** popup (`duplicate-songsheets.tsx`, max 1152px, scrolls inside;
+also opened by `?duplicates=1` from the Updates popup and the Drive sync summary): one column per
+Drive file (1 on phones, 2 from 768px, 3 from 1024px when there are 3+), each with its name, Google
+Doc/.docx and last change, "In the app now" / "Same file as …" pills, "Open in Drive ↗", an outlined
+"Keep this one" button, then the sheet's pages (`PdfSheetPreview`). Choosing one shows a confirm bar
+under the header (Cancel, dark "Keep this one"). Then two columns
 from 1024px (3 : 2): **Details** card on the left; songsheet preview, versions and delete on the
 right (Details spans both rows; the preview sits above the rest). On phones: preview, then
 Details, then the songsheet card and delete. Details always opens read-only, two columns on every screen: Type | Tempo, Language |

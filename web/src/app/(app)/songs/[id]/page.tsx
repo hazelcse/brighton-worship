@@ -14,13 +14,14 @@ import { SongVersions } from "@/components/songs/song-versions";
 import { SongsheetPreview } from "@/components/songs/songsheet-preview";
 import { DeleteSongButton } from "@/components/songs/delete-song-button";
 import { ClearMissingButton, RaiseIssueButton } from "@/components/songs/raise-issue-button";
+import { DuplicateSongsheetsButton } from "@/components/songs/duplicate-songsheets";
 
-type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string; edit?: string }> };
+type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string; edit?: string; duplicates?: string }> };
 
 async function SongView({ params, searchParams }: Params) {
   const user = await requireUser();
   if (!user.can("songs.view")) notFound();
-  const [{ id }, { sheet, edit }] = await Promise.all([params, searchParams]);
+  const [{ id }, { sheet, edit, duplicates }] = await Promise.all([params, searchParams]);
   const data = await loadSong(id);
   if (!data) notFound();
   const { song, versions, links, reports } = data;
@@ -71,6 +72,19 @@ async function SongView({ params, searchParams }: Params) {
             </p>
           </div>
           {canEdit && <ClearMissingButton songId={song.id} />}
+        </section>
+      )}
+
+      {song.duplicate_drive_at && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <div>
+            <h2 className="font-semibold">Two or more songsheets in Google Drive</h2>
+            <p className="text-sm text-muted">
+              The Drive folder has more than one songsheet for this song. The app is still using one of them.
+              {canEdit && user.can("songs.create") ? " Compare them and keep one." : " Someone who looks after the song library will choose which one to keep."}
+            </p>
+          </div>
+          {canEdit && user.can("songs.create") && <DuplicateSongsheetsButton songId={song.id} title={song.title} openNow={duplicates === "1"} />}
         </section>
       )}
 

@@ -147,8 +147,7 @@ function sequenceLines(all: SeqStep[], old: SeqStep[] | null): Seg[][] {
       out.push({ t, red });
       const after = long ?? (s.comment && !isLongComment(s.comment) ? s.comment : null);
       if (after) out.push({ t: " ", red }, comment(after, red));
-      if (!long) out.push({ t: last && i === steps.length - 1 ? " ||" : " |" });
-      else if (last) out.push({ t: " ||" });
+      out.push({ t: last && i === steps.length - 1 ? " ||" : " |" });
     });
     if (last && tail) out.push({ t: " " }, comment(tail.name, isNew(tail)));
     return out;

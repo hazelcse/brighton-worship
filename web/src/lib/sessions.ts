@@ -989,13 +989,20 @@ async function servicesBetween(viewerId: string, from: string, to: string, group
   ]);
   const people = await names(db, [...new Set((crewRows ?? []).map((r) => r.member_id as string))]);
   const mediaById = new Map(media.map((m) => [m.id, m]));
+  // Each crew in its media team's roles' order (team.config.roles), like the media team's own session card.
+  const rank = (m: (typeof media)[number], role: string) => {
+    const i = (m.team.config.roles as string[]).indexOf(role);
+    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+  };
   const crewOf = (sessionIds: string[]): CrewMember[] =>
     (crewRows ?? [])
       .filter((r) => sessionIds.includes(r.session_id as string))
       .map((r) => {
         const m = mediaById.get(r.session_id as string)!;
-        return { id: r.member_id as string, name: people.get(r.member_id as string) ?? "Someone", role: r.role as string, team: m.team.name, session: m.name };
-      });
+        return { m, c: { id: r.member_id as string, name: people.get(r.member_id as string) ?? "Someone", role: r.role as string, team: m.team.name, session: m.name } };
+      })
+      .sort((a, b) => sessionIds.indexOf(a.m.id) - sessionIds.indexOf(b.m.id) || rank(a.m, a.c.role) - rank(b.m, b.c.role))
+      .map(({ c }) => c);
 
   // In the order the sessions came (date, start time, name), but a day's ad hoc services after its
   // standard ones (they're taken to be later in the day).

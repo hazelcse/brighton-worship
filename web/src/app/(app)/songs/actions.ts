@@ -323,7 +323,7 @@ export async function deleteSong(songId: string): Promise<SaveState> {
 // Google Drive sync
 // ---------------------------------------------------------------------------
 
-export type DriveSyncItem = { name: string; result: "added" | "updated" | "replaced" | "unchanged" | "failed" | "removed"; song_id?: string; title?: string; error?: string };
+export type DriveSyncItem = { name: string; result: "added" | "updated" | "replaced" | "unchanged" | "duplicate" | "failed" | "removed"; song_id?: string; title?: string; error?: string };
 export type DriveSyncSummary = {
   busy?: boolean;
   files: number;
@@ -331,6 +331,8 @@ export type DriveSyncSummary = {
   updated: number;
   replaced: number;
   unchanged: number;
+  /** New files for songs that already had one in Drive (see duplicate-songsheets.tsx). */
+  duplicate?: number;
   failed: number;
   removed: number;
   items: DriveSyncItem[];
@@ -415,4 +417,22 @@ export async function clearMissingFromDrive(songId: string): Promise<SaveState> 
 export async function refreshSongLibrary(): Promise<void> {
   await requirePermission("songs.view");
   updateTag(SONGS_TAG);
+}
+
+/** Song editors: of a song's duplicate songsheets in Google Drive, keep this one (the others go to the Drive bin). */
+export async function keepDriveSongsheet(songId: string, fileId: string): Promise<SaveState> {
+  let result: { status: "done" | "partial" | "failed"; message: string };
+  try {
+    const user = await requirePermission("songs.edit");
+    await requirePermission("songs.create");
+    const body = new FormData();
+    body.set("file_id", fileId);
+    body.set("actor_id", user.id);
+    result = await workerFetch(`/drive/songs/${encodeURIComponent(songId)}/keep`, { method: "POST", body }, 180_000);
+  } catch (e) {
+    return fail(e);
+  }
+  updateTag(SONGS_TAG);
+  revalidatePath("/songs", "layout");
+  return { ok: result.status !== "failed", message: result.message };
 }

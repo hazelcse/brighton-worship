@@ -33,6 +33,20 @@ export type UploadResult = {
   key?: string | null;
   issues?: { code: string; severity: "error" | "warning" | "info"; message: string }[];
   error?: string;
-  /** After replacing a songsheet: whether Google Drive got the new file too. */
-  drive?: { status: "updated" | "not_in_drive" | "not_configured" | "failed"; message: string };
+  /** After uploading or replacing a songsheet: whether Google Drive got the file too. */
+  drive?: { status: "updated" | "added" | "not_configured" | "failed"; message: string };
+};
+
+/** One of a song's songsheets in the Google Drive folder, when it has more than one. */
+export type DriveDuplicate = {
+  id: string;
+  name: string;
+  modified_time: string | null;
+  modified_by: string | null;
+  link: string | null;
+  google_doc: boolean;
+  /** The copy the app uses now. */
+  in_app: boolean;
+  /** The name of an earlier file in the list with exactly the same contents. */
+  same_as: string | null;
 };

@@ -84,9 +84,10 @@ def upload(  # sync so FastAPI runs it in a thread pool (scanning is CPU work)
         row = db.table("song_versions").select("song_id").eq("id", version_id).single().execute().data
         return {"version_id": version_id, "song_id": row["song_id"], "status": "duplicate", "file_name": file.filename}
     result = ingest.process_version(db, version_id, replace_song_id)
-    if replace_song_id and result.get("status") == "done":
+    song_id = replace_song_id or result.get("song_id")
+    if song_id and result.get("status") == "done":
         # Keep Google Drive the same as the app: the new songsheet goes there too.
-        result["drive"] = drive_sync.write_back(db, replace_song_id, data)
+        result["drive"] = drive_sync.write_back(db, song_id, data, file.filename or "songsheet.docx")
     return {**result, "file_name": file.filename}
 
 
@@ -292,3 +293,40 @@ def drive_status() -> dict:
         "last_run": last[0] if last else None,  # the latest finished run
         "running": drive_sync.running(),
     }
+
+
+def _drive_error(e: Exception) -> HTTPException:
+    if isinstance(e, LookupError):
+        return HTTPException(status_code=404, detail=str(e))
+    return HTTPException(status_code=502, detail=f"Google Drive couldn't be reached: {str(e)[:200]}")
+
+
+@app.get("/drive/songs/{song_id}/duplicates", dependencies=[Depends(require_token)])
+def drive_duplicates(song_id: str) -> dict:
+    """A song's songsheets in the Drive folder, to compare and keep one."""
+    if not drive_sync.configured():
+        raise HTTPException(status_code=400, detail="Google Drive isn't set up.")
+    try:
+        return {"files": drive_sync.duplicate_files(ingest.client(), song_id)}
+    except Exception as e:  # noqa: BLE001
+        raise _drive_error(e) from e
+
+
+@app.get("/drive/songs/{song_id}/files/{file_id}/pdf", dependencies=[Depends(require_token)])
+def drive_file_pdf(song_id: str, file_id: str) -> Response:
+    """One of a song's Drive songsheets as a PDF (not stored)."""
+    try:
+        pdf, name = drive_sync.file_pdf(ingest.client(), song_id, file_id)
+    except Exception as e:  # noqa: BLE001
+        raise _drive_error(e) from e
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}", "X-File-Name": quote(name)})
+
+
+@app.post("/drive/songs/{song_id}/keep", dependencies=[Depends(require_token)])
+def drive_keep(song_id: str, file_id: str = Form(), actor_id: str | None = Form(default=None)) -> dict:
+    """Keep one of a song's duplicate Drive songsheets; the others go to the Drive bin."""
+    try:
+        return drive_sync.keep_file(ingest.client(), song_id, file_id, actor_id)
+    except Exception as e:  # noqa: BLE001
+        raise _drive_error(e) from e

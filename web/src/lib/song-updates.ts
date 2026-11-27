@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /** Song library updates are shown for this long. */
 const DAYS = 60;
 
-export type SongUpdateKind = "song_added" | "songsheet_reuploaded" | "issues_flagged" | "songsheet_missing" | "issue_raised";
+export type SongUpdateKind = "song_added" | "songsheet_reuploaded" | "issues_flagged" | "songsheet_missing" | "issue_raised" | "songsheet_duplicate";
 
 /**
  * Which updates a person gets: songs.library_updates covers the library's own changes,
@@ -13,7 +13,7 @@ export type SongUpdateKind = "song_added" | "songsheet_reuploaded" | "issues_fla
  */
 export function updateKindsFor(user: { can: (p: Permission) => boolean }): SongUpdateKind[] {
   return [
-    ...(user.can("songs.library_updates") ? (["song_added", "songsheet_reuploaded", "issues_flagged", "songsheet_missing"] as const) : []),
+    ...(user.can("songs.library_updates") ? (["song_added", "songsheet_reuploaded", "issues_flagged", "songsheet_missing", "songsheet_duplicate"] as const) : []),
     ...(user.can("songs.issue_reports") ? (["issue_raised"] as const) : []),
   ];
 }
@@ -31,6 +31,10 @@ export type SongUpdate = {
   /** How the songsheet changed, e.g. "deleted and added back in Drive". */
   how: string | null;
   issues: { severity: "error" | "warning"; message: string }[];
+  /** For duplicate songsheets: the files' names in Drive. */
+  files: string[];
+  /** For duplicate songsheets: still to be sorted out (one hasn't been kept yet). */
+  open: boolean;
   /** For a raised issue: what they said. */
   message: string | null;
   at: string;
@@ -46,9 +50,11 @@ const since = () => new Date(Date.now() - DAYS * 86_400_000).toISOString();
 
 const ISSUE_KINDS = new Set<string>(["issue_raised", "issues_flagged"]);
 
+type EventSong = { reviewed_at: string | null; duplicate_drive_at: string | null } | null;
+
 /** An issue update is settled once someone marks the song as reviewed after it, so it drops out. */
 function settled(e: { kind: string; created_at: string; song: unknown }) {
-  const reviewedAt = (e.song as { reviewed_at: string | null } | null)?.reviewed_at;
+  const reviewedAt = (e.song as unknown as EventSong)?.reviewed_at;
   return ISSUE_KINDS.has(e.kind) && Boolean(reviewedAt) && reviewedAt! >= e.created_at;
 }
 
@@ -59,7 +65,7 @@ export async function loadSongUpdates(userId: string, kinds: SongUpdateKind[]): 
   const [{ data }, seen] = await Promise.all([
     db
       .from("song_events")
-      .select("id, kind, song_id, title, source, details, created_at, actor:profiles(full_name, email), song:songs(reviewed_at)")
+      .select("id, kind, song_id, title, source, details, created_at, actor:profiles(full_name, email), song:songs(reviewed_at, duplicate_drive_at)")
       .in("kind", kinds)
       .gte("created_at", since())
       .order("created_at", { ascending: false })
@@ -67,7 +73,7 @@ export async function loadSongUpdates(userId: string, kinds: SongUpdateKind[]): 
     seenAt(userId),
   ]);
   return (data ?? []).filter((e) => !settled(e)).map((e) => {
-    const d = (e.details ?? {}) as { file?: string; how?: string; issues?: SongUpdate["issues"]; message?: string };
+    const d = (e.details ?? {}) as { file?: string; files?: string[]; how?: string; issues?: SongUpdate["issues"]; message?: string };
     const actor = e.actor as unknown as { full_name: string; email: string } | null;
     return {
       id: e.id,
@@ -79,6 +85,8 @@ export async function loadSongUpdates(userId: string, kinds: SongUpdateKind[]): 
       file: d.file ?? null,
       how: d.how ?? null,
       issues: d.issues ?? [],
+      files: d.files ?? [],
+      open: e.kind === "songsheet_duplicate" && Boolean((e.song as unknown as EventSong)?.duplicate_drive_at),
       message: d.message ?? null,
       at: e.created_at,
       unseen: !seen || e.created_at > seen,
